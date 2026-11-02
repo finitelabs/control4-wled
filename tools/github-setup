@@ -93,7 +93,7 @@ RULESET=$(cat << EOF
     }},
     {"type": "required_status_checks", "parameters": {
       "do_not_enforce_on_create": false,
-      "required_status_checks": [{"context": "build", "integration_id": 15368}],
+      "required_status_checks": [{"context": "build", "integration_id": 15368}, {"context": "mock-wled", "integration_id": 15368}],
       "strict_required_status_checks_policy": false
     }}
   ]
