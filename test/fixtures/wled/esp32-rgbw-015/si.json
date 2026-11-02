@@ -1,0 +1,143 @@
+{
+ "state": {
+  "on": true,
+  "bri": 128,
+  "transition": 7,
+  "ps": -1,
+  "pl": -1,
+  "ledmap": 0,
+  "nl": {
+   "on": false,
+   "dur": 60,
+   "mode": 1,
+   "tbri": 0,
+   "rem": -1
+  },
+  "udpn": {
+   "send": false,
+   "recv": true,
+   "sgrp": 1,
+   "rgrp": 1
+  },
+  "lor": 0,
+  "mainseg": 0,
+  "seg": [
+   {
+    "id": 0,
+    "start": 0,
+    "stop": 30,
+    "len": 30,
+    "grp": 1,
+    "spc": 0,
+    "of": 0,
+    "on": true,
+    "frz": false,
+    "bri": 255,
+    "cct": 127,
+    "set": 0,
+    "col": [
+     [
+      255,
+      170,
+      0,
+      0
+     ],
+     [
+      0,
+      0,
+      0,
+      0
+     ],
+     [
+      0,
+      0,
+      0,
+      0
+     ]
+    ],
+    "fx": 0,
+    "sx": 128,
+    "ix": 128,
+    "pal": 0,
+    "c1": 128,
+    "c2": 128,
+    "c3": 16,
+    "sel": true,
+    "rev": false,
+    "mi": false,
+    "o1": false,
+    "o2": false,
+    "o3": false,
+    "si": 0,
+    "m12": 0
+   }
+  ]
+ },
+ "info": {
+  "ver": "0.15.4",
+  "vid": 2508020,
+  "cn": "Kōsen",
+  "release": "ESP32",
+  "repo": "wled/WLED",
+  "deviceId": "0aa47311fb3dc75c8b66bba3516ddba31052e23c10",
+  "leds": {
+   "count": 30,
+   "pwr": 0,
+   "fps": 0,
+   "maxpwr": 0,
+   "maxseg": 32,
+   "bootps": 0,
+   "seglc": [
+    3
+   ],
+   "lc": 3,
+   "rgbw": true,
+   "wv": 2,
+   "cct": 0
+  },
+  "str": false,
+  "name": "Mock Porch RGBW",
+  "udpport": 21324,
+  "simplifiedui": false,
+  "live": false,
+  "liveseg": -1,
+  "lm": "",
+  "lip": "",
+  "ws": 0,
+  "fxcount": 187,
+  "palcount": 71,
+  "cpalcount": 0,
+  "maps": [
+   {
+    "id": 0
+   }
+  ],
+  "wifi": {
+   "bssid": "02:00:00:00:00:01",
+   "rssi": -58,
+   "signal": 84,
+   "channel": 6,
+   "ap": false
+  },
+  "fs": {
+   "u": 12,
+   "t": 983,
+   "pmt": 0
+  },
+  "ndc": 0,
+  "arch": "esp32",
+  "core": "v4.4.7",
+  "clock": 240,
+  "flash": 4,
+  "lwip": 0,
+  "bootloaderSHA256": "da1a7ef6c9b93be288420900e2d7d51f478f6bc0b141c162d6e399d6e2ee2302",
+  "freeheap": 160000,
+  "uptime": 0,
+  "time": "1970-1-1, 00:00:00",
+  "opt": 79,
+  "brand": "WLED",
+  "product": "FOSS",
+  "mac": "02a1b2c3d408",
+  "ip": ""
+ }
+}
