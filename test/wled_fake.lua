@@ -268,6 +268,26 @@ function Fake:apply(cmd)
       state.on = true
     end
   end
+  -- An array names segments by id; an object applies to every segment.
+  if type(cmd.seg) == "table" then
+    local list = cmd.seg[1] and cmd.seg or { cmd.seg }
+    for _, s in ipairs(list) do
+      for _, seg in ipairs(state.seg or {}) do
+        if s.id == nil or s.id == seg.id then
+          if type(s.col) == "table" and type(s.col[1]) == "table" then
+            seg.col = seg.col or {}
+            seg.col[1] = copy(s.col[1])
+          end
+          if s.cct ~= nil then
+            seg.cct = s.cct
+          end
+          if s.fx ~= nil then
+            seg.fx = s.fx
+          end
+        end
+      end
+    end
+  end
 end
 
 -- HTTP, shaped like lib.http.

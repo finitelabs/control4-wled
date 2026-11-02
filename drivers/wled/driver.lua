@@ -2,8 +2,8 @@
 --
 -- Owns the one connection to a WLED controller (src/wled/client.lua), keeps the controller's
 -- model (src/wled/device.lua) and shows it in Composer. The controller's light is the light_v2
--- proxy on binding 5001; it follows the connection's online state. Light commands come in a
--- later layer.
+-- proxy on binding 5001, run by the light model (src/wled/light.lua) through the WLED adapter
+-- (src/wled/light_wled.lua).
 
 --#ifdef DRIVERCENTRAL
 DC_PID = 0
@@ -34,8 +34,9 @@ local githubUpdater = require("lib.github-updater")
 
 local Client = require("wled.client")
 local Device = require("wled.device")
+local light = require("wled.light")
+local LightAdapter = require("wled.light_wled")
 
-local PROXY_BINDING = 5001
 local EVENT = { CONNECTED = 1, DISCONNECTED = 2 }
 
 --- Persist key for the MAC of the controller this driver was set up with.
@@ -68,6 +69,25 @@ local device = Device.new()
 --- @type WledClient
 local client
 
+--- Installer white points, the ends of WLED's CCT range.
+local DEFAULT_WARM, DEFAULT_COOL = 2700, 6500
+
+local wledLight = LightAdapter.new({
+  device = device,
+  send = function(json)
+    client:send(json):next(nil, function(err)
+      log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
+    end)
+  end,
+  warm = function()
+    return tonumber(Properties["Warm White (K)"]) or DEFAULT_WARM
+  end,
+  cool = function()
+    return tonumber(Properties["Cool White (K)"]) or DEFAULT_COOL
+  end,
+})
+light.attach(wledLight:adapter())
+
 --- All WLED instances on this controller, sorted by device id. The lowest runs updates.
 --- @return integer[]
 local function getWledDriverIds()
@@ -98,17 +118,20 @@ local function connectedStatus()
 end
 
 --- Tell Control4 the controller came or went. Connection events and the variable follow every
---- change, a reconnect included; the light proxy only hears its online state here.
+--- change, a reconnect included. The light is told it is offline here; it goes online with
+--- the controller's first report.
 --- @param connected boolean
 --- @param status string
 local function setConnected(connected, status)
   setStatus(status)
+  if not connected and light.isOnline() then
+    light.disconnect(false)
+  end
   if connected == gConnected then
     return
   end
   gConnected = connected
   values:update("Connected", connected, "BOOL")
-  SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = connected }, "NOTIFY")
   C4:FireEventByID(connected and EVENT.CONNECTED or EVENT.DISCONNECTED)
   log:info("%s %s", connected and "Connected to" or "Disconnected from", Properties["IP Address"] or "")
 end
@@ -164,6 +187,9 @@ local function onState(state, info)
     updateDeviceInfo()
   end
   setConnected(true, connectedStatus())
+  if state ~= nil then
+    light.state(wledLight:entity(), wledLight:state())
+  end
 end
 
 local function onOnline()
@@ -265,6 +291,7 @@ function OnDriverLateInit()
   -- Shown off until the controller answers; the proxy keeps its last level meanwhile.
   values:update("Connected", false, "BOOL")
   gInitialized = true
+  light.lateInit()
   connect()
 end
 
@@ -317,6 +344,21 @@ function OPC.Port(_v)
   if gInitialized then
     connect()
   end
+end
+
+--- A new white point moves the light's color temperature range.
+local function whitePointChanged()
+  if gInitialized and light.isOnline() then
+    light.state(wledLight:entity(), wledLight:state())
+  end
+end
+
+function OPC.Warm_White_K(_v)
+  whitePointChanged()
+end
+
+function OPC.Cool_White_K(_v)
+  whitePointChanged()
 end
 
 function OPC.Automatic_Updates(propertyValue)
@@ -374,15 +416,9 @@ function EC.Reset_Driver(params)
   log:print("Resetting driver to initial state")
   persist:delete(MAC_KEY)
   device = Device.new()
+  wledLight.device = device
   for _, item in ipairs(DEVICE_INFO) do
     UpdateProperty(item[1], "N/A")
   end
   connect()
-end
-
--- ─── Light proxy (RFP dispatch) ────────────────────────────────────────────
-
---- Light commands are taken by a later layer; this one only reports the connection.
-RFP[PROXY_BINDING] = function(idBinding, strCommand, tParams)
-  log:debug("Light command %s on binding %s not handled yet", strCommand, idBinding)
 end
