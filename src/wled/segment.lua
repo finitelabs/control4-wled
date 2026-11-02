@@ -242,12 +242,7 @@ function Segment.note(json, device)
     return
   end
   if seg[1] == nil then
-    -- One entry without an id applies to every segment.
-    if type(seg.on) == "boolean" then
-      for _, s in ipairs(device.segments or {}) do
-        s.on = seg.on
-      end
-    end
+    -- An object goes out only to a controller that lists no segments, so nothing is noted.
     return
   end
   for _, entry in ipairs(seg) do

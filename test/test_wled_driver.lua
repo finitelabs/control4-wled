@@ -349,6 +349,35 @@ do
   T.eq("and Connected fired for the new start", eventCount(1), 1)
 end
 
+do
+  fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  -- The fixed links from driver.xml, as Director lists them, with a keypad button on each.
+  local fixed, me = {}, C4:GetDeviceID()
+  for i, id in ipairs({ 300, 301, 302, 303, 304, 5001 }) do
+    fixed[i] = {
+      id = id,
+      type = id == 5001 and "PROXY" or "CONTROL",
+      provider = true,
+      name = "Link " .. id,
+      class = id == 5001 and "LIGHT_V2" or "BUTTON_LINK",
+    }
+  end
+  ShimSetStaticBindings(fixed)
+  for _, id in ipairs({ 300, 301, 302, 303, 304 }) do
+    C4:Bind(me, id, 800 + id - 300, 1, "BUTTON_LINK")
+  end
+  C4:Bind(me, 5001, 9001, 5001, "LIGHT_V2")
+  EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  local left = {}
+  for _, c in ipairs(ShimConnections()) do
+    left[#left + 1] = c.providerBinding
+  end
+  T.eq("Reset Driver unwires every keypad from the button links, and keeps the light's proxy", left, { 5001 })
+  ShimSetStaticBindings({})
+  ShimResetDynamicBindings()
+end
+
 --------------------------------------------------------------------------------
 T.section("Reset Driver with the controller gone tells the proxy and programming it went away")
 --------------------------------------------------------------------------------

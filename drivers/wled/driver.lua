@@ -62,6 +62,9 @@ local PROXY_BINDING = 5001
 --- Button links that step through the preset cycle.
 local NEXT_PRESET_BINDING, PREVIOUS_PRESET_BINDING = 303, 304
 
+--- The fixed button links from driver.xml: the light's On, Toggle and Off, then Next and Previous Preset.
+local BUTTON_LINKS = { 300, 301, 302, NEXT_PRESET_BINDING, PREVIOUS_PRESET_BINDING }
+
 --- Namespace of the button link made for each preset in the cycle, keyed by preset id.
 local PRESET_LINKS = "PresetLinks"
 
@@ -1343,6 +1346,13 @@ function EC.Reset_Driver(params)
   lists:clear()
   gShown = nil
   gExtrasShape, gExtrasSent = nil, {}
+  -- A fresh install has no keypad wired to a button link; the light's own proxy stays bound.
+  local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
+  for _, id in ipairs(BUTTON_LINKS) do
+    for _, consumer in pairs(Select(wired, id, "boundconsumers") or {}) do
+      C4:Unbind(tointeger(consumer.deviceid), tointeger(consumer.bindingid))
+    end
+  end
   bindings:reset()
   conditionals:reset()
   gCycle, gCycleLast, gCycleSentFrom, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, nil, {}, nil
