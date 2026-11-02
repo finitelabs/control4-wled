@@ -23,6 +23,8 @@ JSON = require("JSON")
 local log = require("lib.logging")
 local persist = require("lib.persist")
 local values = require("lib.values")
+local bindings = require("lib.bindings")
+local conditionals = require("lib.conditionals")
 local updateSettings = require("lib.update-settings")
 --#ifdef DRIVERCENTRAL
 local supportCode = require("lib.support-code")
@@ -35,6 +37,7 @@ local githubUpdater = require("lib.github-updater")
 local Client = require("wled.client")
 local Device = require("wled.device")
 local Extras = require("wled.extras")
+local Cycle = require("wled.cycle")
 local light = require("wled.light")
 local LightAdapter = require("wled.light_wled")
 local Lists = require("wled.lists")
@@ -53,6 +56,19 @@ local PROGRAMMING_VARIABLES = { "Effect", "Palette", "Preset", "Playlist" }
 
 --- The light_v2 proxy's binding.
 local PROXY_BINDING = 5001
+
+--- Button links that step through the preset cycle.
+local NEXT_PRESET_BINDING, PREVIOUS_PRESET_BINDING = 303, 304
+
+--- Namespace of the button link made for each preset in the cycle, keyed by preset id.
+local PRESET_LINKS = "PresetLinks"
+
+--- Namespace of the programming conditionals whose lists come from the controller.
+local PROGRAMMING = "Programming"
+
+--- A keypad tap sends DO_PUSH then DO_CLICK and some senders only one, so a link acts on the
+--- first of a burst and ignores the rest for this long.
+local BUTTON_LINK_COALESCE_MS = 500
 
 --- Persist key for the MAC of the controller this driver was set up with.
 local MAC_KEY = "WledControllerMac"
@@ -331,6 +347,200 @@ local function updateExtras()
   end
 end
 
+--- The presets Next Preset and Previous Preset step through.
+--- @type WledListEntry[]
+local gCycle = {}
+
+--- The preset the cycle last applied, so a step after the look was changed goes on from there.
+--- @type integer|nil
+local gCycleLast = nil
+
+--- What the cycle was last built from: Cycle Presets and the controller's presets.
+--- @type string|nil
+local gCycleFrom = nil
+
+--- The keypad LED state last told each preset link, by preset id.
+--- @type table<string, boolean>
+local gLinkLeds = {}
+
+--- The Preset Is conditional's list as last registered.
+--- @type string|nil
+local gPresetIsItems = nil
+
+--- The preset the controller shows, -1 for none.
+--- @return integer
+local function presetShowing()
+  local state = device.state
+  return type(state) == "table" and tonumber(state.ps) or -1
+end
+
+--- Apply a preset from the cycle; the controller applies it on its next loop.
+--- @param id integer
+local function applyCyclePreset(id)
+  gCycleLast = id
+  send({ ps = id })
+end
+
+--- Step the cycle forward (1) or back (-1) from the preset showing.
+--- @param dir integer
+local function stepCycle(dir)
+  local id = Cycle.step(gCycle, presetShowing(), gCycleLast, dir)
+  if not id then
+    log:warn("No presets to cycle through")
+    return
+  end
+  applyCyclePreset(id)
+end
+
+--- Answer a button link: run `action` once per tap, and tell a keypad that asks the link's LED.
+--- @param bindingId integer
+--- @param action fun()
+--- @param led (fun(): boolean)|nil The LED state; nil for a link whose LED the driver leaves alone.
+local function registerButtonLink(bindingId, action, led)
+  local coalescing = false
+  RFP[bindingId] = function(idBinding, strCommand)
+    log:trace("RFP[%s](%s)", idBinding, strCommand)
+    if strCommand == "REQUEST_BUTTON_COLORS" then
+      if led then
+        SendToProxy(idBinding, "MATCH_LED_STATE", { STATE = led() }, "NOTIFY", true)
+      end
+      return
+    end
+    if strCommand ~= "DO_CLICK" and strCommand ~= "DO_PUSH" then
+      return
+    end
+    if coalescing then
+      return
+    end
+    coalescing = true
+    SetTimer("ButtonLinkCoalesce" .. bindingId, BUTTON_LINK_COALESCE_MS, function()
+      coalescing = false
+    end)
+    action()
+  end
+end
+
+registerButtonLink(NEXT_PRESET_BINDING, function()
+  stepCycle(1)
+end)
+registerButtonLink(PREVIOUS_PRESET_BINDING, function()
+  stepCycle(-1)
+end)
+
+--- A preset's own button link, which applies it and is lit while it shows.
+--- @param key string The preset id.
+--- @param binding Binding
+local function registerPresetLink(key, binding)
+  local id = tonumber(key)
+  registerButtonLink(binding.bindingId, function()
+    if not Lists.byId(lists.presets, id) then
+      log:warn("Preset %s is not on the controller", key)
+      return
+    end
+    applyCyclePreset(id)
+  end, function()
+    return presetShowing() == id
+  end)
+end
+
+--- Light each preset link's keypad LED while its preset shows.
+local function updateLinkLeds()
+  local showing = presetShowing()
+  for key, binding in pairs(bindings:getDynamicBindings(PRESET_LINKS)) do
+    local on = tonumber(key) == showing
+    if gLinkLeds[key] ~= on then
+      gLinkLeds[key] = on
+      SendToProxy(binding.bindingId, "MATCH_LED_STATE", { STATE = on }, "NOTIFY", true)
+    end
+  end
+end
+
+--- @param label string
+--- @return string
+local function listSafe(label)
+  return (label:gsub(",", " "))
+end
+
+--- Test for the preset showing, by the "Name (id)" programming shows it as.
+--- @param _strConditionName string
+--- @param tParams table
+--- @return boolean
+local function testPresetIs(_strConditionName, tParams)
+  local showing = presetShowing()
+  local name = showing > 0 and lists:presetName(showing) or nil
+  local matched = name ~= nil and listSafe(string.format("%s (%d)", name, showing)) == Select(tParams, "VALUE")
+  if Select(tParams, "LOGIC") == "NOT_EQUAL" then
+    return not matched
+  end
+  return matched
+end
+
+--- Register the Preset Is conditional with the controller's presets, when its list changed.
+--- @param items string Comma-separated choices.
+local function registerPresetIs(items)
+  if items == gPresetIsItems then
+    return
+  end
+  gPresetIsItems = items
+  conditionals:upsertConditional(PROGRAMMING, "preset_is", {
+    type = "LIST",
+    condition_statement = "Preset Is",
+    description = "the preset NAME shows is LOGIC STRING",
+    list_items = items,
+  }, testPresetIs)
+end
+
+--- Build the cycle from Cycle Presets and the controller's presets: a button link for each preset
+--- in it, named from the controller, and the Preset Is list. A link whose preset left the cycle
+--- goes, unless its preset went from the controller while a keypad is connected to it.
+local function updateCycle()
+  if not lists.presets then
+    return
+  end
+  local from = tostring(Properties["Cycle Presets"] or "") .. "\n" .. table.concat(lists:presetChoices(), "\n")
+  if from ~= gCycleFrom then
+    gCycleFrom = from
+    local cycle, unknown = Cycle.parse(Properties["Cycle Presets"], lists.presets)
+    if #unknown > 0 then
+      log:warn("Cycle Presets: the controller has no preset %s", table.concat(unknown, ", "))
+    end
+    gCycle = cycle
+    local labels, inCycle = {}, {}
+    for _, e in ipairs(cycle) do
+      local key, label = tostring(e.id), string.format("%s (%d)", e.name, e.id)
+      labels[#labels + 1] = label
+      inCycle[key] = true
+      local binding =
+        bindings:getOrAddDynamicBinding(PRESET_LINKS, key, "CONTROL", true, label .. " Button Link", "BUTTON_LINK")
+      if binding then
+        registerPresetLink(key, binding)
+      end
+    end
+    local links = {}
+    for key, binding in pairs(bindings:getDynamicBindings(PRESET_LINKS)) do
+      links[key] = binding.bindingId
+    end
+    local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
+    for key, bindingId in pairs(links) do
+      if not inCycle[key] then
+        if not Lists.byId(lists.presets, key) and Select(wired, bindingId, "isbound") then
+          log:warn("Preset %s is gone from the controller; its button link stays while a keypad uses it", key)
+        else
+          bindings:deleteBinding(PRESET_LINKS, key)
+          gLinkLeds[key] = nil
+        end
+      end
+    end
+    UpdateProperty("Presets in Cycle", #labels > 0 and table.concat(labels, ", ") or "None")
+    local items = {}
+    for i, label in ipairs(lists:presetChoices()) do
+      items[i] = listSafe(label)
+    end
+    registerPresetIs(table.concat(items, ","))
+  end
+  updateLinkLeds()
+end
+
 local function wantAllLists()
   for _, kind in ipairs(LIST_KINDS) do
     gListsWanted[kind] = true
@@ -356,6 +566,7 @@ local function readLists()
     if not gListsReading then
       updateProgramming()
       updateExtras()
+      updateCycle()
     end
   end)
 end
@@ -409,6 +620,7 @@ local function onState(state, info)
   if not gListsReading then
     updateProgramming()
     updateExtras()
+    updateCycle()
   end
 end
 
@@ -491,6 +703,11 @@ function OnDriverInit()
   log:trace("OnDriverInit()")
 
   values:restoreValues()
+  -- Early, so Director keeps the keypads connected to the preset links.
+  bindings:restoreBindings()
+  for key, binding in pairs(bindings:getDynamicBindings(PRESET_LINKS)) do
+    registerPresetLink(key, binding)
+  end
 end
 
 function OnDriverLateInit()
@@ -524,6 +741,8 @@ function OnDriverLateInit()
   -- Shown off until the controller answers; the proxy keeps its last level meanwhile.
   values:update("Connected", false, "BOOL")
   ensureVariables()
+  -- Test functions live in memory: Preset Is answers from its saved list until the presets are read.
+  registerPresetIs(Select(conditionals:getConditionals(), PROGRAMMING, "preset_is", "list_items") or "")
   gInitialized = true
   light.lateInit()
   connect()
@@ -594,6 +813,10 @@ end
 
 function OPC.Cool_White_K(_v)
   whitePointChanged()
+end
+
+function OPC.Cycle_Presets(_v)
+  updateCycle()
 end
 
 function OPC.Automatic_Updates(propertyValue)
@@ -779,6 +1002,19 @@ function EC.Stop_Playlist(_params)
   stopPlaylist()
 end
 
+--- Apply the next preset in the cycle: the one after the preset showing, or after the one the
+--- cycle last applied.
+function EC.Next_Preset(_params)
+  log:trace("EC.Next_Preset()")
+  stepCycle(1)
+end
+
+--- Apply the previous preset in the cycle.
+function EC.Previous_Preset(_params)
+  log:trace("EC.Previous_Preset()")
+  stepCycle(-1)
+end
+
 -- ─── Extras menu (RFP dispatch) ────────────────────────────────────────────
 
 --- What each list in the Extras menu sends for the id picked. Each returns the id it sent, or
@@ -878,6 +1114,7 @@ local RESET_PROPERTY_VALUES = {
   --#endif
   ["Warm White (K)"] = tostring(DEFAULT_WARM),
   ["Cool White (K)"] = tostring(DEFAULT_COOL),
+  ["Cycle Presets"] = "",
 }
 
 --- Return the driver to its first load and connect again, taking whichever controller answers.
@@ -898,6 +1135,9 @@ function EC.Reset_Driver(params)
   lists:clear()
   gShown = nil
   gExtrasShape, gExtrasSent = nil, {}
+  bindings:reset()
+  conditionals:reset()
+  gCycle, gCycleLast, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, {}, nil
   SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = "<extras_setup><extra></extra></extras_setup>" }, "NOTIFY")
   values:update("Connected", false, "BOOL")
   ensureVariables()

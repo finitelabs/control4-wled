@@ -95,6 +95,10 @@ a later version.
   effect or preset changes and when a playlist starts or ends
 - The same effects, palettes, presets and playlists in the light's Extras menu,
   with the sliders and options each effect uses, under WLED's names for them
+- Preset cycling from keypads and programming: Next and Previous Preset button
+  links and commands over the presets the installer picks, a button link for
+  each of those presets with its keypad LED lit while it shows, and a Preset Is
+  conditional
 - A check that the controller at the address is the one the driver was set up
   with, so it never drives another controller after an address change
 
@@ -330,6 +334,21 @@ between this and Cool White.
 
 The color temperature of the strip's coolest white, 6500 K by default.
 
+### Preset Cycle
+
+#### Cycle Presets
+
+The presets the Next and Previous Preset buttons and commands step through, in
+order: WLED preset ids or names, separated by commas, for example `4, 1, 7` or
+`Movie Night, Warm Glow`. Empty, the default, cycles every preset on the
+controller in id order. Playlists do not cycle. Use the id for a preset whose
+name has a comma in it. An entry the controller has no preset for is left out
+and written to the log.
+
+#### Presets in Cycle (read-only)
+
+The presets that cycle, in order, as `Name (id)`, or `None`.
+
 ### Device Info
 
 Read-only details the controller reports, updated whenever they change:
@@ -378,6 +397,8 @@ Monitoring is Enabled.
 | Apply Preset         | Applies a WLED preset                                                          |
 | Start Playlist       | Starts a WLED playlist                                                         |
 | Stop Playlist        | Stops the running playlist; the light keeps the look the playlist last showed  |
+| Next Preset          | Applies the next preset in the cycle                                           |
+| Previous Preset      | Applies the previous preset in the cycle                                       |
 
 The choices are the controller's own, read when the driver connects and again
 when the controller reports a change: a preset or playlist saved or deleted, an
@@ -426,6 +447,11 @@ Each variable is set before its event fires.
 | --------------------------------- | ------------------------------------------------------------------------------ |
 | WLED controller connection status | Whether the driver is Connected or Disconnected, as the events follow it       |
 | WLED playlist status              | Whether a playlist is Running or Not Running, as the Playlist events follow it |
+| Preset Is                         | Whether the preset showing is, or is not, the one picked                       |
+
+Preset Is lists the controller's presets as programming shows them, for example
+`Movie Night (4)`, and follows the controller as presets are saved, renamed and
+deleted.
 
 ## Connections
 
@@ -446,6 +472,23 @@ A keypad button bound to a button link shows whether the light is on: lit while
 it is on, or for the Off Button Link while it is off. It shows that button's
 colors, set in Composer under the light's **Button and Button Connection Status
 LED Colors** (Top for On, Bottom for Off, Toggle for Toggle).
+
+| Connection                  | Description                                                 |
+| --------------------------- | ----------------------------------------------------------- |
+| Next Preset Button Link     | Applies the next preset in the cycle when triggered         |
+| Previous Preset Button Link | Applies the previous preset in the cycle when triggered     |
+| _Name (id)_ Button Link     | One for each preset in the cycle: applies it when triggered |
+
+Next steps from the preset showing, or, once its look has been changed, from the
+preset the cycle last applied; with neither, Next starts at the first preset and
+Previous at the last. The cycle wraps at both ends. A preset applies whatever it
+was saved with in WLED, power and level included.
+
+A preset's own button link is named from the controller and renamed with the
+preset. A keypad button bound to it is lit while that preset is showing. A
+preset taken out of **Cycle Presets** loses its link. A preset deleted on the
+controller loses its link too, unless a keypad is still connected to it: then
+the link stays, and does nothing until a preset is saved again under that id.
 
 <!-- #ifdef DRIVERCENTRAL -->
 
