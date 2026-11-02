@@ -292,12 +292,17 @@ function Fake:applyFields(cmd, fromPreset)
             seg.col[1] = copy(s.col[1])
             changed = true
           end
-          for _, key in ipairs({ "cct", "fx", "sx", "ix", "pal" }) do
+          for _, key in ipairs({ "cct", "fx", "sx", "ix", "pal", "c1", "c2", "o1", "o2", "o3" }) do
             if s[key] ~= nil then
               fxChanged = fxChanged or (key == "fx" and seg.fx ~= s.fx)
               seg[key] = s[key]
               changed = true
             end
+          end
+          if s.c3 ~= nil then
+            -- Custom 3 is five bits.
+            seg.c3 = math.max(0, math.min(31, s.c3))
+            changed = true
           end
         end
       end

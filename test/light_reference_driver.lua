@@ -23,6 +23,8 @@ light.attach({
     cmd.preOn = nil
     SendToProxy(DEVICE_BINDING, "ENTITY_COMMAND", { body = SerializeSafe(cmd) })
   end,
+  -- The WLED light's Extras, which drivers/wled/driver.xml lists too.
+  capabilities = { has_extras = true },
 })
 
 local function updateStatus(status, connected)

@@ -23,6 +23,8 @@ local PLACEHOLDER = { [""] = true, ["-"] = true, ["RSVD"] = true }
 --- @field palettes WledListEntry[]|nil Palettes, built-in first, nil until read.
 --- @field presets WledListEntry[]|nil Presets that are not playlists, nil until read.
 --- @field playlists WledListEntry[]|nil Playlists, nil until read.
+--- @field fxdata table|nil Each effect's metadata from /json/fxdata, indexed by id + 1; nil when not read.
+--- @field version integer Bumped each time a list is read.
 --- @field gen integer Bumped by cancel and clear, so a read that started before is dropped.
 local Lists = {}
 Lists.__index = Lists
@@ -34,6 +36,7 @@ function Lists.new(opts)
   self.get = opts.get
   self.device = opts.device
   self.gen = 0
+  self.version = 0
   return self
 end
 
@@ -45,7 +48,8 @@ end
 --- Forget every list, as at a reset; a read under way is dropped.
 function Lists:clear()
   self:cancel()
-  self.effects, self.palettes, self.presets, self.playlists = nil, nil, nil, nil
+  self.effects, self.palettes, self.presets, self.playlists, self.fxdata = nil, nil, nil, nil, nil
+  self.version = self.version + 1
 end
 
 --- @param what string
@@ -179,6 +183,8 @@ function Lists:refresh(what)
             local info = self.device.info or {}
             local matrix = type(info.leds) == "table" and type(info.leds.matrix) == "table"
             self.effects = Lists.effectList(names, meta, matrix)
+            self.fxdata = type(meta) == "table" and meta or nil
+            self.version = self.version + 1
           end
         end, function(err)
           if self.gen == gen then
@@ -192,6 +198,7 @@ function Lists:refresh(what)
       return self.get("/json/pal"):next(function(names)
         if self.gen == gen and type(names) == "table" then
           self.palettes = Lists.paletteList(names, self.device.info, Device.isV16(self.device.ver))
+          self.version = self.version + 1
         end
       end, function(err)
         if self.gen == gen then
@@ -205,6 +212,7 @@ function Lists:refresh(what)
       return self.get("/presets.json"):next(function(file)
         if self.gen == gen and type(file) == "table" then
           self.presets, self.playlists = Lists.presetLists(file)
+          self.version = self.version + 1
         end
       end, function(err)
         if self.gen == gen then
@@ -285,6 +293,15 @@ end
 --- @return integer|nil
 function Lists:effectId(value)
   return idOf(self.effects, value)
+end
+
+--- An effect's metadata, the string WLED's page reads its controls from.
+--- @param id any
+--- @return string|nil
+function Lists:effectMeta(id)
+  id = tonumber(id)
+  local meta = id and self.fxdata and self.fxdata[id + 1]
+  return type(meta) == "string" and meta or nil
 end
 
 --- @return string[]

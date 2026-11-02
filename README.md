@@ -16,9 +16,10 @@ white with fades, Advanced Lighting Scenes and keypad buttons. It also shows
 what the controller reports: its name, firmware, MAC address, LED count and
 segments.
 
-The light controls the whole controller: its power and level, and the color of
-every segment. WLED's effects, palettes, presets and playlists, and a light per
-segment, come in later versions.
+The light controls the whole controller: its power and level, the color of every
+segment, and the controller's own WLED effects, palettes, presets and playlists,
+from the light's Extras menu and from programming. A light per segment comes in
+a later version.
 
 # <span style="color:#0094FF">Index</span>
 
@@ -31,6 +32,7 @@ segment, come in later versions.
 - [Compatibility](#compatibility)
 
   - [Colors and WLED effects](#colors-and-wled-effects)
+  - [The Extras menu](#the-extras-menu)
 
 - [Installer Setup](#installer-setup)
 
@@ -73,6 +75,8 @@ segment, come in later versions.
   preset, and start or stop a playlist
 - `Effect`, `Palette`, `Preset` and `Playlist` variables, and events when the
   effect or preset changes and when a playlist starts or ends
+- The same effects, palettes, presets and playlists in the light's Extras menu,
+  with the sliders and options each effect uses, under WLED's names for them
 - A check that the controller at the address is the one the driver was set up
   with, so it never drives another controller after an address change
 
@@ -113,6 +117,25 @@ The effect and palette commands in programming (see
 the light's power and level as they are: an effect set while the light is off
 shows when it next turns on. A preset or playlist sets whatever it was saved
 with in WLED, power and level included.
+
+## The Extras menu
+
+Press and hold the light in the Control4 app or on a touchscreen to open its
+Extras menu. It shows what the controller's main segment shows:
+
+- **Effect**: the controller's effects, with the running one picked. Below it
+  are the sliders and checkboxes that effect uses, under the names WLED gives
+  them for it, for example `Trail` and `Delay` for Scanner. The ones the effect
+  does not use are hidden.
+- **Color palette**: the controller's palettes, shown only while the effect uses
+  a palette and the LEDs have color.
+- **Preset** and **Playlist**, when the controller has any. Picking a preset
+  applies it, picking a playlist starts it, and `None` stops the running
+  playlist.
+
+Each pick runs on every segment and leaves the light's power and level as they
+are, as the programming commands do. The menu follows the controller, so a
+change made in the WLED app, by a preset or by a playlist step shows there too.
 
 # <span style="color:#0094FF">Installer Setup</span>
 
@@ -359,3 +382,6 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
   Apply Preset, Start Playlist and Stop Playlist, with `Effect`, `Palette`,
   `Preset` and `Playlist` variables, Effect Changed, Preset Changed, Playlist
   Started and Playlist Ended events, and a WLED playlist status conditional
+- Added the light's Extras menu: the controller's effects, with the sliders and
+  options the running effect uses under WLED's names for them, its palettes,
+  presets and playlists

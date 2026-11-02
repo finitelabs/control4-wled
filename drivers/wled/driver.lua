@@ -3,7 +3,7 @@
 -- Owns the one connection to a WLED controller (src/wled/client.lua), keeps the controller's
 -- model (src/wled/device.lua) and shows it in Composer. The controller's light is the light_v2
 -- proxy on binding 5001, run by the light model (src/wled/light.lua) through the WLED adapter
--- (src/wled/light_wled.lua).
+-- (src/wled/light_wled.lua). Its Extras menu is src/wled/extras.lua.
 
 --#ifdef DRIVERCENTRAL
 DC_PID = 0 -- TODO: Assign DriverCentral product ID
@@ -34,6 +34,7 @@ local githubUpdater = require("lib.github-updater")
 
 local Client = require("wled.client")
 local Device = require("wled.device")
+local Extras = require("wled.extras")
 local light = require("wled.light")
 local LightAdapter = require("wled.light_wled")
 local Lists = require("wled.lists")
@@ -49,6 +50,9 @@ local EVENT = {
 
 --- Variables programming reads, each the name of what the controller shows ("" for none).
 local PROGRAMMING_VARIABLES = { "Effect", "Palette", "Preset", "Playlist" }
+
+--- The light_v2 proxy's binding.
+local PROXY_BINDING = 5001
 
 --- Persist key for the MAC of the controller this driver was set up with.
 local MAC_KEY = "WledControllerMac"
@@ -126,6 +130,13 @@ local gListsReading = nil
 --- playlist. Nil until the first report after a load, which seeds it without events.
 --- @type {fx: integer|nil, pal: integer|nil, ps: integer, pl: integer}|nil
 local gShown = nil
+
+--- What the Extras menu last told the proxy: the setup's shape and the values sent since. Nil
+--- until the first setup after a load or reset.
+--- @type string|nil
+local gExtrasShape = nil
+--- @type table<string, string>
+local gExtrasSent = {}
 
 --- All WLED instances on this controller, sorted by device id. The lowest runs updates.
 --- @return integer[]
@@ -283,6 +294,36 @@ local function updateProgramming()
   end
 end
 
+--- Show the controller's lists and the running effect's controls in the Extras menu: a new
+--- setup when a list or the controls changed, else a state with the values that moved.
+local function updateExtras()
+  local state = device.state
+  if type(state) ~= "table" or not lists.effects then
+    return
+  end
+  local seg = mainSegment(state)
+  local fx = seg and tonumber(seg.fx) or 0
+  local view = {
+    effects = lists.effects,
+    palettes = lists.palettes or {},
+    presets = lists.presets or {},
+    playlists = lists.playlists or {},
+    controls = Extras.controls(fx, lists:effectMeta(fx), Device.has(device.lc, Device.CAP_RGB)),
+    values = Extras.values(seg, tonumber(state.ps) or -1, tonumber(state.pl) or -1),
+  }
+  local shape = Extras.shape(view, lists.version)
+  if shape ~= gExtrasShape then
+    SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = Extras.setup(view) }, "NOTIFY")
+    gExtrasShape, gExtrasSent = shape, view.values
+    return
+  end
+  local xml = Extras.state(view.values, gExtrasSent)
+  if xml then
+    SendToProxy(PROXY_BINDING, "EXTRAS_STATE_CHANGED", { XML = xml }, "NOTIFY")
+    gExtrasSent = view.values
+  end
+end
+
 local function wantAllLists()
   for _, kind in ipairs(LIST_KINDS) do
     gListsWanted[kind] = true
@@ -307,6 +348,7 @@ local function readLists()
     -- Events wait for the names they read: never while a list read is under way.
     if not gListsReading then
       updateProgramming()
+      updateExtras()
     end
   end)
 end
@@ -359,6 +401,7 @@ local function onState(state, info)
   readLists()
   if not gListsReading then
     updateProgramming()
+    updateExtras()
   end
 end
 
@@ -715,12 +758,92 @@ function EC.Start_Playlist(params)
   send({ ps = id })
 end
 
---- Stop the running playlist; the current look stays.
-function EC.Stop_Playlist(_params)
-  log:trace("EC.Stop_Playlist()")
+--- Unload the running playlist; the current look stays.
+local function stopPlaylist()
   -- An empty playlist object unloads the running one, as WLED's own app stops it; an empty
   -- array would be ignored, so the object is marked for the encoder.
   send({ playlist = JSON:newObject() })
+end
+
+--- Stop the running playlist; the current look stays.
+function EC.Stop_Playlist(_params)
+  log:trace("EC.Stop_Playlist()")
+  stopPlaylist()
+end
+
+-- ─── Extras menu (RFP dispatch) ────────────────────────────────────────────
+
+--- What each list in the Extras menu sends for the id picked, or false for an id the controller
+--- does not have.
+--- @type table<string, fun(value: any): boolean>
+local EXTRA_LISTS = {
+  fx = function(value)
+    local id = lists:effectId(value)
+    if id then
+      sendToSegments({ fx = id })
+    end
+    return id ~= nil
+  end,
+  pal = function(value)
+    local id = lists:paletteId(value)
+    if id then
+      sendToSegments({ pal = id })
+    end
+    return id ~= nil
+  end,
+  ps = function(value)
+    local id = lists:presetId(value)
+    if id then
+      send({ ps = id })
+    end
+    return id ~= nil
+  end,
+  pl = function(value)
+    if tonumber(value) == Extras.NO_PLAYLIST then
+      stopPlaylist()
+      return true
+    end
+    local id = lists:playlistId(value)
+    if id then
+      send({ ps = id })
+    end
+    return id ~= nil
+  end,
+}
+
+--- A pick or a slider in the light's Extras menu, sent to every segment as programming's commands
+--- are. The menu shows the pick at once; the controller's next report shows what it did.
+--- @param idBinding integer
+--- @param strCommand string
+--- @param tParams table {id = control id, value = what was picked}
+function RFP.EXTRA_SET(idBinding, strCommand, tParams)
+  log:trace("RFP.EXTRA_SET(%s, %s, %s)", idBinding, strCommand, tParams)
+  if idBinding ~= PROXY_BINDING then
+    return
+  end
+  local id, value = Select(tParams, "id"), Select(tParams, "value")
+  local kind = Extras.KINDS[id or ""]
+  local sent
+  if kind == "list" then
+    sent = EXTRA_LISTS[id](value)
+  elseif kind == "bool" then
+    value = toboolean(value)
+    sendToSegments({ [id] = value })
+    sent, value = true, value and "true" or "false"
+  elseif type(kind) == "table" and tonumber(value) then
+    value = math.max(kind.min, math.min(kind.max, math.floor(tonumber(value) + 0.5)))
+    sendToSegments({ [id] = value })
+    sent = true
+  end
+  if not sent then
+    log:warn("Extras: the controller has no %s %s", tostring(id), tostring(value))
+    return
+  end
+  if gExtrasShape then
+    value = tostring(value)
+    gExtrasSent[id] = value
+    SendToProxy(PROXY_BINDING, "EXTRAS_STATE_CHANGED", { XML = Extras.state({ [id] = value }, {}) }, "NOTIFY")
+  end
 end
 
 -- ─── Actions (EC dispatch) ─────────────────────────────────────────────────
@@ -762,6 +885,8 @@ function EC.Reset_Driver(params)
   lists.device = device
   lists:clear()
   gShown = nil
+  gExtrasShape, gExtrasSent = nil, {}
+  SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = "<extras_setup><extra></extra></extras_setup>" }, "NOTIFY")
   values:update("Connected", false, "BOOL")
   ensureVariables()
   for name, value in pairs(RESET_PROPERTY_VALUES) do

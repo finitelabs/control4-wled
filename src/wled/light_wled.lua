@@ -88,6 +88,8 @@ function Adapter:adapter()
     capabilities = {
       brightness_rate_max = RATE_MAX,
       color_rate_max = RATE_MAX,
+      -- Effects, palettes, presets and playlists (src/wled/extras.lua).
+      has_extras = true,
     },
   }
 end
