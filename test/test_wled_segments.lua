@@ -219,6 +219,47 @@ do
   T.eq("and the id goes to what is left", matched.b and matched.b.id, nil)
 end
 
+do
+  local seg = { { id = 5, start = 20, stop = 30 } }
+  local matched = Segment.match({
+    seg10 = { id = 5, start = 50, stop = 60 },
+    seg2 = { id = 5, start = 0, stop = 10 },
+  }, seg)
+  T.eq("records by the number in their key: seg2 before seg10", { matched.seg2 ~= nil, matched.seg10 ~= nil }, {
+    true,
+    false,
+  })
+
+  matched = Segment.match({
+    seg1 = { id = 7, start = 0, stop = 10, live = false },
+    seg2 = { id = 3, start = 0, stop = 10 },
+  }, { { id = 0, start = 0, stop = 10 } })
+  T.eq("a record whose segment was there goes before one whose segment was gone", {
+    matched.seg1 ~= nil,
+    matched.seg2 ~= nil,
+  }, { false, true })
+
+  matched = Segment.match(
+    { seg1 = { id = 1, start = 60, stop = 61, live = false } },
+    { { id = 1, start = 61, stop = 70 } }
+  )
+  T.eq("a gone segment's record does not take a new segment by its old id", matched.seg1, nil)
+  matched = Segment.match(
+    { seg1 = { id = 4, start = 61, stop = 70, live = false } },
+    { { id = 1, start = 61, stop = 70 } }
+  )
+  T.eq("but finds its segment back on its LEDs", matched.seg1 and matched.seg1.id, 1)
+
+  matched = Segment.match({
+    seg1 = { id = 8, start = 0, stop = 10, name = "Right" },
+    seg2 = { id = 9, start = 0, stop = 10, name = "Left" },
+  }, { { id = 0, start = 0, stop = 10, name = "Left" }, { id = 1, start = 0, stop = 10, name = "Right" } })
+  T.eq("segments on the same LEDs go by their names", {
+    matched.seg1 and matched.seg1.name,
+    matched.seg2 and matched.seg2.name,
+  }, { "Right", "Left" })
+end
+
 --------------------------------------------------------------------------------
 T.section("A connection per segment, named from WLED")
 --------------------------------------------------------------------------------
@@ -258,7 +299,6 @@ do
     payload.segment.lc,
   }, { 1, 60, 61, 7 })
   T.eq("the master power and level", payload.master, { on = true, bri = 128 })
-  T.eq("and the other segment's power", payload.others, { { id = 0, on = true } })
 
   mark()
   elsewhere(fake, { seg = { { id = 1, bri = 40 } } })
@@ -312,6 +352,7 @@ do
   fake.reachable = true
   W.run(20000)
   T.truthy("told its segment once the controller is back", lastPayload(strip))
+  T.truthy("and so is the one that did not ask, its segment unchanged", lastPayload(accent))
 end
 
 do
@@ -388,11 +429,56 @@ do
   T.eq("and drives nothing", #fake.commands, n)
 
   fake.si.state.seg[2] =
-    { id = 0, start = 0, stop = 70, n = "Shelf", on = true, bri = 255, lc = 7, col = { { 0, 0, 255 } } }
+    { id = 0, start = 60, stop = 70, n = "Shelf", on = true, bri = 255, lc = 7, col = { { 0, 0, 255 } } }
   mark()
   fake:pushNow()
   W.run(1500)
-  T.eq("it comes back when its segment does", lastPayload(accent) and lastPayload(accent).segment.id, 0)
+  T.eq("it comes back when its segment is back on its LEDs", lastPayload(accent) and lastPayload(accent).segment.id, 0)
+end
+
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  fake.si.state.seg[3] =
+    { id = 2, start = 61, stop = 70, n = "Third", on = true, bri = 255, lc = 1, col = { { 255, 0, 0 } } }
+  fake:pushNow()
+  W.run(1500)
+  local third, accent = linkNamed("Third").bindingId, linkNamed("Accent").bindingId
+  for _, b in pairs(links()) do
+    connectLight(b.bindingId)
+  end
+  -- WLED deletes Accent (id 1), and Third is renumbered to 1.
+  fake.si.state.seg = { fake.si.state.seg[1], fake.si.state.seg[3] }
+  fake.si.state.seg[2].id = 1
+  fake:pushNow()
+  W.run(1500)
+  fake.si.state.seg[2].stop = 80
+  mark()
+  fake:pushNow()
+  W.run(1500)
+  T.eq("a resized segment stays with its own light", lastPayload(third) and lastPayload(third).segment.n, "Third")
+  T.eq("not the light of a gone segment that had its id", lastPayload(accent), nil)
+  local gone = toldOn(accent, "UPDATE_DISCONNECT")
+  T.eq("which still shows Segment not found", gone[#gone] and gone[#gone].params.status, "Segment not found")
+end
+
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local accent = linkNamed("Accent").bindingId
+  connectLight(accent)
+  fake.si.state.seg = { fake.si.state.seg[1] }
+  fake:pushNow()
+  W.run(1500)
+  fake.si.state.seg[2] = { id = 1, start = 100, stop = 120, on = true, bri = 255, lc = 1, col = { { 255, 0, 0 } } }
+  mark()
+  fake:pushNow()
+  W.run(1500)
+  T.truthy("a new segment with a gone one's id gets its own connection", linkNamed("Segment 1"))
+  T.eq("and the gone one's light is not told it", lastPayload(accent), nil)
+
+  OBC[accent](accent, "WLED_SEGMENT", false)
+  T.eq("unbinding the gone segment's light removes its connection", ShimDynamicBindings()[accent], nil)
 end
 
 --------------------------------------------------------------------------------
@@ -502,6 +588,64 @@ do
     segOn[#segOn + 1] = seg.id .. "=" .. tostring(seg.on)
   end
   T.eq("a fade too long for one command lights the segments with its first leg", segOn, { "0=true", "1=true" })
+end
+
+--------------------------------------------------------------------------------
+T.section("Segment lights commanded at once, and what each report tells them")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local strip, accent = linkNamed("Strip").bindingId, linkNamed("Accent").bindingId
+  elsewhere(fake, { on = false })
+  W.run(1500)
+  -- A scene turns both segment lights on before the controller reports.
+  lightSends(strip, Segment.intent({ on = true, bri = 255, tt = 0 }, 0), 0)
+  lightSends(accent, Segment.intent({ on = true, bri = 255, tt = 0 }, 1), 1)
+  W.run(1500)
+  T.eq("both light", { fake.si.state.on, fake.si.state.seg[1].on, fake.si.state.seg[2].on }, { true, true, true })
+
+  lightSends(strip, Segment.intent({ on = false, tt = 0 }, 0), 0)
+  lightSends(accent, Segment.intent({ on = false, tt = 0 }, 1), 1)
+  W.run(1500)
+  T.eq("both off turns the controller off", fake.si.state.on, false)
+
+  elsewhere(fake, { on = false, seg = { on = false } })
+  W.run(1500)
+  local n = #fake.commands
+  lightSends(strip, Segment.intent({ on = true, bri = 200, tt = 0 }, 0), 0)
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(100)
+  local lit = {}
+  for i = n + 2, #fake.commands do
+    for _, seg in ipairs(fake.commands[i].seg or {}) do
+      if seg.on == true then
+        lit[#lit + 1] = seg.id
+      end
+    end
+  end
+  T.eq("the controller light's On after a segment light's sees that segment lit", lit, {})
+end
+
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local strip, accent = linkNamed("Strip").bindingId, linkNamed("Accent").bindingId
+  elsewhere(fake, { seg = { { id = 1, on = false } } })
+  W.run(1500)
+  local n = #fake.commands
+  lightSends(strip, Segment.intent({ on = false, tt = 20 }, 0), 0)
+  T.eq("off as the last lit segment, with a fade: the master alone", fake.commands[n + 1], { on = false, tt = 20 })
+  W.run(1500)
+  T.eq("the segment keeps its own power", fake.si.state.seg[1].on, true)
+
+  mark()
+  elsewhere(fake, { seg = { { id = 0, col = { { 9, 9, 9 } } } } })
+  W.run(1500)
+  T.eq("a report that changes another segment tells this light nothing", #toldOn(accent, "UPDATE_STATE"), 0)
+  T.eq("and tells the light whose segment changed", #toldOn(strip, "UPDATE_STATE"), 1)
+  ReceivedFromProxy(accent, "REFRESH_STATE", {})
+  T.eq("a light that asks is told all the same", #toldOn(accent, "UPDATE_STATE"), 1)
 end
 
 T.finish()

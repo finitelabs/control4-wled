@@ -177,8 +177,10 @@ segment only; this driver's light still controls the whole strip.
 - A segment light is on while its segment is on and the controller is on. This
   light is on while the controller is on and at least one segment is lit.
 - Turning a segment light on while the controller is off turns the controller on
-  with only that segment lit. Turning off the last lit segment turns the
-  controller off too.
+  with only that segment lit. With a fade, the segment and the controller fade
+  up together, so it starts a little slower than on a lit controller.
+- Turning off the last lit segment turns the controller off alone. The segment
+  stays set to come back when this light turns on.
 - Turning this light on when no segment is lit turns every segment on, as it
   lights the whole strip. With a segment lit, it turns on the controller only.
 - This light's colors, effects and presets still cover every segment.
@@ -188,8 +190,9 @@ with another layout is applied. Each connection follows its segment by its LEDs,
 so a segment light stays on the same part of the strip, and a renamed segment's
 connection is renamed with it. A new segment gets a new connection. When a
 segment is gone, its connection goes too, unless a segment light is still bound
-to it: then the light shows `Segment not found` and drives nothing until the
-segment is back.
+to it: then the light shows `Segment not found` and drives nothing until a
+segment is back on the same LEDs, and unbinding the light removes the
+connection.
 
 # <span style="color:#0094FF">Installer Setup</span>
 
@@ -404,6 +407,10 @@ gives the address to another device, the driver does not drive it and
 `Driver Status` names it. Run Reset Driver with `Yes` when the controller was
 replaced on purpose: the driver forgets the old one and takes the controller at
 the address.
+
+Reset Driver also removes every segment connection and the preset links, and
+makes them again for the controller that answers. Bind each **WLED Segment**
+light, and each keypad button on a preset link, again afterwards.
 
 <!-- #ifdef DRIVERCENTRAL -->
 

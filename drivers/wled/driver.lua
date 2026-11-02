@@ -122,6 +122,8 @@ local function send(json)
   client:send(json):next(nil, function(err)
     log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
   end)
+  -- The next command before the controller reports, from this light or a segment light, sees it.
+  Segment.note(json, device)
 end
 
 local wledLight = LightAdapter.new({
@@ -178,6 +180,10 @@ local gSegmentOf = {}
 --- Whether segment lights were told the controller is there since it last went away.
 local gSegmentsTold = false
 
+--- The payload last told each segment connection, so a report tells only the lights it changed.
+--- @type table<integer, table>
+local gSegmentSent = {}
+
 --- All WLED instances on this controller, sorted by device id. The lowest runs updates.
 --- @return integer[]
 local function getWledDriverIds()
@@ -219,6 +225,7 @@ local function setConnected(connected, status)
   end
   if not connected and gSegmentsTold then
     gSegmentsTold = false
+    gSegmentSent = {}
     for _, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
       SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", {}, "NOTIFY")
     end
@@ -593,22 +600,49 @@ local function updateCycle()
   updateLinkLeds()
 end
 
---- Tell one segment light what its segment shows, or that it is not there.
---- @param key string The segment's record key.
---- @param bindingId integer
-local function pushSegment(key, bindingId)
-  local seg = gSegmentOf[key]
-  if not gConnected then
-    SendToProxy(bindingId, "UPDATE_DISCONNECT", {}, "NOTIFY")
-  elseif not seg then
-    SendToProxy(bindingId, "UPDATE_DISCONNECT", { status = "Segment not found" }, "NOTIFY")
-  else
-    gSegmentsTold = true
-    SendToProxy(bindingId, "UPDATE_STATE", { segment = SerializeSafe(Segment.payload(device, seg.id)) }, "NOTIFY")
+--- Whether two payloads hold the same values.
+--- @param a any
+--- @param b any
+--- @return boolean
+local function samePayload(a, b)
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return a == b
   end
+  for k, v in pairs(a) do
+    if not samePayload(v, b[k]) then
+      return false
+    end
+  end
+  for k in pairs(b) do
+    if a[k] == nil then
+      return false
+    end
+  end
+  return true
 end
 
---- Tell every segment light what its segment shows.
+--- Tell one segment light what its segment shows, or that it is not there. A report tells it
+--- only a payload that differs from the last it was told; a bind or a request always tells it.
+--- @param key string The segment's record key.
+--- @param bindingId integer
+--- @param always boolean|nil
+local function pushSegment(key, bindingId, always)
+  local seg = gSegmentOf[key]
+  if not gConnected or not seg then
+    gSegmentSent[bindingId] = nil
+    SendToProxy(bindingId, "UPDATE_DISCONNECT", gConnected and { status = "Segment not found" } or {}, "NOTIFY")
+    return
+  end
+  local payload = Segment.payload(device, seg.id)
+  if not always and samePayload(payload, gSegmentSent[bindingId]) then
+    return
+  end
+  gSegmentsTold = true
+  gSegmentSent[bindingId] = payload
+  SendToProxy(bindingId, "UPDATE_STATE", { segment = SerializeSafe(payload) }, "NOTIFY")
+end
+
+--- Tell every segment light what its segment shows, where that changed.
 local function pushSegments()
   for key, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
     pushSegment(key, binding.bindingId)
@@ -623,21 +657,27 @@ local function registerSegmentLink(key, binding)
   RFP[binding.bindingId] = function(idBinding, strCommand, tParams)
     log:trace("RFP[%s](%s, %s)", idBinding, strCommand, tParams)
     if strCommand == "REFRESH_STATE" then
-      pushSegment(key, idBinding)
+      pushSegment(key, idBinding, true)
     elseif strCommand == "ENTITY_COMMAND" then
       local seg = gSegmentOf[key]
-      local json = DeserializeSafe(Select(tParams, "body"))
-      if not seg or tonumber(Select(tParams, "segment")) ~= seg.id or type(json) ~= "table" then
+      local intent = DeserializeSafe(Select(tParams, "body"))
+      if not seg or tonumber(Select(tParams, "segment")) ~= seg.id or type(intent) ~= "table" then
         log:warn("Segment light command not sent: its segment moved or is gone")
-        pushSegment(key, idBinding)
+        pushSegment(key, idBinding, true)
         return
       end
-      send(json)
+      send(Segment.forward(intent, device))
     end
   end
   OBC[binding.bindingId] = function(idBinding, _strClass, isBound)
     if isBound then
-      pushSegment(key, idBinding)
+      pushSegment(key, idBinding, true)
+    elseif not gSegmentOf[key] then
+      -- Its segment is gone and nothing uses it any more.
+      bindings:deleteBinding(SEGMENTS, key)
+      gSegmentRecords[key] = nil
+      gSegmentSent[idBinding] = nil
+      persist:set(SEGMENT_RECORDS_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
     end
   end
 end
@@ -659,7 +699,7 @@ local function updateSegments()
   local matched, unmatched = Segment.match(gSegmentRecords, device.segments)
   for _, seg in ipairs(unmatched) do
     local key = newSegmentKey()
-    gSegmentRecords[key] = { id = seg.id, start = seg.start, stop = seg.stop }
+    gSegmentRecords[key] = { id = seg.id, start = seg.start, stop = seg.stop, name = seg.name }
     matched[key] = seg
   end
   local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
@@ -671,7 +711,7 @@ local function updateSegments()
   for _, key in ipairs(keys) do
     local seg = matched[key]
     if seg then
-      gSegmentRecords[key] = { id = seg.id, start = seg.start, stop = seg.stop }
+      gSegmentRecords[key] = { id = seg.id, start = seg.start, stop = seg.stop, name = seg.name }
       local binding = bindings:getOrAddDynamicBinding(SEGMENTS, key, "PROXY", true, Segment.name(seg), Segment.CLASS)
       if binding then
         registerSegmentLink(key, binding)
@@ -679,6 +719,7 @@ local function updateSegments()
     else
       local binding = bindings:getDynamicBinding(SEGMENTS, key)
       if binding and Select(wired, binding.bindingId, "isbound") then
+        gSegmentRecords[key].live = false
         log:warn("Segment %s is gone from the controller; its segment light shows Segment not found", key)
       else
         if binding then
@@ -1306,7 +1347,7 @@ function EC.Reset_Driver(params)
   conditionals:reset()
   gCycle, gCycleLast, gCycleSentFrom, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, nil, {}, nil
   gPresetShowing = nil
-  gSegmentRecords, gSegmentOf, gSegmentsTold = {}, {}, false
+  gSegmentRecords, gSegmentOf, gSegmentsTold, gSegmentSent = {}, {}, false, {}
   persist:delete(SEGMENT_RECORDS_KEY)
   persist:delete(CYCLE_KEY)
   persist:delete(CYCLE_NAMES_KEY)

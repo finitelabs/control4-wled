@@ -73,12 +73,15 @@ local told = {}
 --- How many of the commands since the mark were applied to the controller.
 local applied = 0
 
+--- The commands the controller got since the mark, as the WLED driver sent them on.
+local forwarded = {}
+
 function C4:SendToProxy(binding, command, params)
   told[#told + 1] = { binding = binding, command = command, params = params or {} }
 end
 
 local function mark()
-  told, applied = {}, 0
+  told, applied, forwarded = {}, 0, {}
 end
 
 --- @param binding integer
@@ -94,7 +97,7 @@ local function toldOf(binding, command)
   return out
 end
 
---- The commands the light sent since the mark, as the JSON the controller gets.
+--- What the light sent since the mark: its commands' meaning for its segment.
 --- @return table[]
 local function commands()
   local out = {}
@@ -112,22 +115,31 @@ end
 local fake
 --- The segment this light stands for, by its WLED id.
 local segmentId = 0
+--- The WLED driver's model of the controller.
+local model
 
 --- Tell the light what the controller shows now, as the WLED driver does.
 local function report()
-  local device = Device.new()
-  device:update(fake.si.state, fake.si.info)
-  RFP.UPDATE_STATE(CONTROLLER, "UPDATE_STATE", { segment = SerializeSafe(Segment.payload(device, segmentId)) })
+  model:update(fake.si.state, fake.si.info)
+  RFP.UPDATE_STATE(CONTROLLER, "UPDATE_STATE", { segment = SerializeSafe(Segment.payload(model, segmentId)) })
 end
 
---- Apply the light's commands since the mark to the controller, tell it the result, and let
---- its fade run out.
-local function through()
+--- Send the light's commands not yet sent on to the controller, as the WLED driver does: each
+--- decided against its model, which takes it at once.
+local function forward()
   local all = commands()
   for i = applied + 1, #all do
-    fake:apply(all[i])
+    local json = Segment.forward(all[i], model)
+    Segment.note(json, model)
+    fake:apply(json)
+    forwarded[#forwarded + 1] = json
   end
   applied = #all
+end
+
+--- Send the light's commands on, tell it the result, and let its fade run out.
+local function through()
+  forward()
   report()
   W.run(3000)
 end
@@ -143,6 +155,7 @@ local function fresh(profile, id, setup)
     setup(fake)
   end
   segmentId = id
+  model = Device.new()
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end
@@ -221,14 +234,17 @@ do
   report()
   mark()
   proxy("OFF")
-  local cmd = commands()[1] or {}
-  T.eq("off as the last lit segment: the controller too", { cmd.on, cmd.seg and cmd.seg[1].on }, { false, false })
+  forward()
+  local cmd = forwarded[1] or {}
+  T.eq("off as the last lit segment: the controller off alone", { cmd.on, cmd.seg }, { false, nil })
   through()
   T.eq("the controller is off", fake.si.state.on, false)
+  T.eq("its segment keeps its own power, for the controller light's On", fake.si.state.seg[1].on, true)
 
   mark()
   proxy("ON")
-  cmd = commands()[#commands()] or {}
+  forward()
+  cmd = forwarded[#forwarded] or {}
   T.eq("on with the controller off: the controller on", cmd.on, true)
   local others = {}
   for _, s in ipairs(cmd.seg or {}) do
@@ -251,6 +267,24 @@ do
   mark()
   report()
   T.eq("its segment on but the controller off: it reads off", lastLevel(), 0)
+end
+
+do
+  fresh("esp32-rgbw-pwm-16", 0)
+  report()
+  fake:applyFields({ seg = { { id = 1, on = false } } })
+  report()
+  mark()
+  -- A hold down to off, let go within a second: no report comes between the two commands.
+  proxy("RAMP_TO_LEVEL", { LEVEL = "0", TIME = "3000" })
+  W.run(500)
+  proxy("SET_BRIGHTNESS_STOP")
+  through()
+  T.eq("a hold stopped on the way to off leaves it lit", {
+    fake.si.state.on,
+    fake.si.state.seg[1].on,
+    (fake.si.state.seg[1].bri or 0) > 0,
+  }, { true, true, true })
 end
 
 --------------------------------------------------------------------------------

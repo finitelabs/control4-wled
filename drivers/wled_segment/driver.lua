@@ -2,9 +2,10 @@
 --
 -- One segment of a WLED controller as its own Control4 light. It binds to the WLED driver, which
 -- keeps the one connection to the controller: what the controller reports for this segment arrives
--- over that binding, and this light's commands go back over it as WLED JSON for its segment
--- (src/wled/segment.lua). The light is the light_v2 proxy on binding 5001, run by the light model
--- (src/wled/light.lua) through the WLED adapter (src/wled/light_wled.lua).
+-- over that binding, and this light's commands go back over it as what they mean for its segment;
+-- the WLED driver decides what the controller's master does (src/wled/segment.lua). The light is
+-- the light_v2 proxy on binding 5001, run by the light model (src/wled/light.lua) through the
+-- WLED adapter (src/wled/light_wled.lua).
 
 --#ifdef DRIVERCENTRAL
 DC_PID = 0 -- TODO: Assign DriverCentral product ID
@@ -63,7 +64,7 @@ local wledLight = LightAdapter.new({
       return
     end
     SendToProxy(CONTROLLER_BINDING, "ENTITY_COMMAND", {
-      body = SerializeSafe(Segment.command(json, gPayload)),
+      body = SerializeSafe(Segment.intent(json, gPayload.segment.id)),
       segment = gPayload.segment.id,
     })
   end,

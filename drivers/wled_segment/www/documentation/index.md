@@ -80,9 +80,14 @@ driver, which keeps the one connection to the controller.
   segment, as in WLED's own app.
 - A segment light is on while its segment is on and the controller is on.
 - Turning a segment light on while the controller is off turns the controller on
-  with only that segment lit; the other segments stay dark.
-- Turning off the last lit segment turns the controller off too, so the
-  controller light reads off.
+  with only that segment lit; the other segments stay dark. With a fade, the
+  segment and the controller fade up together, so it starts a little slower than
+  on a lit controller.
+- Turning off the last lit segment turns the controller off alone, so the
+  controller light reads off. The segment stays set to come back when the
+  controller light turns on.
+- Segment lights in one scene, or in a room turned on or off at once, act
+  together: each sees what the others just did.
 - A color or a scene step on a segment light changes its segment only, and ends
   a WLED effect running on it.
 - The controller light's commands still cover every segment. Turning the
@@ -151,8 +156,8 @@ Displays the state of the segment:
 - `Not connected to the WLED controller`: the **WLED** driver cannot reach the
   controller.
 - `Segment not found`: the controller no longer has the segment. The light
-  drives nothing until the segment is back, for example after a preset that
-  removed it is replaced by one that has it.
+  drives nothing until a segment is back on the same LEDs, for example after a
+  preset that removed it is replaced by one that has it.
 - `Bind this light to a WLED driver's segment connection`: the **WLED
   Controller** connection is not bound.
 
