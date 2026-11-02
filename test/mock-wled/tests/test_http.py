@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 
 async def test_endpoints(mock):
@@ -66,6 +67,24 @@ async def test_short_busy_waits_and_answers(mock):
     inst.device.busy_until = inst.device.now() + 100
     r = await client.get("/json/state")
     assert r.status == 200
+
+
+async def test_015_esp8266_http_refuses_at_once(mock):
+    inst, client = await mock("esp8266-ws2812b-015")
+    inst.device.make_busy(100)
+    started = time.monotonic()
+    r = await client.get("/json/state")
+    assert r.status == 503 and await r.json() == {"error": 3}
+    assert time.monotonic() - started < 0.1
+
+
+async def test_015_esp32_waits_250_ms_before_refusing(mock):
+    inst, client = await mock("esp32-rgbw-015")
+    inst.device.make_busy(800)
+    started = time.monotonic()
+    r = await client.get("/json/state")
+    assert r.status == 503 and await r.json() == {"error": 3}
+    assert time.monotonic() - started >= 0.24
 
 
 async def test_015_fxdata_uses_the_buffer_but_16_streams_it(mock):

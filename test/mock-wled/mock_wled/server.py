@@ -137,18 +137,21 @@ class Instance:
     # ---- the shared JSON buffer --------------------------------------------------------------
 
     async def lock_buffer(self, wait=True):
-        """requestJSONBufferLock: waits up to 250 ms for the buffer, then gives up."""
+        """requestJSONBufferLock: waits up to 250 ms for the buffer, then gives up.
+
+        An ESP8266 in system context (web server and WebSocket handlers) cannot wait at all.
+        """
         busy = self.device.busy_for()
         if not busy:
             return True
-        if wait and busy <= JSON_LOCK_WAIT:
-            await asyncio.sleep(busy / 1000)
-            return True
-        return False
+        if not wait:
+            return False
+        await asyncio.sleep(min(busy, JSON_LOCK_WAIT) / 1000)
+        return busy <= JSON_LOCK_WAIT
 
     async def lock_or_defer(self):
         """16.0.1 defers the request until the buffer is free; 0.15.4 answers 503."""
-        if await self.lock_buffer():
+        if await self.lock_buffer(wait=self.device.chip_name != "esp8266"):
             return None
         if not self.device.v16:
             return self.json_error(503, ERR_NOBUF)
