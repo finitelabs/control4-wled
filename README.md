@@ -1,5 +1,7 @@
 <!-- Copyright 2026 Finite Labs, LLC. All rights reserved. -->
 
+<img alt="WLED" src="./images/header.png" width="500"/>
+
 ______________________________________________________________________
 
 # <span style="color:#109EFF">Overview</span>

@@ -1,0 +1,19 @@
+The WLED driver's icons and documentation header use the WLED logo artwork, cropped but
+otherwise unmodified, from the WLED project.
+
+-------------------------------------------------------------------------------
+
+WLED
+https://github.com/wled/WLED (images/wled_logo_akemi.png at v16.0.1)
+
+Copyright Christian Schwinne and the WLED contributors. Licensed under the European
+Union Public Licence v. 1.2 (EUPL-1.2), https://github.com/wled/WLED/blob/main/LICENSE.
+
+The WLED name and logo belong to the WLED project, and the licence grants no trademark
+rights. They are used here only to name the devices the driver controls; this driver is
+not affiliated with or endorsed by the WLED project.
+
+-------------------------------------------------------------------------------
+
+The mock WLED controllers under test/mock-wled are derived from WLED's source; see
+test/mock-wled/NOTICE.
