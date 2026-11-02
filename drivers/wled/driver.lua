@@ -35,8 +35,10 @@ local diagnostics = require("lib.diagnostics")
 local githubUpdater = require("lib.github-updater")
 --#endif
 
+local constants = require("constants")
 local Client = require("wled.client")
 local Device = require("wled.device")
+local Discovery = require("wled.discovery")
 local Extras = require("wled.extras")
 local Cycle = require("wled.cycle")
 local Segment = require("wled.segment")
@@ -780,6 +782,138 @@ local function sendToSegments(fields)
   send({ seg = #segs > 0 and segs or fields })
 end
 
+-- ─── Finding the controller ───────────────────────────────────────────────
+
+--- @return string
+local function ipAddress()
+  return ((Properties["IP Address"] or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+--- Connect to the controller the properties name, or say what is missing.
+local function connect()
+  local ip = ipAddress()
+  lists:cancel()
+  gListsReading = nil
+  wantAllLists()
+  client:stop()
+  gWrongMac = nil
+  if ip == "" then
+    setConnected(false, "Set the IP Address to the WLED controller's address")
+    return
+  end
+  setStatus("Connecting")
+  client:start(ip, tointeger(Properties["Port"]) or 80)
+end
+
+local FOUND_CONTROLLERS = "Found Controllers"
+
+--- The idle item of Found Controllers, so the same controller can be picked again.
+local SELECT_OPTION = "(Select)"
+
+--- While our controller cannot be reached, how often to look for it at another address.
+local FOLLOW_MS = 30 * ONE_SECOND
+local FOLLOW_TIMER = "WledFollow"
+
+--- The controllers the last search found, by the item Found Controllers shows for each.
+--- @type table<string, MdnsService>
+local gFound = {}
+
+--- Whether IP Address and Port may follow our controller to a new address. Not after the
+--- installer names an address, until our controller answers there.
+local gFollow = false
+
+--- Whether our controller was lost: it stopped answering, or another answers at its address.
+--- Until then, even while a first connection is under way, there is nothing to follow.
+local gLost = false
+
+--- Whether the follow timer runs.
+local gFollowing = false
+
+--- @param controller MdnsService
+--- @return string
+local function foundItem(controller)
+  local address = controller.ip
+  if controller.port ~= 80 then
+    address = address .. ":" .. controller.port
+  end
+  -- Composer splits the list at commas.
+  return (string.format("%s (%s)", controller.name, address):gsub(",", " "))
+end
+
+--- Show what a search found in Found Controllers, hidden while it found nothing.
+--- @param found MdnsService[]
+local function showFound(found)
+  gFound = {}
+  local items = { SELECT_OPTION }
+  for _, controller in ipairs(found) do
+    local item = foundItem(controller)
+    if not gFound[item] then
+      gFound[item] = controller
+      items[#items + 1] = item
+    end
+  end
+  UpdatePropertyList(FOUND_CONTROLLERS, table.concat(items, ","))
+  UpdateProperty(FOUND_CONTROLLERS, SELECT_OPTION)
+  C4:SetPropertyAttribs(FOUND_CONTROLLERS, #items > 1 and constants.SHOW_PROPERTY or constants.HIDE_PROPERTY)
+end
+
+--- Point IP Address and Port at where our controller answered, once it was lost where it
+--- was. A host name in IP Address is the installer's, and is kept.
+--- @param found MdnsService[]
+local function follow(found)
+  local mac = persist:get(MAC_KEY)
+  local ip, port = ipAddress(), tostring(Properties["Port"])
+  if not gFollow or not gLost or IsEmpty(mac) or not ip:match("^%d+%.%d+%.%d+%.%d+$") then
+    return
+  end
+  local moved
+  for _, controller in ipairs(found) do
+    if controller.mac == mac then
+      -- One announced at the address in use, among others, stays there.
+      if controller.ip == ip and tostring(controller.port) == port then
+        return
+      end
+      moved = moved or controller
+    end
+  end
+  if moved then
+    log:info("The WLED controller answers at %s port %d now; following it", moved.ip, moved.port)
+    UpdateProperty("IP Address", moved.ip)
+    UpdateProperty("Port", tostring(moved.port))
+    connect()
+  end
+end
+
+--- Look for WLED controllers, show them in Found Controllers, and follow ours.
+--- @return Deferred
+local function search()
+  return Discovery.search():next(function(found)
+    showFound(found)
+    follow(found)
+    return found
+  end, function(err)
+    log:warn("Could not look for WLED controllers: %s", tostring(err))
+    return {}
+  end)
+end
+
+local function stopFollowing()
+  gFollowing = false
+  CancelTimer(FOLLOW_TIMER)
+end
+
+--- Look for our controller now and every FOLLOW_MS while it cannot be reached.
+local function startFollowing()
+  if gFollowing or not gFollow or IsEmpty(persist:get(MAC_KEY)) then
+    return
+  end
+  gFollowing = true
+  search()
+  SetTimer(FOLLOW_TIMER, FOLLOW_MS, function()
+    search()
+  end, true)
+end
+
 --- @param state table|nil
 --- @param info table|nil
 local function onState(state, info)
@@ -794,10 +928,15 @@ local function onState(state, info)
           device:macDisplay() or "unknown"
         )
       )
+      -- Ours may have moved, and this one taken its address.
+      gLost = true
+      startFollowing()
       return
     end
     gWrongMac = nil
   end
+  gFollow, gLost = true, false
+  stopFollowing()
   if changes.identity or changes.mac or changes.leds or changes.segments then
     updateDeviceInfo()
   end
@@ -842,26 +981,11 @@ local function onOffline(reason)
     return
   end
   setConnected(false, "Not connected: " .. reason)
+  gLost = true
+  startFollowing()
 end
 
 client = Client.new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
-
---- Connect to the controller the properties name, or say what is missing.
-local function connect()
-  local ip = Properties["IP Address"] or ""
-  ip = ip:gsub("^%s+", ""):gsub("%s+$", "")
-  lists:cancel()
-  gListsReading = nil
-  wantAllLists()
-  client:stop()
-  gWrongMac = nil
-  if ip == "" then
-    setConnected(false, "Set the IP Address to the WLED controller's address")
-    return
-  end
-  setStatus("Connecting")
-  client:start(ip, tointeger(Properties["Port"]) or 80)
-end
 
 -- ─── Updates ───────────────────────────────────────────────────────────────
 
@@ -956,7 +1080,11 @@ function OnDriverLateInit()
   end
   gInitialized = true
   light.lateInit()
+  -- The address saved with the project was our controller's, so it may follow it.
+  gFollow = true
   connect()
+  showFound({})
+  search()
 end
 
 --#ifdef DRIVERCENTRAL
@@ -966,6 +1094,7 @@ OnDriverLateInit = diagnostics:wrapLateInit(OnDriverLateInit)
 function OnDriverDestroyed()
   log:trace("OnDriverDestroyed()")
   client:stop()
+  Discovery.stop()
   -- Ramps, scene steps, echo waits and fade legs are all named timers.
   KillAllTimers()
 end
@@ -999,16 +1128,37 @@ function OPC.Log_Mode(propertyValue)
   end)
 end
 
-function OPC.IP_Address(_v)
+--- An address the installer names is kept, until our controller answers there.
+local function addressChanged()
   if gInitialized then
+    gFollow = false
+    stopFollowing()
     connect()
   end
 end
 
+function OPC.IP_Address(_v)
+  addressChanged()
+end
+
 function OPC.Port(_v)
-  if gInitialized then
-    connect()
+  addressChanged()
+end
+
+--- Picking a found controller sets IP Address and Port to its address.
+function OPC.Found_Controllers(propertyValue)
+  if not gInitialized or IsEmpty(propertyValue) or propertyValue == SELECT_OPTION then
+    return
   end
+  local controller = gFound[propertyValue]
+  UpdateProperty(FOUND_CONTROLLERS, SELECT_OPTION)
+  if not controller then
+    return
+  end
+  log:info("Using the WLED controller %s", propertyValue)
+  UpdateProperty("IP Address", controller.ip)
+  UpdateProperty("Port", tostring(controller.port))
+  addressChanged()
 end
 
 --- A new white point moves the light's color temperature range.
@@ -1328,6 +1478,13 @@ local RESET_PROPERTY_VALUES = {
   ["Cycle Presets"] = "",
 }
 
+--- Look for WLED controllers and list them in Found Controllers.
+function EC.Find_Controllers()
+  search():next(function(found)
+    log:print("Found %d WLED controller(s)", #found)
+  end)
+end
+
 --- Return the driver to its first load and connect again, taking whichever controller answers.
 function EC.Reset_Driver(params)
   log:trace("EC.Reset_Driver(%s)", params)
@@ -1336,6 +1493,7 @@ function EC.Reset_Driver(params)
   end
   log:print("Resetting driver to initial state")
   persist:delete(MAC_KEY)
+  stopFollowing()
   -- Tell the proxy and programming before the light's state is cleared.
   setConnected(false, "Connecting")
   values:reset()

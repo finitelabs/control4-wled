@@ -50,6 +50,9 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added the WLED Segment driver: a Control4 light for one segment of a WLED
   controller, bound to the WLED driver's connection for that segment, which
   follows the segment when WLED renumbers or resizes it
+- Added finding WLED controllers on the network: a `Found Controllers` list to
+  pick a controller from, a `Find Controllers` action, and IP Address and Port
+  following the driver's controller by its MAC address when its address changes
 - Changed the WLED light to read on only while a segment is lit, and to turn
   every segment on when it turns on with none lit
   <!-- #ifdef DRIVERCENTRAL -->
