@@ -28,6 +28,9 @@ jobs:
       - name: Check the effect and palette data against WLED's source
         run: make check-mock-wled-data
 
+      - name: Check the Lua suites' WLED fixtures against the mock
+        run: make check-wled-fixtures
+
       - name: Check formatting
         run: make check-mock-wled-fmt
 
