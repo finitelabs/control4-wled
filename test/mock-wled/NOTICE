@@ -1,0 +1,5 @@
+The mock's controller model (mock_wled/device.py) and its generated data (data/) are derived
+from WLED, https://github.com/wled/WLED, by Christian Schwinne and the WLED contributors,
+licensed under the European Union Public Licence v. 1.2 (EUPL-1.2). The EUPL-1.2 appendix lists
+the GNU Affero General Public License v. 3 as a compatible licence; this repository is
+AGPL-3.0.

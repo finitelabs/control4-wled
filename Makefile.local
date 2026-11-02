@@ -1,0 +1,43 @@
+# Kept out of Makefile so `copier update` cannot clobber these.
+
+# ─── Mock WLED controllers (test/mock-wled) ───────────────────────────────────
+
+MOCK_DIR    := test/mock-wled
+MOCK_VENV   := $(MOCK_DIR)/.venv
+MOCK_PY     := $(MOCK_VENV)/bin/python3
+MOCK_STAMP  := $(MOCK_VENV)/.requirements-installed
+MOCK_CONFIG ?= instances/all.json
+MOCK_ARGS   ?=
+
+$(MOCK_STAMP): $(MOCK_DIR)/requirements.txt
+	@test -x $(MOCK_PY) || python3 -m venv $(MOCK_VENV)
+	$(MOCK_PY) -m pip install --quiet pip-tools
+	cd $(MOCK_DIR) && .venv/bin/pip-sync requirements.txt
+	@touch $@
+
+.PHONY: mock-wled-deps mock-wled test-mock-wled gen-mock-wled-data check-mock-wled-data \
+	fmt-mock-wled check-mock-wled-fmt
+
+mock-wled-deps: ## Recompile the mock's requirements.txt (UPGRADE=1 to upgrade)
+	@test -x $(MOCK_PY) || python3 -m venv $(MOCK_VENV)
+	$(MOCK_PY) -m pip install --quiet pip-tools
+	cd $(MOCK_DIR) && .venv/bin/pip-compile --quiet --no-strip-extras \
+		$(if $(UPGRADE),--upgrade,) requirements.in
+
+mock-wled: $(MOCK_STAMP) ## Run mock WLED controllers (MOCK_CONFIG=, MOCK_ARGS=)
+	cd $(MOCK_DIR) && .venv/bin/python3 -m mock_wled --config $(MOCK_CONFIG) $(MOCK_ARGS)
+
+test-mock-wled: $(MOCK_STAMP) ## Run the mock's own tests
+	cd $(MOCK_DIR) && .venv/bin/python3 -m pytest -q
+
+gen-mock-wled-data: ## Regenerate the mock's effect and palette data from WLED's source
+	python3 $(MOCK_DIR)/gen_data.py
+
+check-mock-wled-data: ## Assert the mock's data matches WLED's source
+	python3 $(MOCK_DIR)/gen_data.py --check
+
+fmt-mock-wled: $(MOCK_STAMP) ## Format the mock's Python
+	$(MOCK_VENV)/bin/black $(MOCK_DIR)/mock_wled $(MOCK_DIR)/tests $(MOCK_DIR)/gen_data.py
+
+check-mock-wled-fmt: $(MOCK_STAMP) ## Assert the mock's Python is formatted
+	$(MOCK_VENV)/bin/black --check $(MOCK_DIR)/mock_wled $(MOCK_DIR)/tests $(MOCK_DIR)/gen_data.py

@@ -1,0 +1,14 @@
+{
+  "name": "Mock Bar RGBW Accurate",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d406",
+  "buses": [
+    {
+      "type": 30,
+      "start": 0,
+      "len": 30,
+      "rgbwm": 2
+    }
+  ]
+}

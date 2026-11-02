@@ -1,0 +1,14 @@
+{
+  "name": "Mock Hallway Strip No Fade",
+  "firmware": "0.15.4",
+  "chip": "esp8266",
+  "mac": "02a1b2c3d40a",
+  "crossfade": false,
+  "buses": [
+    {
+      "type": 22,
+      "start": 0,
+      "len": 60
+    }
+  ]
+}

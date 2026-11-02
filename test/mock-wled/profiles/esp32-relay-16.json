@@ -1,0 +1,13 @@
+{
+  "name": "Mock Relay Light",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d405",
+  "buses": [
+    {
+      "type": 40,
+      "start": 0,
+      "len": 1
+    }
+  ]
+}

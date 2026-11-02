@@ -1,0 +1,14 @@
+{
+  "name": "Mock Porch RGBW",
+  "firmware": "0.15.4",
+  "chip": "esp32",
+  "mac": "02a1b2c3d408",
+  "buses": [
+    {
+      "type": 30,
+      "start": 0,
+      "len": 30,
+      "rgbwm": 3
+    }
+  ]
+}

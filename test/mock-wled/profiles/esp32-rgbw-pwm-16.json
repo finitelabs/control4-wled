@@ -1,0 +1,127 @@
+{
+  "name": "Mock Shelf Controller",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d402",
+  "buses": [
+    {
+      "type": 30,
+      "start": 0,
+      "len": 60,
+      "rgbwm": 3
+    },
+    {
+      "type": 45,
+      "start": 60,
+      "len": 1,
+      "rgbwm": 3
+    }
+  ],
+  "segments": [
+    {
+      "start": 0,
+      "stop": 60,
+      "n": "Strip"
+    },
+    {
+      "start": 60,
+      "stop": 61,
+      "n": "Accent"
+    }
+  ],
+  "auto_segments": true,
+  "presets": {
+    "1": {
+      "n": "Mock Warm Glow",
+      "ql": "W",
+      "on": true,
+      "bri": 160,
+      "transition": 7,
+      "mainseg": 0,
+      "seg": [
+        {
+          "id": 0,
+          "fx": 0,
+          "col": [
+            [
+              255,
+              160,
+              60,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        },
+        {
+          "id": 1,
+          "fx": 0,
+          "col": [
+            [
+              255,
+              160,
+              60,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    "2": {
+      "n": "Mock Rainbow",
+      "on": true,
+      "bri": 200,
+      "seg": [
+        {
+          "id": 0,
+          "fx": 9,
+          "sx": 128,
+          "ix": 128,
+          "pal": 0
+        }
+      ]
+    },
+    "3": {
+      "n": "Mock Cycle",
+      "on": true,
+      "playlist": {
+        "ps": [
+          1,
+          2
+        ],
+        "dur": [
+          30,
+          30
+        ],
+        "transition": [
+          7,
+          7
+        ],
+        "repeat": 0,
+        "end": 0
+      }
+    }
+  }
+}

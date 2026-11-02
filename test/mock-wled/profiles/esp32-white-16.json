@@ -1,0 +1,14 @@
+{
+  "name": "Mock Cove White",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d404",
+  "buses": [
+    {
+      "type": 41,
+      "start": 0,
+      "len": 1,
+      "rgbwm": 0
+    }
+  ]
+}

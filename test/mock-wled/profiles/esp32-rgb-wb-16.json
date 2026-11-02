@@ -1,0 +1,16 @@
+{
+  "name": "Mock Desk RGB Balanced",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d407",
+  "buses": [
+    {
+      "type": 22,
+      "start": 0,
+      "len": 30
+    }
+  ],
+  "white": {
+    "correct_wb": true
+  }
+}
