@@ -1,0 +1,117 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+# Main and tags group by run_id: a shared group would cancel their pending runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # The updater compares a .c4z's version with its release tag, so a tag build
+      # stamps the tag's date (make's DRIVER_VERSION), not the runner's UTC date.
+      - name: Driver version from tag
+        if: github.ref_type == 'tag'
+        run: python3 tools/package.py tag-version "$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+
+      - name: Setup Lua
+        uses: leafo/gh-actions-lua@v12
+        with:
+          luaVersion: 'luajit-2.1'
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Setup Node
+        if: hashFiles('.node-version') != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+
+      # Pinned: a new StyLua release can reformat committed Lua with no change in the repo.
+      - name: Setup stylua
+        run: |
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/stylua.zip" \
+            "https://github.com/JohnnyMorganz/StyLua/releases/download/v2.6.0/stylua-linux-$(uname -m).zip"
+          unzip -q "$RUNNER_TEMP/stylua.zip" -d "$RUNNER_TEMP/stylua"
+          echo "$RUNNER_TEMP/stylua" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/stylua/stylua" --version
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxml2-dev \
+            libxslt-dev \
+            libssl-dev \
+            swig \
+            libpango-1.0-0 \
+            libpangocairo-1.0-0 \
+            libcairo2 \
+            libgdk-pixbuf-2.0-0 \
+            fonts-dejavu-core \
+            fonts-liberation \
+            fonts-noto-core \
+            fonts-symbola
+
+      - name: Initialize project
+        run: make init
+
+      - name: Check formatting
+        run: make check
+
+      - name: Test
+        run: make test
+
+      - name: Write .env from the secrets .env.default names
+        run: python3 tools/preprocess.py --write-dotenv
+        env:
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+
+      - name: Build
+        run: make build
+        env:
+          REQUIRE_SECRETS: ${{ github.ref_type == 'tag' && '1' || '' }}
+
+      - name: Verify the build
+        run: make verify
+
+
+      # Tag builds are released and uploaded to Driver Central, so 14 days; main builds are for a quick look, 3; PR builds are for side-loading, 1.
+      - name: Upload drivercentral artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: drivercentral
+          path: dist/drivercentral/*
+          if-no-files-found: error
+          retention-days: ${{ github.ref_type == 'tag' && 14 || github.event_name == 'pull_request' && 1 || 3 }}
+
+
+      # Tag builds are released and uploaded to Driver Central, so 14 days; main builds are for a quick look, 3; PR builds are for side-loading, 1.
+      - name: Upload oss artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: oss
+          path: dist/oss/*
+          if-no-files-found: error
+          retention-days: ${{ github.ref_type == 'tag' && 14 || github.event_name == 'pull_request' && 1 || 3 }}
+

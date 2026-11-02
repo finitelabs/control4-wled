@@ -1,0 +1,15 @@
+/dist
+/build
+/.venv
+/.lua
+**/http-client.private.env.json
+
+# Build secrets; .env.default (committed) lists the names, tools/preprocess.py reads them
+/.env
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local planning and working notes, never committed
+plans/
