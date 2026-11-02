@@ -5,6 +5,8 @@ PROJECT_NAME  := control4-wled
 DISTRIBUTIONS := drivercentral oss
 README_DRIVER := wled
 README_BUILD  := oss
+# A new repo has no driver until its first lands, and builds and verifies nothing.
+DRIVERS       := $(wildcard drivers/*/driver.xml)
 
 # Paths
 VENV       := .venv
@@ -255,7 +257,12 @@ zip: $(VENV_STAMP) ## Zip the c4z/ and docs/ subfolders per distribution
 VERIFY_VERSION := $(if $(filter environment command,$(origin DRIVER_VERSION)),verify-version)
 
 .PHONY: verify verify-pdfs verify-version verify-clean
+ifeq ($(DRIVERS),)
+verify:
+	@echo "No drivers/*/driver.xml yet: nothing to verify."
+else
 verify: verify-pdfs $(VERIFY_VERSION) verify-clean ## Check what the build made, as CI does
+endif
 
 verify-pdfs: $(VENV_STAMP)
 	@for build in $(DISTRIBUTIONS); do \
@@ -316,9 +323,14 @@ icons: ## Export the icons and doc images from resources/Driver Icons.sketch (ne
 # ─── Build ────────────────────────────────────────────────────────────────────
 
 .PHONY: build build-nodocs
+ifeq ($(DRIVERS),)
+build build-nodocs:
+	@echo "No drivers/*/driver.xml yet: nothing to build."
+else
 build: check-deps clean-build fmt preprocess gen-squishy update-xml docs package zip ## Full build
 
 build-nodocs: check-deps clean-build fmt preprocess gen-squishy update-xml package ## Build without docs
+endif
 
 # ─── Clean ────────────────────────────────────────────────────────────────────
 
