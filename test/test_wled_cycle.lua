@@ -316,6 +316,21 @@ do
   T.eq("and not told again by a report that leaves it", #leds, 0)
 end
 
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  ExecuteCommand("Next Preset", {})
+  W.run(1500)
+  ExecuteCommand("Next Preset", {})
+  W.run(1500)
+  T.eq("the controller reports the second step", fake.si.state.ps, 2)
+  fake:applyPreset(1)
+  fake:pushNow()
+  W.run(1500)
+  ExecuteCommand("Next Preset", {})
+  T.eq("after a preset picked elsewhere, Next steps from that one", lastPreset(fake), 2)
+end
+
 --------------------------------------------------------------------------------
 T.section("Cycle Presets picks which presets cycle and their order")
 --------------------------------------------------------------------------------
