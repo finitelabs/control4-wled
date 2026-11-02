@@ -6,7 +6,7 @@
 -- (src/wled/light_wled.lua).
 
 --#ifdef DRIVERCENTRAL
-DC_PID = 0
+DC_PID = 0 -- TODO: Assign DriverCentral product ID
 DC_X = nil
 DC_FILENAME = "wled.c4z"
 --#else
