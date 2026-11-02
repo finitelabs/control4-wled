@@ -27,6 +27,26 @@
       <name>Disconnected</name>
       <description>When NAME loses its WLED controller</description>
     </event>
+    <event>
+      <id>3</id>
+      <name>Effect Changed</name>
+      <description>When NAME's WLED effect changes</description>
+    </event>
+    <event>
+      <id>4</id>
+      <name>Preset Changed</name>
+      <description>When NAME applies a different WLED preset</description>
+    </event>
+    <event>
+      <id>5</id>
+      <name>Playlist Started</name>
+      <description>When NAME starts a WLED playlist</description>
+    </event>
+    <event>
+      <id>6</id>
+      <name>Playlist Ended</name>
+      <description>When NAME's WLED playlist stops or ends</description>
+    </event>
   </events>
   <conditionals>
     <conditional>
@@ -37,6 +57,15 @@
       <description>NAME is STRING</description>
       <true_text>Connected</true_text>
       <false_text>Disconnected</false_text>
+    </conditional>
+    <conditional>
+      <id>2</id>
+      <name>PLAYLIST_RUNNING</name>
+      <type>BOOL</type>
+      <condition_statement>WLED playlist status</condition_statement>
+      <description>NAME playlist is STRING</description>
+      <true_text>Running</true_text>
+      <false_text>Not Running</false_text>
     </conditional>
   </conditionals>
   <config>
@@ -254,7 +283,76 @@
       </action>
       <!-- #endif -->
     </actions>
-    <commands/>
+    <commands>
+      <command>
+        <name>Set Effect</name>
+        <description>Set NAME effect to PARAM1</description>
+        <params>
+          <param>
+            <name>Effect</name>
+            <type>DYNAMIC_LIST</type>
+          </param>
+        </params>
+      </command>
+      <command>
+        <name>Set Effect Speed</name>
+        <description>Set NAME effect speed to PARAM1</description>
+        <params>
+          <param>
+            <name>Speed</name>
+            <type>RANGED_INTEGER</type>
+            <minimum>0</minimum>
+            <maximum>255</maximum>
+          </param>
+        </params>
+      </command>
+      <command>
+        <name>Set Effect Intensity</name>
+        <description>Set NAME effect intensity to PARAM1</description>
+        <params>
+          <param>
+            <name>Intensity</name>
+            <type>RANGED_INTEGER</type>
+            <minimum>0</minimum>
+            <maximum>255</maximum>
+          </param>
+        </params>
+      </command>
+      <command>
+        <name>Set Palette</name>
+        <description>Set NAME palette to PARAM1</description>
+        <params>
+          <param>
+            <name>Palette</name>
+            <type>DYNAMIC_LIST</type>
+          </param>
+        </params>
+      </command>
+      <command>
+        <name>Apply Preset</name>
+        <description>Apply preset PARAM1 on NAME</description>
+        <params>
+          <param>
+            <name>Preset</name>
+            <type>DYNAMIC_LIST</type>
+          </param>
+        </params>
+      </command>
+      <command>
+        <name>Start Playlist</name>
+        <description>Start playlist PARAM1 on NAME</description>
+        <params>
+          <param>
+            <name>Playlist</name>
+            <type>DYNAMIC_LIST</type>
+          </param>
+        </params>
+      </command>
+      <command>
+        <name>Stop Playlist</name>
+        <description>Stop the playlist on NAME</description>
+      </command>
+    </commands>
   </config>
   <!--
     A dynamic capability overrides these in both directions, so a later layer that reads the

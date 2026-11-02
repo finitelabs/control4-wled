@@ -227,6 +227,7 @@ function Fake.new(profile, opts)
   self.busy = 0
   self.wsBusy = 0
   self.commands = {}
+  self.wire = {}
   self.requests = {}
   self.pings = 0
   self.connects = 0
@@ -250,10 +251,21 @@ function Fake:isV16()
   return tostring(self.si.info.ver):match("^1%d%.") ~= nil
 end
 
---- Apply a command the way the controller would for the parts these suites use.
+--- The presets file as the fake serves it.
+--- @return table
+function Fake:presetsFile()
+  local file = self.files["/presets.json"]
+  if type(file) == "function" then
+    file = file()
+  end
+  return type(file) == "table" and file or {}
+end
+
+--- Apply state fields to the fake's state. A segment field other than power and brightness
+--- leaves the current preset, and an effect sent outside a preset unloads a playlist.
 --- @param cmd table
-function Fake:apply(cmd)
-  self.commands[#self.commands + 1] = cmd
+--- @param fromPreset boolean|nil
+function Fake:applyFields(cmd, fromPreset)
   local state = self.si.state
   if cmd.on ~= nil then
     if cmd.on == "t" then
@@ -268,6 +280,7 @@ function Fake:apply(cmd)
       state.on = true
     end
   end
+  local changed, fxChanged = false, false
   -- An array names segments by id; an object applies to every segment.
   if type(cmd.seg) == "table" then
     local list = cmd.seg[1] and cmd.seg or { cmd.seg }
@@ -277,16 +290,63 @@ function Fake:apply(cmd)
           if type(s.col) == "table" and type(s.col[1]) == "table" then
             seg.col = seg.col or {}
             seg.col[1] = copy(s.col[1])
+            changed = true
           end
-          if s.cct ~= nil then
-            seg.cct = s.cct
-          end
-          if s.fx ~= nil then
-            seg.fx = s.fx
+          for _, key in ipairs({ "cct", "fx", "sx", "ix", "pal" }) do
+            if s[key] ~= nil then
+              fxChanged = fxChanged or (key == "fx" and seg.fx ~= s.fx)
+              seg[key] = s[key]
+              changed = true
+            end
           end
         end
       end
     end
+  end
+  if not fromPreset then
+    if changed then
+      state.ps = -1
+    end
+    if fxChanged then
+      state.pl = -1
+    end
+  end
+end
+
+--- Apply a preset, or start a playlist and apply its first preset.
+--- @param id integer
+--- @param fromPlaylist boolean|nil
+function Fake:applyPreset(id, fromPlaylist)
+  local entry = self:presetsFile()[tostring(id)]
+  if type(entry) ~= "table" or next(entry) == nil then
+    return
+  end
+  local state = self.si.state
+  if not fromPlaylist then
+    state.pl = -1
+  end
+  if type(entry.playlist) == "table" then
+    state.pl = id
+    local first = type(entry.playlist.ps) == "table" and entry.playlist.ps[1] or nil
+    if first then
+      self:applyPreset(first, true)
+    end
+    return
+  end
+  self:applyFields(entry, true)
+  state.ps = id
+end
+
+--- Apply a command the way the controller would for the parts these suites use.
+--- @param cmd table
+function Fake:apply(cmd)
+  self.commands[#self.commands + 1] = cmd
+  self:applyFields(cmd)
+  if type(cmd.playlist) == "table" and next(cmd.playlist) == nil then
+    self.si.state.pl = -1
+  end
+  if cmd.ps ~= nil then
+    self:applyPreset(cmd.ps)
   end
 end
 
@@ -308,6 +368,7 @@ function Fake:answer(method, path, body)
       return
     end
     if method == "POST" then
+      self.wire[#self.wire + 1] = body
       self:apply(JSON:decode(body))
       self:schedulePush()
       d:resolve({ code = 200, body = { success = true } })
@@ -477,6 +538,7 @@ function Fake:onSend(data)
         end)
       else
         local ok, cmd = pcall(JSON.decode, JSON, frame.payload)
+        self.wire[#self.wire + 1] = frame.payload
         if ok and type(cmd) == "table" then
           self:apply(cmd)
           self:schedulePush()
