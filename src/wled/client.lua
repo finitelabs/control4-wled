@@ -374,23 +374,26 @@ function Client:poll(gen, token)
       self:poll(gen, token)
     end)
   end
-  self:enqueue("GET", "/json/si"):next(function(si)
-    if self.gen ~= gen or self.socketUp then
-      return
-    end
-    if type(si) == "table" then
-      if type(si.info) == "table" then
-        self.arch = si.info.arch
+  self
+    :enqueue("GET", "/json/si")
+    :next(function(si)
+      if self.gen ~= gen or self.socketUp then
+        return
       end
-      self:setMode("http")
-      self.onState(si.state, si.info)
-    end
-  end, function(err)
-    if self.gen ~= gen or self.socketUp or (type(err) == "table" and err.error == "stopped") then
-      return
-    end
-    self:setMode("offline", self.downReason or "No connection to the controller")
-  end):next(again, again)
+      if type(si) == "table" then
+        if type(si.info) == "table" then
+          self.arch = si.info.arch
+        end
+        self:setMode("http")
+        self.onState(si.state, si.info)
+      end
+    end, function(err)
+      if self.gen ~= gen or self.socketUp or (type(err) == "table" and err.error == "stopped") then
+        return
+      end
+      self:setMode("offline", self.downReason or "No connection to the controller")
+    end)
+    :next(again, again)
 end
 
 --- Queue an HTTP request; one is in flight at a time.
