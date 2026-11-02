@@ -18,8 +18,8 @@ segments.
 
 The light controls the whole controller: its power and level, the color of every
 segment, and the controller's own WLED effects, palettes, presets and playlists,
-from the light's Extras menu and from programming. A light per segment comes in
-a later version.
+from the light's Extras menu and from programming. For a strip split into parts,
+the **WLED Segment** driver adds a light for each segment, through this driver.
 
 # <span style="color:#0094FF">Index</span>
 
@@ -33,6 +33,7 @@ a later version.
 
   - [Colors and WLED effects](#colors-and-wled-effects)
   - [The Extras menu](#the-extras-menu)
+  - [Segment lights](#segment-lights)
 
 - [Installer Setup](#installer-setup)
 
@@ -81,6 +82,8 @@ a later version.
   links and commands over the presets the installer picks, a button link for
   each of those presets with its keypad LED lit while it shows, and a Preset Is
   conditional
+- A connection for each segment, for **WLED Segment** lights that control one
+  part of the strip each, through this driver's one connection
 - A check that the controller at the address is the one the driver was set up
   with, so it never drives another controller after an address change
 
@@ -143,6 +146,32 @@ effect starts from its own speed, intensity and options, as in the WLED app. A
 preset or playlist sets whatever it was saved with, power and level included.
 The menu follows the controller, so a change made in the WLED app, by a preset
 or by a playlist step shows there too.
+
+## Segment lights
+
+For a strip split into parts in WLED, for example left and right cabinets, add a
+**WLED Segment** driver for each part and bind it to that segment's connection
+on this driver (see [Connections](#connections)). The segment light controls its
+segment only; this driver's light still controls the whole strip.
+
+- A segment light's level is its segment's own level, and this light's level is
+  the controller's master level, which WLED applies on top of every segment.
+- A segment light is on while its segment is on and the controller is on. This
+  light is on while the controller is on and at least one segment is lit.
+- Turning a segment light on while the controller is off turns the controller on
+  with only that segment lit. Turning off the last lit segment turns the
+  controller off too.
+- Turning this light on when no segment is lit turns every segment on, as it
+  lights the whole strip. With a segment lit, it turns on the controller only.
+- This light's colors, effects and presets still cover every segment.
+
+WLED can renumber segments, for example when a segment is deleted or a preset
+with another layout is applied. Each connection follows its segment by its LEDs,
+so a segment light stays on the same part of the strip, and a renamed segment's
+connection is renamed with it. A new segment gets a new connection. When a
+segment is gone, its connection goes too, unless a segment light is still bound
+to it: then the light shows `Segment not found` and drives nothing until the
+segment is back.
 
 # <span style="color:#0094FF">Installer Setup</span>
 
@@ -349,6 +378,13 @@ rename in WLED.
 The Control4 Light proxy connection. The light is online while the driver is
 connected and offline while it is not.
 
+### Segments (provider)
+
+One connection for each segment the controller reports, named as the segment is
+named in WLED, or `Segment` and its id when it has no name. Bind a **WLED
+Segment** driver's **WLED Controller** connection to one (see
+[Segment lights](#segment-lights)).
+
 ### Button Links
 
 | Connection         | Description                        |
@@ -437,3 +473,8 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
   commands, a `Cycle Presets` property for which presets cycle and in what
   order, a button link for each of those presets with its keypad LED lit while
   it shows, and a Preset Is conditional
+- Added the WLED Segment driver: a Control4 light for one segment of a WLED
+  controller, bound to the WLED driver's connection for that segment, which
+  follows the segment when WLED renumbers or resizes it
+- Changed the WLED light to read on only while a segment is lit, and to turn
+  every segment on when it turns on with none lit

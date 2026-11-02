@@ -47,6 +47,11 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
   commands, a `Cycle Presets` property for which presets cycle and in what
   order, a button link for each of those presets with its keypad LED lit while
   it shows, and a Preset Is conditional
+- Added the WLED Segment driver: a Control4 light for one segment of a WLED
+  controller, bound to the WLED driver's connection for that segment, which
+  follows the segment when WLED renumbers or resizes it
+- Changed the WLED light to read on only while a segment is lit, and to turn
+  every segment on when it turns on with none lit
   <!-- #ifdef DRIVERCENTRAL -->
 - Added a `Support Code` property, a `Cloud Monitoring` property, Enabled by
   default, and a `Diagnostics Snapshot` action
