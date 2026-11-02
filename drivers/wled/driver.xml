@@ -186,6 +186,11 @@
         <description>WLED's web port. 80 unless it was changed in WLED.</description>
       </property>
       <property>
+        <name>Found Controllers</name>
+        <type>DYNAMIC_LIST</type>
+        <description>Pick a WLED controller found on the network to set IP Address and Port.</description>
+      </property>
+      <property>
         <name>Light Settings</name>
         <type>LABEL</type>
         <default>Light Settings</default>
@@ -279,6 +284,10 @@
         <command>Update_Drivers</command>
       </action>
       <!-- #endif -->
+      <action>
+        <name>Find Controllers</name>
+        <command>Find_Controllers</command>
+      </action>
       <action>
         <name>Reset Driver</name>
         <command>Reset_Driver</command>

@@ -84,6 +84,9 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
   conditional
 - A connection for each segment, for **WLED Segment** lights that control one
   part of the strip each, through this driver's one connection
+- WLED controllers found on the network, to pick from instead of typing an
+  address, and IP Address following the driver's controller when its address
+  changes
 - A check that the controller at the address is the one the driver was set up
   with, so it never drives another controller after an address change
 
@@ -193,7 +196,9 @@ connection.
 1. Use the "Search" tab to find the "WLED" driver and add it to the room the
    LEDs light.
 
-1. Set [`IP Address`](#ip-address) to the WLED controller's address.
+1. Pick the WLED controller in
+   [`Found Controllers`](#found-controllers--select--found-controllers-), or set
+   [`IP Address`](#ip-address) to its address.
 
 1. After a few moments [`Driver Status`](#driver-status-read-only) shows
    `Connected` and the [Device Info](#device-info) properties fill in.
@@ -248,11 +253,25 @@ Sets the logging mode. Default is `Off`. It turns itself off after three hours.
 #### IP Address
 
 The WLED controller's address on the network. Changing it connects to the new
-address at once.
+address at once. When the controller stops answering, or another controller
+answers at its address, the driver looks for it on the network by its MAC
+address every 30 seconds and changes IP Address and Port to where it answers. It
+never moves away from an address you set before the controller has answered
+there, and it keeps a host name you typed.
 
 #### Port
 
 WLED's web port. Leave it at `80` unless it was changed in WLED.
+
+#### Found Controllers \[ **_(Select)_** | _found controllers..._ \]
+
+Lists the WLED controllers the driver finds on the network as `name (address)`,
+with the port after the address when it is not 80. Picking one sets IP Address
+and Port to it. Shown while the last search found one. The driver searches when
+it loads, when [Find Controllers](#find-controllers) runs, and while its
+controller cannot be reached. It finds controllers on the same network as the
+Control4 controller that have an mDNS address set in WLED's WiFi settings, as
+they do by default.
 
 ### Light Settings
 
@@ -295,14 +314,20 @@ and what its LEDs light (see [Compatibility](#compatibility)).
 
 Checks GitHub for a newer release and installs it.
 
+### Find Controllers
+
+Looks for WLED controllers on the network again and lists them in
+[`Found Controllers`](#found-controllers--select--found-controllers-).
+
 ### Reset Driver
 
 The driver remembers the MAC address of the first controller it reaches. If a
 different controller answers at the address later, for example after the router
-gives the address to another device, the driver does not drive it and
-`Driver Status` names it. Run Reset Driver with `Yes` when the controller was
-replaced on purpose: the driver forgets the old one and takes the controller at
-the address.
+gives the address to another device, the driver does not drive it. It looks for
+its own controller on the network and follows it (see
+[IP Address](#ip-address)), and until then `Driver Status` names the other one.
+Run Reset Driver with `Yes` when the controller was replaced on purpose: the
+driver forgets the old one and takes the controller at the address.
 
 Reset Driver returns the driver to a fresh install. It keeps the IP Address and
 Port, and the programming that uses the driver. It unwires every keypad button
@@ -486,5 +511,8 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added the WLED Segment driver: a Control4 light for one segment of a WLED
   controller, bound to the WLED driver's connection for that segment, which
   follows the segment when WLED renumbers or resizes it
+- Added finding WLED controllers on the network: a `Found Controllers` list to
+  pick a controller from, a `Find Controllers` action, and IP Address and Port
+  following the driver's controller by its MAC address when its address changes
 - Changed the WLED light to read on only while a segment is lit, and to turn
   every segment on when it turns on with none lit

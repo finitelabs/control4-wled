@@ -240,6 +240,7 @@ end
 --- Forget every fake.
 function M.reset()
   byAddress = {}
+  M.sockets = {}
   M.clearTimers()
 end
 
@@ -529,7 +530,7 @@ function Fake:onConnect(binding)
   self.binding = binding
   self.connected, self.upgraded = false, false
   self.connects = self.connects + 1
-  self:after(LATENCY_MS, function()
+  self:after(self.connectDelayMs or LATENCY_MS, function()
     if self.reachable and self.socketOpen then
       self.connected = true
       self:status("ONLINE")
@@ -588,8 +589,11 @@ function Fake:onSend(data)
   end
 end
 
-local function fakeFor(binding)
+local function fakeFor(binding, port)
   local address = C4:GetBindingAddress(binding)
+  if port and byAddress[tostring(address) .. ":" .. port] then
+    return byAddress[address .. ":" .. port]
+  end
   for key, fake in pairs(byAddress) do
     if key:match("^(.-):") == address then
       return fake
@@ -601,7 +605,7 @@ end
 local netConnect, netDisconnect, sendToNetwork = C4.NetConnect, C4.NetDisconnect, C4.SendToNetwork
 
 function C4:NetConnect(binding, port, ...)
-  local fake = fakeFor(binding)
+  local fake = fakeFor(binding, port)
   if fake and port == fake.port then
     fake:onConnect(binding)
     return
@@ -610,7 +614,7 @@ function C4:NetConnect(binding, port, ...)
 end
 
 function C4:NetDisconnect(binding, port, ...)
-  local fake = fakeFor(binding)
+  local fake = fakeFor(binding, port)
   if fake and fake.binding == binding and fake.connected then
     fake.connected, fake.upgraded = false, false
     fake:after(1, function()
@@ -623,10 +627,189 @@ end
 
 function C4:SendToNetwork(binding, port, data)
   sendToNetwork(self, binding, port, data)
-  local fake = fakeFor(binding)
+  local fake = fakeFor(binding, port)
   if fake and port == fake.port then
     fake:onSend(data)
   end
 end
+
+-- ─── mDNS ──────────────────────────────────────────────────────────────────
+--
+-- The driver looks for controllers with a LuaSocket UDP socket. Every suite gets this socket,
+-- so none sends a real packet. A query to the mDNS group is answered by each fake that is
+-- reachable and announces, as an mDNS responder answers a one-shot query: by unicast from
+-- port 5353, repeating the query's id and question, with the instance's SRV, TXT and A records
+-- added and names compressed.
+
+local function u16(n)
+  return string.char(math.floor(n / 256) % 256, n % 256)
+end
+
+local function u32(n)
+  return u16(math.floor(n / 65536)) .. u16(n % 65536)
+end
+
+local function label(text)
+  return string.char(#text) .. text
+end
+
+--- A compressed name: a pointer to a 0-based offset in the message.
+local function pointer(offset)
+  return u16(49152 + offset)
+end
+
+local function record(name, rtype, ttl, rdata)
+  return name .. u16(rtype) .. u16(1) .. u32(ttl) .. u16(#rdata) .. rdata
+end
+
+--- An answer to a _wled._tcp query.
+--- @param a table {id, instance, host, port, mac, ip or ips, ttl, withoutSrv, withoutTxt, withoutA}
+--- @return string
+function M.mdnsAnswer(a)
+  local ttl = a.ttl or 10
+  local ips = (a.withoutA or a.withoutSrv) and {} or a.ips or { a.ip }
+  local extra = (a.withoutSrv and 0 or 1) + (a.withoutTxt and 0 or 1) + #ips
+  local msg = u16(a.id or 0) .. u16(33792) .. u16(1) .. u16(1) .. u16(0) .. u16(extra)
+  -- The question at offset 12: "_wled" at 12, "_tcp" at 18, "local" at 23.
+  msg = msg .. label("_wled") .. label("_tcp") .. label("local") .. "\0" .. u16(12) .. u16(1)
+  local instanceAt = #msg + 12
+  msg = msg .. record(pointer(12), 12, ttl, label(a.instance) .. pointer(12))
+  local hostAt
+  if not a.withoutSrv then
+    hostAt = #msg + 2 + 10 + 6
+    msg = msg
+      .. record(pointer(instanceAt), 33, ttl, u16(0) .. u16(0) .. u16(a.port or 80) .. label(a.host) .. pointer(23))
+  end
+  if not a.withoutTxt then
+    msg = msg .. record(pointer(instanceAt), 16, ttl, label("mac=" .. a.mac))
+  end
+  for _, ip in ipairs(ips) do
+    local octets = {}
+    for octet in ip:gmatch("%d+") do
+      octets[#octets + 1] = string.char(tonumber(octet))
+    end
+    msg = msg .. record(pointer(hostAt), 1, ttl, table.concat(octets))
+  end
+  return msg
+end
+
+--- The service a query asks for, lowercase, or nil for something else.
+--- @param data string
+--- @return string|nil
+local function askedFor(data)
+  local labels, pos = {}, 13
+  while true do
+    local len = data:byte(pos)
+    if not len then
+      return nil
+    end
+    if len == 0 then
+      break
+    end
+    labels[#labels + 1] = data:sub(pos + 1, pos + len)
+    pos = pos + len + 1
+  end
+  local qtype = (data:byte(pos + 1) or 0) * 256 + (data:byte(pos + 2) or 0)
+  return qtype == 12 and table.concat(labels, "."):lower() or nil
+end
+
+--- How this fake answers a query, or nil when it does not.
+--- @param query string
+--- @return string|nil
+function Fake:mdnsAnswerTo(query)
+  -- mdns = "always": it answers mDNS while its web server does not.
+  if (not self.reachable and self.mdns ~= "always") or self.mdns == false or askedFor(query) ~= "_wled._tcp.local" then
+    return nil
+  end
+  local mac = self.si.info.mac
+  local name = self.mdnsName or ("wled-" .. mac:sub(7))
+  return M.mdnsAnswer({
+    id = query:byte(1) * 256 + query:byte(2),
+    instance = name,
+    host = name,
+    port = self.port,
+    mac = mac,
+    ip = self.ip,
+  })
+end
+
+local Udp = {}
+Udp.__index = Udp
+
+--- Every UDP socket the driver opened, oldest first.
+M.sockets = {}
+
+function M.udp()
+  local udp = setmetatable({ inbox = {}, sent = {}, closed = false }, Udp)
+  M.sockets[#M.sockets + 1] = udp
+  return udp
+end
+
+function Udp:settimeout(timeout)
+  self.timeout = timeout
+  return 1
+end
+
+function Udp:setsockname(address, port)
+  self.bound = { address, port }
+  return 1
+end
+
+--- Set to an error to make every send fail with it, as a sandbox that refuses one does.
+M.sendFails = nil
+
+function Udp:sendto(data, ip, port)
+  if self.closed then
+    return nil, "closed"
+  end
+  if M.sendFails then
+    return nil, M.sendFails
+  end
+  self.sent[#self.sent + 1] = { data = data, ip = ip, port = port }
+  if ip == "224.0.0.251" and port == 5353 then
+    for _, fake in pairs(byAddress) do
+      local answer = fake:mdnsAnswerTo(data)
+      if answer then
+        C4:SetTimer(fake.mdnsDelayMs or 50, function()
+          self.inbox[#self.inbox + 1] = { answer, fake.ip, 5353 }
+        end)
+      end
+    end
+  end
+  return #data
+end
+
+function Udp:receivefrom()
+  if self.closed then
+    return nil, "closed"
+  end
+  local datagram = table.remove(self.inbox, 1)
+  if not datagram then
+    return nil, "timeout"
+  end
+  return datagram[1], datagram[2], datagram[3]
+end
+
+function Udp:close()
+  self.closed = true
+  return 1
+end
+
+--- The mDNS queries sent since the last reset.
+--- @return integer
+function M.mdnsQueries()
+  local n = 0
+  for _, udp in ipairs(M.sockets) do
+    for _, sent in ipairs(udp.sent) do
+      if sent.ip == "224.0.0.251" then
+        n = n + 1
+      end
+    end
+  end
+  return n
+end
+
+local ok, realSocket = pcall(require, "socket")
+package.loaded["socket"] = setmetatable({ udp = M.udp }, { __index = ok and realSocket or nil })
 
 return M
