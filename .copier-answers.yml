@@ -1,10 +1,12 @@
 # Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
-_commit: v0.9.63
+_commit: v0.9.64
 _src_path: git@github.com:finitelabs/control4-driver-template.git
 cloud_diagnostics: true
 distributions: drivercentral oss
+extra_build_secrets: ''
 extra_required_checks: mock-wled
 github_org: finitelabs
+icon_style: shaped
 primary_color: '#109EFF'
 project_description: Control4 drivers for WLED LED controllers. Control WLED strips
     and their segments as Control4 lights with color, fades, effects, palettes, presets
