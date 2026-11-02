@@ -40,6 +40,9 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
   Apply Preset, Start Playlist and Stop Playlist, with `Effect`, `Palette`,
   `Preset` and `Playlist` variables, Effect Changed, Preset Changed, Playlist
   Started and Playlist Ended events, and a WLED playlist status conditional
+- Added the light's Extras menu: the controller's effects, with the sliders and
+  options the running effect uses under WLED's names for them, its palettes,
+  presets and playlists
   <!-- #ifdef DRIVERCENTRAL -->
 - Added a `Support Code` property, a `Cloud Monitoring` property, Enabled by
   default, and a `Diagnostics Snapshot` action

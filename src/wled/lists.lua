@@ -23,6 +23,8 @@ local PLACEHOLDER = { [""] = true, ["-"] = true, ["RSVD"] = true }
 --- @field palettes WledListEntry[]|nil Palettes, built-in first, nil until read.
 --- @field presets WledListEntry[]|nil Presets that are not playlists, nil until read.
 --- @field playlists WledListEntry[]|nil Playlists, nil until read.
+--- @field fxdata table|nil Each effect's metadata from /json/fxdata, indexed by id + 1; nil when not read.
+--- @field version integer Bumped each time a list read finds a change.
 --- @field gen integer Bumped by cancel and clear, so a read that started before is dropped.
 local Lists = {}
 Lists.__index = Lists
@@ -34,6 +36,7 @@ function Lists.new(opts)
   self.get = opts.get
   self.device = opts.device
   self.gen = 0
+  self.version = 0
   return self
 end
 
@@ -45,7 +48,8 @@ end
 --- Forget every list, as at a reset; a read under way is dropped.
 function Lists:clear()
   self:cancel()
-  self.effects, self.palettes, self.presets, self.playlists = nil, nil, nil, nil
+  self.effects, self.palettes, self.presets, self.playlists, self.fxdata = nil, nil, nil, nil, nil
+  self.version = self.version + 1
 end
 
 --- @param what string
@@ -143,6 +147,30 @@ function Lists.presetLists(file)
   return presets, playlists
 end
 
+--- Whether two lists, or two fxdata arrays, hold the same entries.
+--- @param a table|nil
+--- @param b table|nil
+--- @return boolean
+local function same(a, b)
+  if a == nil or b == nil then
+    return a == b
+  end
+  if #a ~= #b then
+    return false
+  end
+  for i = 1, #a do
+    local x, y = a[i], b[i]
+    if type(x) == "table" and type(y) == "table" then
+      if x.id ~= y.id or x.name ~= y.name then
+        return false
+      end
+    elseif x ~= y then
+      return false
+    end
+  end
+  return true
+end
+
 --- Read the lists the change table names from the controller, one request at a time.
 --- @param what {effects: boolean|nil, palettes: boolean|nil, presets: boolean|nil}
 --- @return Deferred Resolves once every requested list is read or has failed.
@@ -178,7 +206,11 @@ function Lists:refresh(what)
           if self.gen == gen and type(names) == "table" then
             local info = self.device.info or {}
             local matrix = type(info.leds) == "table" and type(info.leds.matrix) == "table"
-            self.effects = Lists.effectList(names, meta, matrix)
+            local effects, fxdata = Lists.effectList(names, meta, matrix), type(meta) == "table" and meta or nil
+            if not same(effects, self.effects) or not same(fxdata, self.fxdata) then
+              self.version = self.version + 1
+            end
+            self.effects, self.fxdata = effects, fxdata
           end
         end, function(err)
           if self.gen == gen then
@@ -191,7 +223,11 @@ function Lists:refresh(what)
     step(function()
       return self.get("/json/pal"):next(function(names)
         if self.gen == gen and type(names) == "table" then
-          self.palettes = Lists.paletteList(names, self.device.info, Device.isV16(self.device.ver))
+          local palettes = Lists.paletteList(names, self.device.info, Device.isV16(self.device.ver))
+          if not same(palettes, self.palettes) then
+            self.version = self.version + 1
+          end
+          self.palettes = palettes
         end
       end, function(err)
         if self.gen == gen then
@@ -204,7 +240,11 @@ function Lists:refresh(what)
     step(function()
       return self.get("/presets.json"):next(function(file)
         if self.gen == gen and type(file) == "table" then
-          self.presets, self.playlists = Lists.presetLists(file)
+          local presets, playlists = Lists.presetLists(file)
+          if not same(presets, self.presets) or not same(playlists, self.playlists) then
+            self.version = self.version + 1
+          end
+          self.presets, self.playlists = presets, playlists
         end
       end, function(err)
         if self.gen == gen then
@@ -285,6 +325,28 @@ end
 --- @return integer|nil
 function Lists:effectId(value)
   return idOf(self.effects, value)
+end
+
+--- An entry's id when the list has it, from an id given as a number or a string. Unlike the
+--- lookups by name, a preset named "2" never stands for preset 2.
+--- @param list WledListEntry[]|nil
+--- @param value any
+--- @return integer|nil
+function Lists.byId(list, value)
+  local id = tonumber(value)
+  if id and nameOf(list, id) then
+    return math.floor(id)
+  end
+  return nil
+end
+
+--- An effect's metadata, the string WLED's page reads its controls from.
+--- @param id any
+--- @return string|nil
+function Lists:effectMeta(id)
+  id = tonumber(id)
+  local meta = id and self.fxdata and self.fxdata[id + 1]
+  return type(meta) == "string" and meta or nil
 end
 
 --- @return string[]
