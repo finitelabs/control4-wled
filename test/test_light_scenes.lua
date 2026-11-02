@@ -21,7 +21,7 @@ local persist = require("lib.persist")
 local HERE = debug.getinfo(1, "S").source:match("^@(.*)/") or "."
 local DRIVER = HERE .. "/light_reference_driver.lua"
 
-local PROXY, ESPHOME = 5001, 5002
+local PROXY, DEVICE = 5001, 5002
 
 ---------------------------------------------------------------------------
 -- Virtual clock: the shim's timers have no clock to order by, and a scene's
@@ -241,7 +241,7 @@ local function restart(modes, on)
   end
   OnDriverLateInit()
   if modes then
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = modes }),
       state = SerializeSafe({ state = on ~= false, brightness = 1.0 }),
     })
@@ -285,14 +285,14 @@ end
 local function commands()
   local count = 0
   for _, s in ipairs(sent) do
-    if s.binding == ESPHOME and s.command == "ENTITY_COMMAND" then
+    if s.binding == DEVICE and s.command == "ENTITY_COMMAND" then
       count = count + 1
     end
   end
   return count
 end
 
---- ESPHome's transition easing (LightTransformer::smoothed_progress).
+--- The reference adapter's eased fade curve.
 local function eased(p)
   return p * p * p * (p * (p * 6 - 15) + 10)
 end
@@ -306,7 +306,7 @@ end
 local function lengths()
   local out = {}
   for _, s in ipairs(sent) do
-    local cmd = s.binding == ESPHOME and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
+    local cmd = s.binding == DEVICE and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
     if cmd then
       out[#out + 1] = cmd.transition_length
     end
@@ -383,7 +383,7 @@ end
 local function colors()
   local out = {}
   for _, s in ipairs(sent) do
-    local cmd = s.binding == ESPHOME and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
+    local cmd = s.binding == DEVICE and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
     if cmd and cmd.has_rgb then
       out[#out + 1] = { cmd.red, cmd.green, cmd.blue }
     end
@@ -1257,7 +1257,7 @@ end
 
 --- A device report: on at `brightness`, in the color sent as `rgb`.
 local function report(rgb, brightness)
-  RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
     entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { ColorMode.COLOR_MODE_RGB } }),
     state = SerializeSafe({
       state = true,
@@ -1281,7 +1281,7 @@ do
   mark()
   --- The device's report, still off, in the color sent as `color`.
   local function offIn(color)
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { ColorMode.COLOR_MODE_RGB } }),
       state = SerializeSafe({
         state = false,
@@ -1337,7 +1337,7 @@ do
   --- The brightness of the first command since the mark: a ramped on's pre-on.
   local function firstBrightness()
     for _, s in ipairs(sent) do
-      if s.binding == ESPHOME and s.command == "ENTITY_COMMAND" then
+      if s.binding == DEVICE and s.command == "ENTITY_COMMAND" then
         return DeserializeSafe(s.params.body).brightness
       end
     end
@@ -1505,7 +1505,7 @@ do
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = 100, RATE = 5000 })
   run(2500)
   mark()
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   T.eq("a disconnect half way up: off, as the proxy is told", leds(), { { 0, false } })
 end
 
@@ -1653,7 +1653,7 @@ do
   local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
   --- The light's report of its brightness, off for 0; a dimmer's unless `modes` are given.
   local function push(brightness, modes)
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = modes or dimmer }),
       state = SerializeSafe(brightness > 0 and { state = true, brightness = brightness } or { state = false }),
     })
@@ -1785,7 +1785,7 @@ do
   )
   stopped(RATED, STOP)
   push(0.6)
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   run(2000)
   T.eq("a disconnect while the stop's report may be on the way: the on's 60 is not told after it", levels(), { 0, 0 })
   persist:delete("brightness_presets")
@@ -1837,7 +1837,7 @@ end
 local function lastLevel()
   for i = #sent, 1, -1 do
     local s = sent[i]
-    if s.binding == ESPHOME and s.command == "ENTITY_COMMAND" then
+    if s.binding == DEVICE and s.command == "ENTITY_COMMAND" then
       local cmd = DeserializeSafe(s.params.body)
       return { cmd.brightness, cmd.transition_length }
     end
@@ -2261,7 +2261,7 @@ do
     {
       "another client's off",
       function()
-        RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+        RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
           entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGB } }),
           state = SerializeSafe({ state = false, brightness = 1.0 }),
         })
@@ -2303,8 +2303,8 @@ do
   -- So does a rebind of the light's connection.
   lit()
   local sentGreen = setColor(green)
-  OBC[ESPHOME](ESPHOME, "ESPHOME", false)
-  OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+  OBC[DEVICE](DEVICE, "DEVICE", false)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
   report(sentGreen, 1.0)
   mixed("a rebind")
   -- A fade to off sent on again as it reaches off has ended its on cycle: the on is in the On color.
@@ -2426,12 +2426,12 @@ do
   local function echo(kind)
     local cmd
     for i = #sent, 1, -1 do
-      if sent[i].binding == ESPHOME and sent[i].command == "ENTITY_COMMAND" then
+      if sent[i].binding == DEVICE and sent[i].command == "ENTITY_COMMAND" then
         cmd = DeserializeSafe(sent[i].params.body)
         break
       end
     end
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { kind } }),
       state = SerializeSafe({
         state = true,
@@ -3213,7 +3213,7 @@ do
     mark()
   end
 
-  -- With no transition ESPHome puts every channel at its target at once.
+  -- With no transition the reference light puts every channel at its target at once.
   fadingUp()
   proxy("OFF")
   T.eq("an off in a fade that carries a color: it is sent with no color", #colors(), 0)
@@ -3294,7 +3294,7 @@ end
 
 T.section("a ramp part way through its time is where the light's easing has taken it, not a straight line")
 do
-  -- As measured on an ESPHome light: 91.8 % a quarter through a 10 s fade from
+  -- As measured on a light that eases its fades: 91.8 % a quarter through a 10 s fade from
   -- 100 to 20, where a straight line gives 80, and 96 % 2 s into one to 30.
   light({ ColorMode.COLOR_MODE_BRIGHTNESS })
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = 20, RATE = 10000 })
@@ -3703,14 +3703,14 @@ do
   local function modes()
     local out = {}
     for _, s in ipairs(sent) do
-      local cmd = s.binding == ESPHOME and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
+      local cmd = s.binding == DEVICE and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
       if cmd then
         out[#out + 1] = cmd.has_color_mode and cmd.color_mode or false
       end
     end
     return out
   end
-  -- Off, ESPHome keeps the light's color mode unless the command names one,
+  -- Off, the reference light keeps its color mode unless the command names one,
   -- and a color temperature mode drops a color.
   light({ RGBCT, CT }, false)
   mark()
@@ -3771,7 +3771,7 @@ do
   local function lastState()
     for i = #sent, 1, -1 do
       local s = sent[i]
-      if s.binding == ESPHOME and s.command == "ENTITY_COMMAND" then
+      if s.binding == DEVICE and s.command == "ENTITY_COMMAND" then
         local cmd = DeserializeSafe(s.params.body)
         return { cmd.state, cmd.transition_length }
       end
@@ -3950,14 +3950,14 @@ do
   local function push(modes, state, rgb, mode)
     state.color_mode = rgb and (mode or RGB) or state.color_mode
     state.red, state.green, state.blue = (rgb or {})[1], (rgb or {})[2], (rgb or {})[3]
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = modes }),
       state = SerializeSafe(state),
     })
   end
   local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
 
-  -- ESPHome reports a light's targets: 100 ms after a command, that command's.
+  -- The reference light reports its targets: 100 ms after a command, that command's.
   light(dimmer)
   level(30, 10000)
   run(100)
@@ -4071,7 +4071,7 @@ do
 
   -- A command sent while the light is disconnected draws no report.
   light(dimmer)
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   proxy("OFF")
   proxy("OFF")
   push(dimmer, { state = true, brightness = 1.0 })
@@ -4087,7 +4087,7 @@ do
   -- What was sent before a disconnect is forgotten with it.
   light(dimmer)
   level(30, 0)
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   push(dimmer, { state = true, brightness = 1.0 })
   mark()
   level(60, 10000)
@@ -4569,7 +4569,7 @@ end
 local function kelvins()
   local out = {}
   for _, s in ipairs(sent) do
-    local cmd = s.binding == ESPHOME and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
+    local cmd = s.binding == DEVICE and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
     if cmd and cmd.has_color_temperature then
       out[#out + 1] = math.floor(1e6 / cmd.color_temperature + 0.5)
     end
@@ -4830,7 +4830,7 @@ do
   proxySetup = ""
 end
 
-T.section("an ESPHome light's own proxy: Dim-To-Warm between two presets of one color, and rates of 750 ms")
+T.section("a light's own proxy as measured: Dim-To-Warm between two presets of one color, and rates of 750 ms")
 do
   -- setup-643.xml: an unedited RGBCT light's proxy, nothing stored by the
   -- driver. Both presets are 3200 K, read as 4234 K through the stubs.
@@ -4894,7 +4894,7 @@ local FULL_MODE = 0
 --- @param range table|nil The entity's color temperature range, in mireds.
 local function pushed(modes, state, range)
   range = range or {}
-  RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
     entity = SerializeSafe({
       key = 1,
       name = "Light",
@@ -4933,7 +4933,7 @@ end
 --- The last command sent since the mark, or an empty table.
 local function lastCommand()
   for i = #sent, 1, -1 do
-    if sent[i].binding == ESPHOME and sent[i].command == "ENTITY_COMMAND" then
+    if sent[i].binding == DEVICE and sent[i].command == "ENTITY_COMMAND" then
       return DeserializeSafe(sent[i].params.body)
     end
   end
@@ -5283,7 +5283,7 @@ do
   local function modesSent()
     local out = {}
     for _, s in ipairs(sent) do
-      local cmd = s.binding == ESPHOME and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
+      local cmd = s.binding == DEVICE and s.command == "ENTITY_COMMAND" and DeserializeSafe(s.params.body)
       if cmd then
         out[#out + 1] = cmd.color_mode or false
       end
@@ -5380,7 +5380,7 @@ do
   light(INTERLOCKED)
   colorTarget(WARMER, 0)
   restart()
-  OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
   inWhite()
   T.eq("a white, then a restart of the driver with the light still in it: the proxy shows that white", {
     colorsTold(),
@@ -5388,11 +5388,11 @@ do
   }, { {}, {} })
   proxyColor, proxyTarget = nil, nil
   restart()
-  OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
   inWhite()
   T.eq("and one that shows no color is told it", { colorsTold(), modesTold() }, { { 0.4 }, { FULL_MODE } })
-  OBC[ESPHOME](ESPHOME, "ESPHOME", false)
-  OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+  OBC[DEVICE](DEVICE, "DEVICE", false)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
   mark()
   inWhite()
   T.eq("and bound to another light in its white: the default white's point", sixPlaces(colorsTold()), { 0.3127 })
@@ -5414,7 +5414,7 @@ do
   pushed(INTERLOCKED, taken())
   T.eq("and the light's report of the stop tells nothing more", #colorsTold(), 1)
 
-  -- White to color changes mode, which ESPHome fades through off.
+  -- White to color changes mode, which the reference light fades through off.
   for _, case in ipairs({
     { POINT, BLUE, "from the white to blue", 1000, "a quarter", WHITE, 0.32 },
     { POINT, BLUE, "from the white to blue", 3000, "three quarters", COLOR, BLUE[1] },
@@ -5633,7 +5633,7 @@ do
     )
     local state = report(kind)
     restart()
-    OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+    OBC[DEVICE](DEVICE, "DEVICE", true)
     pushed(kind[2], state, kind[3])
     T.eq(
       "a restart of the driver with the light still in that white: the proxy shows the color picked",
@@ -5642,12 +5642,12 @@ do
     )
     proxyColor, proxyTarget = nil, nil
     restart()
-    OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+    OBC[DEVICE](DEVICE, "DEVICE", true)
     pushed(kind[2], state, kind[3])
     T.eq("and one that shows no color is told it", toldColors(), PICKED)
     if kind[7] then
       restart()
-      OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+      OBC[DEVICE](DEVICE, "DEVICE", true)
       local other = {}
       for field, value in pairs(state) do
         other[field] = kind[7][field] or value
@@ -5775,7 +5775,7 @@ do
   colorTarget(PICK, 0)
   proxy("OFF")
   restart()
-  OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
   pushed(KINDS[1][2], { state = false, brightness = 1.0 }, { 153.8, 250 })
   mark()
   proxy("ON")
@@ -5810,7 +5810,7 @@ end
 
 T.section("the color temperature a level carries is left to a light that can work its cold and warm white out")
 do
-  -- ESPHome splits a color temperature into cold and warm white with the
+  -- The reference light splits a color temperature into cold and warm white with the
   -- light's gamma, for a light that gives a range for it.
   for name, modes in pairs({
     ["cold and warm white alone"] = { CWWW },
@@ -5876,7 +5876,7 @@ end
 
 T.section("a combined color mode's report is the color or the white, whichever is turned up further")
 do
-  -- ESPHome reports the white's color temperature beside the color, lit or not.
+  -- The reference light reports the white's color temperature beside the color, lit or not.
   light({ RGBCT, CT })
   onMode(PREVIOUS_ON)
   local blue = setColor(BLUE)
@@ -6057,7 +6057,7 @@ do
   T.eq("a scene step's", { kelvins(), channels() }, { { 3000 }, WHITE })
   proxy("CLEAR_ALL_SCENES")
 
-  -- ESPHome works a color temperature out into cold and warm white with the
+  -- The reference light works a color temperature out into cold and warm white with the
   -- light's gamma, for a light that gives a range for it.
   light()
   pushed({ RGBWW }, { state = true, brightness = 1.0 }, RANGE)
@@ -6245,7 +6245,7 @@ do
     channels(),
     { false, false, false, false, false }
   )
-  -- ESPHome gives a mode-less light its first mode at a turn-on naming none,
+  -- The reference light gives a mode-less light its first mode at a turn-on naming none,
   -- such as a rated on's pre-on with no color.
   light({ RGBCT, CT }, false)
   fadeMode({ 0.5, 0.4 }, { 0.27, 0.4 }, CCT_MODE)
@@ -6345,7 +6345,7 @@ end
 
 T.section("a color temperature for a light that is off names the white mode, where the mode it is off in may have none")
 do
-  -- ESPHome keeps the color mode of a light that is off unless a command names
+  -- The reference light keeps the color mode of a light that is off unless a command names
   -- one, and drops a color temperature the mode cannot hold.
   light()
   pushed({ RGB, CWWW }, { state = false, brightness = 1.0 }, RANGE)
@@ -6440,7 +6440,7 @@ do
     return { r / full, g / full, b / full }, full
   end
 
-  -- ESPHome fades each color/white field to its target (color down, white up);
+  -- The reference light fades each color/white field to its target (color down, white up);
   -- half way through its time a fade is half way along.
   light({ RGBCT, CT })
   local blue = setColor(BLUE)
@@ -7030,7 +7030,7 @@ end
 
 T.section("a stop part way through a fade to or from off holds the light where it has got to, or at the Min On Level")
 do
-  -- ESPHome fades brightness itself: 0.8 to off is 0.4 half way, level 34.
+  -- The reference light fades brightness itself: 0.8 to off is 0.4 half way, level 34.
   light({ ColorMode.COLOR_MODE_BRIGHTNESS })
   onLevels(80, 20)
   proxy("SET_HOLD_RATE_DOWN", { RATE = 4000 })
@@ -7262,7 +7262,7 @@ end
 
 T.section("a light the range leaves outside it ramps from where it is, and a stop holds it there")
 do
-  -- At full under a new Max of 80, ESPHome fades from 1.0, not 0.8.
+  -- At full under a new Max of 80, the reference light fades from 1.0, not 0.8.
   local function quarterDown()
     return nine(1 - eased(0.25))
   end
@@ -7423,7 +7423,7 @@ do
       warm_white = 1,
     }, RANGE)
   end
-  -- ESPHome gives it the first of its modes at a turn-on that names none.
+  -- The reference light gives it the first of its modes at a turn-on that names none.
   for name, kind in pairs({
     ["a color temperature beside its color and a white-only mode"] = { { RGBCT, CT }, CT, RGBCT },
     ["a color mode and a white mode"] = { { RGB, CWWW }, CWWW, RGB },
@@ -7488,7 +7488,7 @@ do
     "cold_white",
     "warm_white",
   }
-  --- What the light has, as ESPHome keeps it: each field as it was last sent.
+  --- What the reference light has: each field as it was last sent.
   local state
   --- A light with a color mode and a white mode, on at full in red.
   --- @param range table|nil Its color temperature range; RANGE if nil.
@@ -7527,7 +7527,7 @@ do
     proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = target, RATE = rate })
   end
 
-  -- ESPHome fades the color it leaves to off over the first half of the time,
+  -- The reference light fades the color it leaves to off over the first half of the time,
   -- and the white it was sent up from off over the second (transformers.h).
   for name, kind in pairs({
     ["a color mode and a white mode with a color temperature"] = { RGB, CT },
@@ -7588,7 +7588,7 @@ do
       { { white, false, false, false, false }, { 3000 }, {}, { 0.3, CCT_MODE } }
     )
     T.eq("eased back up over half a second", lengths(), { 500 })
-    -- A lone color temperature moves ESPHome to its first CCT-capable mode.
+    -- A lone color temperature moves the reference light to its first CCT-capable mode.
     inRed(kind)
     kelvin(3000, 0)
     colorTarget(RED, 4000)
@@ -8062,7 +8062,7 @@ do
   --- The command the light was sent first since the mark: a ramped on's pre-on.
   local function preOn()
     for _, s in ipairs(sent) do
-      if s.binding == ESPHOME and s.command == "ENTITY_COMMAND" then
+      if s.binding == DEVICE and s.command == "ENTITY_COMMAND" then
         return DeserializeSafe(s.params.body)
       end
     end
@@ -8107,7 +8107,7 @@ do
   end
   local inRed = { red = 1, green = 0, blue = 0 }
 
-  -- ESPHome brings a light up from off in the color it is turned on in
+  -- The reference light comes up from off in the color it is turned on in
   -- (transformers.h); one already on at the pre-on changes mode through off.
   local SEPARATE = { RGB, CWWW }
   offIn(SEPARATE, RGB, inRed)
@@ -8286,12 +8286,12 @@ do
       ASKED,
     })
     restart()
-    OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+    OBC[DEVICE](DEVICE, "DEVICE", true)
     pushed(kind[2], state, RANGE)
     T.eq("a restart of the driver with the light still at the range's end: the proxy shows 2200 K", toldOf(), {})
     proxyColor, proxyTarget = nil, nil
     restart()
-    OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+    OBC[DEVICE](DEVICE, "DEVICE", true)
     pushed(kind[2], state, RANGE)
     T.eq("and one that shows no color is told 2200 K", toldOf(), ASKED)
     mark()
@@ -8506,7 +8506,7 @@ do
     "cold_white",
     "warm_white",
   }
-  --- What the light has, as ESPHome keeps it, and how many commands since the
+  --- What the reference light has, and how many commands since the
   --- mark it has answered.
   local state, answered
   --- A light with the Athom bulb's modes, on at full in 4000 K.
@@ -8535,7 +8535,7 @@ do
     answered = answered + 1
     local n = 0
     for _, s in ipairs(sent) do
-      if s.binding == ESPHOME and s.command == "ENTITY_COMMAND" then
+      if s.binding == DEVICE and s.command == "ENTITY_COMMAND" then
         n = n + 1
         local cmd = n == answered and DeserializeSafe(s.params.body)
         for _, field in ipairs(cmd and (levelOnly and { "brightness" } or FIELDS) or {}) do
@@ -8551,7 +8551,7 @@ do
     colorTarget(RED, 0)
   end
 
-  -- ESPHome answers each command by itself, 100 to 250 ms after it is sent.
+  -- The reference light answers each command by itself, 100 to 250 ms after it is sent.
   inWhite()
   levelThenRed()
   run(150)
@@ -8645,7 +8645,7 @@ do
   levelThenRed()
   run(150)
   answer()
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   run(2000)
   T.eq(
     "a disconnect while red's report may be on the way: its 4000 K is not told after it",
@@ -8660,11 +8660,11 @@ do
   -- Programming.
   local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
   local function suspend()
-    RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" }) -- as Director delivers it
+    RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" }) -- as Director delivers it
   end
   --- The device's report of the light, as when the main driver connects again.
   local function answer(on, brightness)
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = dimmer }),
       state = SerializeSafe({ state = on, brightness = brightness }),
     })
@@ -8795,7 +8795,7 @@ do
   light(dimmer)
   answer(true, 0.6)
   mark()
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   T.eq("the device lost, with the light on: told offline and off, with its LEDs", {
     told("ONLINE_CHANGED", "STATE"),
     levels(),
@@ -8812,7 +8812,7 @@ T.section("a light with no state from its device ignores its commands, so Contro
 do
   local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
   local function answer(on, brightness)
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = dimmer }),
       state = SerializeSafe({ state = on, brightness = brightness }),
     })
@@ -8855,7 +8855,7 @@ do
   -- A device that drops off reads off; a Toggle then told the light on, which ran Light On Programming.
   light(dimmer)
   answer(true, 0.6)
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   commandAll()
   T.eq("its device lost: commands, buttons and scenes tell the proxy and the LEDs nothing", said(), {})
   T.eq("and send the device nothing", commands(), 0)
@@ -8869,11 +8869,11 @@ do
   light(dimmer)
   answer(true, 0.6)
   mark()
-  OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
   T.eq("its connection bound: the proxy is told nothing", said(), {})
   answer(true, 0.6)
   mark()
-  OBC[ESPHOME](ESPHOME, "ESPHOME", false)
+  OBC[DEVICE](DEVICE, "DEVICE", false)
   T.eq("its connection removed: the proxy is told only that the light is offline", said(), { "ONLINE_CHANGED" })
   T.eq("offline, and its Connected variable false", {
     told("ONLINE_CHANGED", "STATE"),
@@ -8893,7 +8893,7 @@ do
   -- A click starts from the level its press found, so a press the light ignored must leave none.
   light(dimmer)
   answer(true, 0.6)
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" })
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
   RFP.DO_PUSH(TOGGLE_LINK, "DO_PUSH", {})
   answer(false)
   mark()
@@ -8906,7 +8906,7 @@ T.section("a light loaded while its device is suspended is told so, and tells no
 do
   -- The main driver's answer to the refresh the light sends at late init.
   restart(nil)
-  RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" })
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
   T.eq("told only that it is offline", told("ONLINE_CHANGED", "STATE"), { false })
   T.eq("and no level", told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
   mark()
@@ -8918,7 +8918,7 @@ end
 T.section("a light's first report after a load, bind or disconnect tells the proxy only a color it does not show")
 do
   -- A Zigbee light's color read back a hair off the one told, and its start re-told it: Color Changed (4002) fired
-  -- (dev, 2026-10-23). An ESPHome light reports its channels as 32-bit floats, a hair off the ones it was sent.
+  -- (dev, 2026-10-23). A light can report its channels as 32-bit floats, a hair off the ones it was sent.
   local modes = { ColorMode.COLOR_MODE_RGB }
   local SUNSET, AQUA = { 0.608506, 0.357644 }, { 0.147231, 0.358549 }
   --- The device's report of the light on in the color sent as `rgb`.
@@ -8930,7 +8930,7 @@ do
       local m, e = math.frexp(v)
       return math.ldexp(math.floor(m * 2 ^ 24 + 0.5) / 2 ^ 24, e)
     end
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = modes }),
       state = SerializeSafe({
         state = true,
@@ -8958,11 +8958,11 @@ do
     if how == "an update" then
       restart(nil)
     elseif how == "a bind" then
-      OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+      OBC[DEVICE](DEVICE, "DEVICE", true)
     elseif how == "a suspend" then
-      RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" })
+      RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
     else
-      RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+      RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
     end
     report(rgb)
     run(15000)
@@ -8986,9 +8986,9 @@ do
     if how == "an update" then
       restart(nil)
     elseif how == "a bind" then
-      OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+      OBC[DEVICE](DEVICE, "DEVICE", true)
     else
-      RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" })
+      RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
     end
     report(rgb)
     T.check(
@@ -9007,7 +9007,7 @@ do
   proxyColor, proxyTarget = "0.3127,0.329,1", "0.3127,0.329,1" -- a read would take the report as shown
   restart(nil)
   require("wled.light").initialized = false
-  RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
     entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { CT } }),
     state = SerializeSafe({ state = true, brightness = 1.0, color_mode = CT, color_temperature = 200 }),
   })
@@ -9042,10 +9042,10 @@ end
 T.section("a light's first report after a load, bind or disconnect tells the proxy only a level it does not show")
 do
   -- After a controller start the proxy fires Brightness Changed (3002) for any level it is told, the one it shows
-  -- too (dev, 2026-10-23: every ESPHome light, at 0 and at 100).
+  -- too (dev, 2026-10-23: every light measured, at 0 and at 100).
   local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
   local function answer(on, brightness)
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = dimmer }),
       state = SerializeSafe({ state = on, brightness = brightness }),
     })
@@ -9074,13 +9074,13 @@ do
         restart(nil)
       elseif how == "a controller start" then
         restart(nil)
-        OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+        OBC[DEVICE](DEVICE, "DEVICE", true)
       elseif how == "a bind" then
-        OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+        OBC[DEVICE](DEVICE, "DEVICE", true)
       elseif how == "a suspend" then
-        RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" })
+        RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
       else
-        RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+        RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
         mark()
       end
       answer(on, 0.6)
@@ -9101,7 +9101,7 @@ do
   -- (dev, 2026-10-24: 638, off).
   local onOff = { ColorMode.COLOR_MODE_ON_OFF }
   local function switched(on)
-    RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = onOff }),
       state = SerializeSafe({ state = on, brightness = 1.0 }),
     })
@@ -9118,13 +9118,13 @@ do
       elseif how == "a controller start" then
         showCapabilities()
         restart(nil)
-        OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+        OBC[DEVICE](DEVICE, "DEVICE", true)
       elseif how == "a bind" then
-        OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+        OBC[DEVICE](DEVICE, "DEVICE", true)
       elseif how == "a suspend" then
-        RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" })
+        RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
       else
-        RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+        RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
         mark()
       end
       switched(on)
@@ -9181,7 +9181,7 @@ do
   proxy("ON")
   run(15000)
   restart(nil)
-  RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
     entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGB } }),
     state = SerializeSafe({ state = false }),
   })
@@ -9215,15 +9215,15 @@ do
       elseif how == "a controller start" then
         showCapabilities()
         restart(nil)
-        OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+        OBC[DEVICE](DEVICE, "DEVICE", true)
       elseif how == "a bind" then
-        OBC[ESPHOME](ESPHOME, "ESPHOME", true)
+        OBC[DEVICE](DEVICE, "DEVICE", true)
       elseif how == "a suspend" then
-        RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", { suspended = "true" })
+        RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
       else
-        RFP.UPDATE_DISCONNECT(ESPHOME, "UPDATE_DISCONNECT", {})
+        RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
       end
-      RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+      RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
         entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = kind[2] }),
         state = SerializeSafe({ state = true, brightness = 1.0 }),
       })
@@ -9237,7 +9237,7 @@ do
   local shown = capabilitiesShown()
   proxyCapabilities.color_correlated_temperature_max = "6000" -- as another light or build told it
   restart(nil)
-  RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
     entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGBCT } }),
     state = SerializeSafe({ state = true, brightness = 1.0 }),
   })
@@ -9247,7 +9247,7 @@ do
   light({ RGBCT })
   restart(nil)
   require("wled.light").initialized = false
-  RFP.UPDATE_STATE(ESPHOME, "UPDATE_STATE", {
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
     entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGBCT } }),
     state = SerializeSafe({ state = true, brightness = 1.0 }),
   })
