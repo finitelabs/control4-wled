@@ -42,6 +42,7 @@ local CAP_LABELS = {
 --- @field segments WledSegment[] Active segments in the controller's order.
 --- @field fxcount integer|nil
 --- @field palcount integer|nil
+--- @field cpalcount integer|nil Custom palettes, which the palette list numbers from info.
 --- @field pmt integer|nil Presets file modified time; moves on every preset save or delete.
 --- @field live boolean Whether another system is streaming to the LEDs.
 --- @field on boolean|nil Master power.
@@ -156,7 +157,7 @@ end
 --- @field segmentState boolean A segment's own power or brightness changed.
 --- @field master boolean Master power or brightness changed.
 --- @field effects boolean The effect count changed.
---- @field palettes boolean The palette count changed.
+--- @field palettes boolean The palette or custom palette count changed.
 --- @field presets boolean The presets file changed.
 --- @field live boolean Live data started or stopped.
 
@@ -208,8 +209,9 @@ function Device:update(state, info)
     if fxcount ~= self.fxcount then
       c.effects, self.fxcount = true, fxcount
     end
-    if palcount ~= self.palcount then
-      c.palettes, self.palcount = true, palcount
+    local cpalcount = integer(info.cpalcount)
+    if palcount ~= self.palcount or cpalcount ~= self.cpalcount then
+      c.palettes, self.palcount, self.cpalcount = true, palcount, cpalcount
     end
     local pmt = type(info.fs) == "table" and integer(info.fs.pmt) or nil
     if pmt ~= self.pmt then
