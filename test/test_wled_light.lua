@@ -380,6 +380,27 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("a long fade after another client's change starts from the level it set")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16")
+  proxy("SET_LEVEL", { LEVEL = "100" })
+  W.run(2000)
+  fake:change({ bri = 51 })
+  W.run(2000)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "200000" })
+  W.run(201000)
+  local bris = {}
+  for _, c in ipairs(sent()) do
+    if c.bri then
+      bris[#bris + 1] = c.bri
+    end
+  end
+  T.eq("legs on the line from 51, not from the old 255", bris, { 102, 153, 204, 255 })
+end
+
+--------------------------------------------------------------------------------
 T.section("a 0.15.4 ESP8266 controller is driven the same way")
 --------------------------------------------------------------------------------
 do

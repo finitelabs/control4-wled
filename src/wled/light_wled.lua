@@ -464,6 +464,12 @@ function Adapter:state()
       self.legs = nil
     end
   end
+  -- A level that is not where the last fade was going came from another client,
+  -- so the next fade starts from the report, not from the old line.
+  local out = self.out
+  if out and not self.legs and math.abs((on and bri or 0) - out.to) > 1 then
+    self.out = nil
+  end
   local f = self:fieldsFrom(r, g, b, w, cct)
   self.fields = {
     color_brightness = f.color_brightness,
