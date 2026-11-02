@@ -273,6 +273,9 @@ function OnDriverLateInit()
     local ok, err = pcall(OnPropertyChanged, p)
     if not ok then
       log:error("OnPropertyChanged('%s') failed: %s", p, tostring(err))
+      --#ifdef DRIVERCENTRAL
+      diagnostics:captureError(tostring(err), nil, "WLED.OnPropertyChanged")
+      --#endif
     end
   end
 
