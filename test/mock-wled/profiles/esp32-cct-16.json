@@ -1,0 +1,14 @@
+{
+  "name": "Mock Cabinet CCT",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d403",
+  "buses": [
+    {
+      "type": 42,
+      "start": 0,
+      "len": 1,
+      "rgbwm": 0
+    }
+  ]
+}

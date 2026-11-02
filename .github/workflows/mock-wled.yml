@@ -1,0 +1,35 @@
+# Kept out of build.yml so `copier update` cannot clobber this.
+name: Mock WLED
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  mock-wled:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # test/mock-wled/requirements.txt is compiled for this Python.
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Check the effect and palette data against WLED's source
+        run: make check-mock-wled-data
+
+      - name: Check formatting
+        run: make check-mock-wled-fmt
+
+      - name: Test the mock
+        run: make test-mock-wled

@@ -1,0 +1,14 @@
+{
+  "name": "Mock Gallery S3",
+  "firmware": "16.0.1",
+  "chip": "esp32s3",
+  "psram": true,
+  "mac": "02a1b2c3d409",
+  "buses": [
+    {
+      "type": 22,
+      "start": 0,
+      "len": 300
+    }
+  ]
+}

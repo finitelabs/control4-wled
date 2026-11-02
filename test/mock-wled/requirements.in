@@ -1,0 +1,7 @@
+# The mock WLED controllers' Python dependencies. Compile with:
+#   pip-compile --no-strip-extras requirements.in   (UPGRADE=1 make mock-wled-deps upgrades)
+aiohttp
+zeroconf
+pytest
+pytest-aiohttp
+black

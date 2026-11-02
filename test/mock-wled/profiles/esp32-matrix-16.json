@@ -1,0 +1,17 @@
+{
+  "name": "Mock Panel 8x8",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d40b",
+  "matrix": {
+    "w": 8,
+    "h": 8
+  },
+  "buses": [
+    {
+      "type": 22,
+      "start": 0,
+      "len": 64
+    }
+  ]
+}

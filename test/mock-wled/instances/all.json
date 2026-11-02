@@ -1,0 +1,49 @@
+{
+  "host": "0.0.0.0",
+  "instances": [
+    {
+      "port": 18081,
+      "profile": "esp32-cct-16"
+    },
+    {
+      "port": 18082,
+      "profile": "esp32-matrix-16"
+    },
+    {
+      "port": 18083,
+      "profile": "esp32-relay-16"
+    },
+    {
+      "port": 18084,
+      "profile": "esp32-rgb-wb-16"
+    },
+    {
+      "port": 18085,
+      "profile": "esp32-rgbw-015"
+    },
+    {
+      "port": 18086,
+      "profile": "esp32-rgbw-accurate-16"
+    },
+    {
+      "port": 18087,
+      "profile": "esp32-rgbw-pwm-16"
+    },
+    {
+      "port": 18088,
+      "profile": "esp32-white-16"
+    },
+    {
+      "port": 18089,
+      "profile": "esp32s3-64seg-16"
+    },
+    {
+      "port": 18090,
+      "profile": "esp8266-ws2812b-015"
+    },
+    {
+      "port": 18091,
+      "profile": "esp8266-ws2812b-015-nofade"
+    }
+  ]
+}
