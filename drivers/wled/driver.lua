@@ -410,7 +410,20 @@ function EC.Update_Drivers()
 end
 --#endif
 
---- Forget the remembered controller and connect again, taking whichever controller answers.
+--- Settable properties a reset returns to their defaults; IP Address and Port are kept.
+--- @type table<string, string>
+local RESET_PROPERTY_VALUES = {
+  ["Log Level"] = "3 - Info",
+  ["Log Mode"] = "Off",
+  ["Automatic Updates"] = "On",
+  --#ifndef DRIVERCENTRAL
+  ["Update Channel"] = "Production",
+  --#endif
+  ["Warm White (K)"] = tostring(DEFAULT_WARM),
+  ["Cool White (K)"] = tostring(DEFAULT_COOL),
+}
+
+--- Return the driver to its first load and connect again, taking whichever controller answers.
 function EC.Reset_Driver(params)
   log:trace("EC.Reset_Driver(%s)", params)
   if Select(params, "Are You Sure?") ~= "Yes" then
@@ -418,10 +431,17 @@ function EC.Reset_Driver(params)
   end
   log:print("Resetting driver to initial state")
   persist:delete(MAC_KEY)
+  values:reset()
+  light.reset(true)
   device = Device.new()
   wledLight.device = device
-  for _, item in ipairs(DEVICE_INFO) do
-    UpdateProperty(item[1], "N/A")
+  gConnected = false
+  values:update("Connected", false, "BOOL")
+  for name, value in pairs(RESET_PROPERTY_VALUES) do
+    UpdateProperty(name, value, true)
+  end
+  for name, value in pairs(GetPropertyResetValues({ "Driver Version" })) do
+    UpdateProperty(name, value, true)
   end
   connect()
 end

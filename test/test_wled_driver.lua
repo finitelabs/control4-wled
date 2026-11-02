@@ -47,6 +47,13 @@ function C4:GetDriverConfigInfo(section)
   if section == "minimum_os_version" then
     return "3.3.2"
   end
+  if section == "config" then
+    -- Director gives the driver.xml <config> section, which property resets read.
+    local f = assert(io.open(XML, "r"))
+    local xml = f:read("*a")
+    f:close()
+    return xml:match("<config>(.-)</config>")
+  end
   return configInfo(self, section)
 end
 
@@ -300,6 +307,27 @@ do
   T.eq("Reset Driver takes the new controller", Variables["Connected"], "1")
   T.eq("its MAC shown", Properties["MAC Address"], "02:A1:B2:C3:D4:EE")
   T.eq("Connected event", eventCount(1), 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("Reset Driver returns the driver to its first load, keeping the address")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  Properties["Warm White (K)"] = "3000"
+  Properties["Cool White (K)"] = "5000"
+  Properties["Log Level"] = "5 - Debug"
+  T.eq("connected before the reset", Variables["Connected"], "1")
+  mark()
+  EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  W.run(5000)
+  T.eq("Warm White back to its default", Properties["Warm White (K)"], "2700")
+  T.eq("Cool White back to its default", Properties["Cool White (K)"], "6500")
+  T.eq("Log Level back to its default", Properties["Log Level"], "3 - Info")
+  T.eq("IP Address kept", Properties["IP Address"], fake.ip)
+  T.eq("connected again", Variables["Connected"], "1")
+  T.eq("and Connected fired for the new start", eventCount(1), 1)
 end
 
 --------------------------------------------------------------------------------
