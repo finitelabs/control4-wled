@@ -105,10 +105,13 @@ end
 local nextHost = 40
 
 --- A fresh project: default properties, an empty store, the driver loaded and started.
-local function fresh(profile)
+--- @param profile string
+--- @param unreachable boolean|nil The controller does not answer from the start.
+local function fresh(profile, unreachable)
   W.reset()
   nextHost = nextHost + 1
   local fake = W.Fake.new(profile, { ip = "192.0.2." .. nextHost })
+  fake.reachable = not unreachable
   local persist = require("lib.persist")
   persist:delete("WledControllerMac")
   for k, v in pairs(defaultProperties()) do
@@ -283,6 +286,38 @@ do
   W.run(200)
   T.eq("connects to the new address", Properties["Driver Status"], "Connected")
   T.eq("one connection there", second.connects, 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("An address that never answers ends Not connected")
+--------------------------------------------------------------------------------
+do
+  -- First start against a controller that is gone.
+  fresh("esp32-rgbw-pwm-16", true)
+  W.run(30000)
+  T.eq("first start", Properties["Driver Status"], "Not connected: No connection to the controller")
+  T.eq("not connected", Variables["Connected"], "0")
+
+  -- Restart with the controller still gone.
+  restart()
+  W.run(30000)
+  T.eq("after a restart", Properties["Driver Status"], "Not connected: No connection to the controller")
+
+  -- Connected, then the IP Address moves to an address that does not answer.
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  T.eq("connected first", Variables["Connected"], "1")
+  local gone = W.Fake.new("esp32-rgbw-pwm-16", { ip = "192.0.2.98" })
+  gone.reachable = false
+  mark()
+  Properties["IP Address"] = gone.ip
+  OnPropertyChanged("IP Address")
+  W.run(30000)
+  T.eq("status", Properties["Driver Status"], "Not connected: No connection to the controller")
+  T.eq("Connected variable off", Variables["Connected"], "0")
+  T.eq("Disconnected event", eventCount(2), 1)
+  T.eq("proxy offline", lastOnline(), false)
+  T.eq("the old controller is left alone", fake.connects, 1)
 end
 
 --------------------------------------------------------------------------------

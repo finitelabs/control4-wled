@@ -49,7 +49,7 @@ local HTTP_TIMEOUT_S = 10
 --- @field host string|nil
 --- @field port integer|nil
 --- @field arch string|nil Chip the controller reported, for the frame limit.
---- @field mode "ws"|"http"|"offline" How the controller is reached now.
+--- @field mode "ws"|"http"|"offline"|"starting" How the controller is reached now; "starting" until the first answer or failure after a (re)start.
 local Client = {}
 Client.__index = Client
 
@@ -111,13 +111,18 @@ function Client:after(gen, ms, fn)
   end)
 end
 
---- Move to a new mode, telling the driver when reachability changes.
+local function reachable(mode)
+  return mode == "ws" or mode == "http"
+end
+
+--- Move to a new mode, telling the driver when reachability changes. From "starting", the
+--- first answer reports online and the first failure reports offline.
 --- @param mode "ws"|"http"|"offline"
 --- @param reason string|nil Why the controller cannot be reached, for "offline".
 function Client:setMode(mode, reason)
   local was = self.mode
   self.mode = mode
-  if was == "offline" and mode ~= "offline" then
+  if not reachable(was) and reachable(mode) then
     self.onOnline()
   elseif was ~= "offline" and mode == "offline" then
     self.onOffline(reason or "Not connected")
@@ -127,7 +132,7 @@ end
 --- Whether the controller can be reached, over the socket or HTTP.
 --- @return boolean
 function Client:isOnline()
-  return self.mode ~= "offline"
+  return reachable(self.mode)
 end
 
 --- Connect to a controller, closing any connection already open.
@@ -177,7 +182,8 @@ function Client:socketUrl()
   return string.format("ws://%s:%d/ws", tostring(self.host), self.port or 80)
 end
 
---- Close the connection and drop queued requests. Tells the driver nothing.
+--- Close the connection and drop queued requests. Tells the driver nothing now; after a
+--- start, the first answer or failure is reported.
 function Client:stop()
   self.gen = self.gen + 1
   self.socketUp = false
@@ -192,7 +198,7 @@ function Client:stop()
     self.inFlight.d:reject({ error = "stopped" })
     self.inFlight = nil
   end
-  self.mode = "offline"
+  self.mode = "starting"
 end
 
 -- ─── WebSocket ─────────────────────────────────────────────────────────────
@@ -362,6 +368,12 @@ function Client:poll(gen, token)
     return
   end
   self.polling = true
+  -- The next poll waits for this one to settle, so polls never pile up behind timeouts.
+  local function again()
+    self:after(gen, POLL_MS, function()
+      self:poll(gen, token)
+    end)
+  end
   self:enqueue("GET", "/json/si"):next(function(si)
     if self.gen ~= gen or self.socketUp then
       return
@@ -378,10 +390,7 @@ function Client:poll(gen, token)
       return
     end
     self:setMode("offline", self.downReason or "No connection to the controller")
-  end)
-  self:after(gen, POLL_MS, function()
-    self:poll(gen, token)
-  end)
+  end):next(again, again)
 end
 
 --- Queue an HTTP request; one is in flight at a time.

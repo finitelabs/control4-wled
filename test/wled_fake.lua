@@ -275,7 +275,9 @@ end
 function Fake:answer(method, path, body)
   self.requests[#self.requests + 1] = { method = method, path = path, body = body }
   local d = deferred.new()
-  self:after(LATENCY_MS, function()
+  -- An unreachable controller fails after timeoutMs, as a real HTTP timeout does.
+  local wait = self.reachable and LATENCY_MS or (self.timeoutMs or LATENCY_MS)
+  self:after(wait, function()
     if not self.reachable then
       d:reject({ error = "HTTP " .. method .. " request failed; timeout" })
       return

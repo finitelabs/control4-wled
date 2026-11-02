@@ -361,8 +361,32 @@ do
   W.run(60000)
   T.eq("queued requests rejected", rejected, 3)
   T.eq("no offline after stop", #log.offline, 0)
-  T.eq("offline mode", client.mode, "offline")
+  T.eq("waiting for a start", client.mode, "starting")
+  T.eq("not online", client:isOnline(), false)
   T.eq("no reconnect", fake.connects, 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("A controller that never answers is reported offline, and polls never pile up")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  fake.reachable = false
+  fake.timeoutMs = 10000
+  client:start(fake.ip, fake.port)
+  W.run(30000)
+  T.eq("told offline once", #log.offline, 1)
+  T.eq("never online", log.online, 0)
+  T.eq("offline mode", client.mode, "offline")
+  local idle = 0
+  for _ = 1, 60 do
+    W.run(1000)
+    if not client.inFlight and #client.queue == 0 then
+      idle = idle + 1
+    end
+  end
+  T.eq("the queue empties between polls that time out", idle > 0, true)
+  client:stop()
 end
 
 T.finish()
