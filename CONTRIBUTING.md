@@ -113,6 +113,13 @@ and the PDF all show them as GitHub does. The marker goes alone on its line, and
 the quote must not sit inside a list or another quote; otherwise it stays a
 plain quote that shows the marker.
 
+Images that every driver's docs share, the Finite Labs logo
+(`finite-labs-logo.png`) and `check-drivers.png` (the DriverCentral Cloud
+driver's Check Drivers action), ship with the template in
+`resources/documentation/images/`. A doc that links `./images/<name>` and has no
+copy of its own gets the template's at build time, so a driver's `images/` holds
+only its own.
+
 ## Updating Shared Code
 
 Copier is only needed for this occasional sync. It is **not** a build dependency
@@ -240,6 +247,9 @@ on a clean tree until something has populated `build/`.
 The driver.xml step stamps today's date as the version unless `DRIVER_VERSION`
 is set. On a tag build CI sets it to the tag's date, so the tag must be
 `vYYYYMMDD` or `vYYYYMMDD-suffix` or the build fails.
+
+A repo with no driver yet (no `drivers/*/driver.xml`) builds and verifies
+nothing, and CI uploads nothing, so a new repo's first pull request goes green.
 
 Each distribution's outputs are grouped by type under `dist/<distribution>/`:
 `c4z/` (packaged drivers), `docs/` (generated PDFs) and `source/` (the squished

@@ -123,7 +123,7 @@ local function fresh(profile, props)
   fake.commands = {}
   told, since = {}, 0
   dofile(DRIVER)
-  OnDriverLateInit()
+  ShimLateInit()
   W.run(3000)
   return fake
 end
