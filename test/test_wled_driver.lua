@@ -1,6 +1,6 @@
 --- The WLED driver against a fake controller: Connected and its events at every reconnect,
---- Device Info for a 16.0.1 and a 0.15.4 controller, the light proxy's online state and nothing
---- else at a start, a different controller at the address, and the IP Address property.
+--- Device Info for a 16.0.1 and a 0.15.4 controller, what the light proxy is told at a start
+--- and a restart, a different controller at the address, and the IP Address property.
 ---
 --- Run from the driver root:
 ---   make test
@@ -9,6 +9,7 @@
 
 local T = require("testlib")
 local W = require("wled_fake")
+require("color_math").install()
 
 DEBUG_WEBSOCKET = false
 
@@ -60,8 +61,52 @@ end
 
 local told, events = {}, {}
 
+-- The proxy's variables as it keeps them over a driver reload: Brightness Percent (1001) and
+-- its target (1110), Current Color Chromaticity (1200) and its target (1210), and the
+-- Navigator Dynamic Capabilities it was told (6661).
+local PROXY_DEVICE = 9001
+local proxyVars = {}
+local proxyCaps = {}
+
+function C4:GetProxyDevices()
+  return PROXY_DEVICE
+end
+
+function C4:GetDeviceVariable(id, variable)
+  if id ~= PROXY_DEVICE then
+    return nil
+  end
+  if variable == 6661 then
+    local xml = {}
+    for key, value in pairs(proxyCaps) do
+      xml[#xml + 1] = ("<%s>%s</%s>"):format(key, value, key)
+    end
+    return "<DynamicCapabilities>" .. table.concat(xml) .. "</DynamicCapabilities>"
+  end
+  return proxyVars[variable]
+end
+
 function C4:SendToProxy(idBinding, strCommand, tParams)
-  told[#told + 1] = { binding = idBinding, command = strCommand, params = tParams or {} }
+  tParams = tParams or {}
+  told[#told + 1] = { binding = idBinding, command = strCommand, params = tParams }
+  if idBinding ~= PROXY then
+    return
+  end
+  local p = tParams
+  if strCommand == "LIGHT_BRIGHTNESS_CHANGED" or strCommand == "LIGHT_BRIGHTNESS_CHANGING" then
+    proxyVars[1001] = tostring(p.LIGHT_BRIGHTNESS_CURRENT)
+    proxyVars[1110] = tostring(p.LIGHT_BRIGHTNESS_TARGET or p.LIGHT_BRIGHTNESS_CURRENT)
+  elseif strCommand == "LIGHT_COLOR_CHANGED" or strCommand == "LIGHT_COLOR_CHANGING" then
+    local form = "%g,%g,%d"
+    proxyVars[1200] = form:format(p.LIGHT_COLOR_CURRENT_X, p.LIGHT_COLOR_CURRENT_Y, p.LIGHT_COLOR_CURRENT_COLOR_MODE)
+    proxyVars[1210] = p.LIGHT_COLOR_TARGET_X
+        and form:format(p.LIGHT_COLOR_TARGET_X, p.LIGHT_COLOR_TARGET_Y, p.LIGHT_COLOR_TARGET_COLOR_MODE)
+      or proxyVars[1200]
+  elseif strCommand == "DYNAMIC_CAPABILITIES_CHANGED" then
+    for key, value in pairs(p) do
+      proxyCaps[key] = type(value) == "boolean" and (value and "True" or "False") or tostring(value)
+    end
+  end
 end
 
 function C4:FireEventByID(id)
@@ -109,6 +154,7 @@ local nextHost = 40
 --- @param unreachable boolean|nil The controller does not answer from the start.
 local function fresh(profile, unreachable)
   W.reset()
+  proxyVars, proxyCaps = {}, {}
   nextHost = nextHost + 1
   local fake = W.Fake.new(profile, { ip = "192.0.2." .. nextHost })
   fake.reachable = not unreachable
@@ -118,6 +164,7 @@ local function fresh(profile, unreachable)
     Properties[k] = v
   end
   Properties["IP Address"] = fake.ip
+  T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
   mark()
   dofile(DRIVER)
   OnDriverLateInit()
@@ -145,7 +192,7 @@ do
   T.eq("Connected variable", Variables["Connected"], "1")
   T.eq("Connected event once", eventCount(1), 1)
   T.eq("no Disconnected event", eventCount(2), 0)
-  T.eq("proxy told online once", toldCount("ONLINE_CHANGED"), 1)
+  T.eq("proxy told offline at late init, then online", toldCount("ONLINE_CHANGED"), 2)
   T.eq("proxy online", lastOnline(), true)
   T.eq("Name", Properties["Name"], "Mock Shelf Controller")
   T.eq("Brand", Properties["Brand"], "WLED")
@@ -170,28 +217,19 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A start tells the light proxy its online state and nothing else")
+T.section("A start tells the light its level and color once; a restart with nothing changed tells neither")
 --------------------------------------------------------------------------------
 do
   fresh("esp32-rgbw-pwm-16")
   W.run(200)
-  local other = 0
-  for _, t in ipairs(told) do
-    if t.binding == PROXY and t.command ~= "ONLINE_CHANGED" then
-      other = other + 1
-    end
-  end
-  T.eq("no light state told at a first start", other, 0)
-
+  T.eq("capabilities told once", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 1)
+  T.eq("the level told once", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
+  T.eq("the color told once", toldCount("LIGHT_COLOR_CHANGED"), 1)
   restart()
   W.run(200)
-  other = 0
-  for _, t in ipairs(told) do
-    if t.binding == PROXY and t.command ~= "ONLINE_CHANGED" then
-      other = other + 1
-    end
-  end
-  T.eq("none after a restart either", other, 0)
+  T.eq("no capabilities after a restart: the proxy shows them", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 0)
+  T.eq("no level after a restart", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
+  T.eq("no color after a restart", toldCount("LIGHT_COLOR_CHANGED"), 0)
   T.eq("Connected event fires at a restart's connect", eventCount(1), 1)
   T.eq("Connected again", Variables["Connected"], "1")
 end
@@ -321,17 +359,17 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("Light commands are left for the next layer")
+T.section("Light commands reach the controller")
 --------------------------------------------------------------------------------
 do
   local fake = fresh("esp32-rgbw-pwm-16")
   W.run(200)
   mark()
-  ReceivedFromProxy(PROXY, "ON", {})
-  ReceivedFromProxy(PROXY, "SET_LEVEL", { LEVEL = "50" })
+  ReceivedFromProxy(PROXY, "SET_LEVEL", { LEVEL = "80" })
   W.run(2000)
-  T.eq("nothing sent to the controller", #fake.commands, 0)
-  T.eq("nothing told the proxy", #told, 0)
+  local last = fake.commands[#fake.commands]
+  T.eq("a level goes out as master brightness at once", last and { last.bri, last.tt }, { 204, 0 })
+  T.eq("and is told", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
 end
 
 T.finish()

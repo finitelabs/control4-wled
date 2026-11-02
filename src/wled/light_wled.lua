@@ -1,0 +1,481 @@
+--- The WLED controller's light for the light model (wled.light): the
+--- controller's master power and level, and the color of every segment,
+--- translated between WLED's JSON state and the model's channel fields.
+---
+--- WLED behavior this follows (wled00/json.cpp, led.cpp and FX_fcn.cpp at
+--- v16.0.1 and v0.15.4):
+---   - `tt` is whole tenths of a second, kept as 16-bit milliseconds, so one
+---     command carries at most 65.5 s; longer fades go as legs on one line.
+---   - Brightness fades in a straight line from where the output is.
+---   - The controller reports a command's target at once, and pushes at most
+---     once a second.
+---   - CCT is 0 (warm) to 255 (cool); the strip's real white points are the
+---     installer's Warm White and Cool White.
+---   - `{"on":true,"bri":N,"tt":T}` from off fades up from nothing by itself.
+
+local light = require("wled.light")
+local Device = require("wled.device")
+
+local CM = light.ColorMode
+
+local TT_MAX = 655
+local LEG_MS = TT_MAX * 100
+local ECHO_WAIT_MS = 2500
+local RATE_MAX = 86400000
+
+local COLOR_FIELDS = { "rgb", "color_brightness", "white", "color_temperature", "color_mode" }
+
+--- @class WledLight
+--- @field device WledDevice
+local Adapter = {}
+Adapter.__index = Adapter
+
+--- @class WledLightOptions
+--- @field send fun(json: table) Sends a JSON state command to the controller.
+--- @field device WledDevice The controller's model.
+--- @field warm fun(): number Warm White, in Kelvin.
+--- @field cool fun(): number Cool White, in Kelvin.
+
+local function round(v)
+  return math.floor(v + 0.5)
+end
+
+local function clamp(v, lo, hi)
+  return math.max(lo, math.min(hi, v))
+end
+
+local function byte(v)
+  return clamp(round((tonumber(v) or 0) * 255), 0, 255)
+end
+
+--- @param opts WledLightOptions
+--- @return WledLight
+function Adapter.new(opts)
+  local self = setmetatable({}, Adapter)
+  self.sendJson = opts.send
+  self.device = opts.device
+  self.warm = opts.warm
+  self.cool = opts.cool
+  self.legGen = 0
+  self.rgb = { 1, 1, 1 }
+  return self
+end
+
+--- The light model's adapter table for this light.
+--- @return table
+function Adapter:adapter()
+  return {
+    send = function(cmd)
+      self:send(cmd)
+    end,
+    normalize = function(cmd)
+      self:normalize(cmd)
+    end,
+    curve = function(p)
+      return p
+    end,
+    echoWaitMs = ECHO_WAIT_MS,
+    capabilities = {
+      brightness_rate_max = RATE_MAX,
+      color_rate_max = RATE_MAX,
+    },
+  }
+end
+
+--- The light model's color mode for capability bits.
+--- @param lc integer|nil
+--- @return integer
+function Adapter.modeFor(lc)
+  local rgb, white, cct =
+    Device.has(lc, Device.CAP_RGB), Device.has(lc, Device.CAP_WHITE), Device.has(lc, Device.CAP_CCT)
+  if rgb then
+    if cct then
+      return CM.COLOR_MODE_RGB_COLOR_TEMPERATURE
+    end
+    return white and CM.COLOR_MODE_RGB_WHITE or CM.COLOR_MODE_RGB
+  end
+  if cct then
+    return CM.COLOR_MODE_COLOR_TEMPERATURE
+  end
+  return white and CM.COLOR_MODE_BRIGHTNESS or CM.COLOR_MODE_ON_OFF
+end
+
+--- @return integer
+function Adapter:mode()
+  return Adapter.modeFor(self.device.lc or 0)
+end
+
+--- Whether the strip has white LEDs of its own.
+--- @return boolean
+function Adapter:whiteLeds()
+  return Device.has(self.device.lc, Device.CAP_WHITE)
+end
+
+--- The installer's white points, warm below cool.
+--- @return number warm, number cool
+function Adapter:range()
+  local warm, cool = tonumber(self.warm()) or 2700, tonumber(self.cool()) or 6500
+  if cool <= warm then
+    cool = warm + 1
+  end
+  return warm, cool
+end
+
+--- @param cct number 0 (warm) to 255 (cool)
+--- @return number kelvin
+function Adapter:kelvinFromCct(cct)
+  local warm, cool = self:range()
+  return warm + (cool - warm) * clamp(tonumber(cct) or 0, 0, 255) / 255
+end
+
+--- @param kelvin number
+--- @return integer cct
+function Adapter:cctFromKelvin(kelvin)
+  local warm, cool = self:range()
+  return clamp(round((kelvin - warm) / (cool - warm) * 255), 0, 255)
+end
+
+--- The light as the light model reads it: one color mode and the mireds the
+--- installer's white points give.
+--- @return table
+function Adapter:entity()
+  local warm, cool = self:range()
+  return { supported_color_modes = { self:mode() }, min_mireds = 1e6 / cool, max_mireds = 1e6 / warm }
+end
+
+--- The segment whose color stands for the light: the main one, else the first.
+--- @param state table
+--- @return table|nil
+local function mainSegment(state)
+  local main, first = tonumber(state.mainseg) or 0, nil
+  for _, seg in ipairs(type(state.seg) == "table" and state.seg or {}) do
+    if type(seg) == "table" and (tonumber(seg.stop) or 0) > (tonumber(seg.start) or 0) then
+      first = first or seg
+      if tonumber(seg.id) == main then
+        return seg
+      end
+    end
+  end
+  return first
+end
+
+--- A segment's primary color as 0-255 channels.
+--- @param seg table|nil
+--- @return integer r, integer g, integer b, integer w
+local function primary(seg)
+  local col = seg and type(seg.col) == "table" and seg.col[1]
+  if type(col) == "string" then
+    local hex = col:gsub("^#", "")
+    local function at(i)
+      return tonumber(hex:sub(i, i + 1), 16) or 0
+    end
+    return at(1), at(3), at(5), #hex >= 8 and at(7) or 0
+  end
+  if type(col) ~= "table" then
+    return 0, 0, 0, 0
+  end
+  local function at(i)
+    return clamp(round(tonumber(col[i]) or 0), 0, 255)
+  end
+  return at(1), at(2), at(3), at(4)
+end
+
+--- Channel fields for 0-255 channels and a CCT, as the controller reports them.
+--- RGB that reads all off keeps the last color sent, as the white side of a
+--- combined mode keeps it.
+--- @return table fields
+function Adapter:fieldsFrom(r, g, b, w, cct)
+  local mode = self:mode()
+  local f = {
+    color_mode = mode,
+    color_brightness = 0,
+    red = self.rgb[1],
+    green = self.rgb[2],
+    blue = self.rgb[3],
+    white = 0,
+    color_temperature = 0,
+    cold_white = 0,
+    warm_white = 0,
+  }
+  local hasRgb = mode == CM.COLOR_MODE_RGB
+    or mode == CM.COLOR_MODE_RGB_WHITE
+    or mode == CM.COLOR_MODE_RGB_COLOR_TEMPERATURE
+  if hasRgb then
+    local whiteLeds = self:whiteLeds()
+    if mode == CM.COLOR_MODE_RGB_COLOR_TEMPERATURE and not whiteLeds and r > 0 and r == g and g == b then
+      -- A strip without white LEDs shows its white on all three.
+      f.white = r / 255
+    else
+      local m = math.max(r, g, b)
+      if m > 0 then
+        f.red, f.green, f.blue = r / m, g / m, b / m
+        f.color_brightness = m / 255
+      end
+      if whiteLeds then
+        f.white = w / 255
+      end
+    end
+  end
+  if mode == CM.COLOR_MODE_RGB_COLOR_TEMPERATURE or mode == CM.COLOR_MODE_COLOR_TEMPERATURE then
+    f.color_temperature = 1e6 / self:kelvinFromCct(cct)
+  end
+  return f
+end
+
+--- Whether a command sets any color or white channel.
+local function setsColor(cmd)
+  for _, field in ipairs(COLOR_FIELDS) do
+    if cmd["has_" .. field] then
+      return true
+    end
+  end
+  return false
+end
+
+--- The 0-255 channels and CCT a command lights, its channels over the light's.
+--- @return integer r, integer g, integer b, integer w, integer cct
+function Adapter:render(cmd)
+  local cur = self.fields or {}
+  local function take(field, default)
+    if cmd["has_" .. field] and cmd[field] ~= nil then
+      return cmd[field]
+    end
+    if cur[field] ~= nil then
+      return cur[field]
+    end
+    return default
+  end
+  local red, green, blue = self.rgb[1], self.rgb[2], self.rgb[3]
+  if cmd.has_rgb then
+    red, green, blue = cmd.red or 0, cmd.green or 0, cmd.blue or 0
+  end
+  local cb = take("color_brightness", 1)
+  local white = take("white", 0)
+  local ct = take("color_temperature", 0)
+  local mode = self:mode()
+  local r, g, b, w = byte(red * cb), byte(green * cb), byte(blue * cb), 0
+  if mode == CM.COLOR_MODE_COLOR_TEMPERATURE or mode == CM.COLOR_MODE_BRIGHTNESS then
+    r, g, b, w = 0, 0, 0, 255
+  elseif mode == CM.COLOR_MODE_RGB_WHITE then
+    w = byte(white)
+  elseif mode == CM.COLOR_MODE_RGB_COLOR_TEMPERATURE then
+    if self:whiteLeds() then
+      w = byte(white)
+    elseif white > 0 and cb <= 0 then
+      r, g, b = byte(white), byte(white), byte(white)
+    end
+  end
+  local cct = ct > 0 and self:cctFromKelvin(1e6 / ct) or (self.cct or 127)
+  return r, g, b, w, cct
+end
+
+--- Round a command to what the controller will report back, so the light
+--- model takes its report as the command's own.
+--- @param cmd table
+function Adapter:normalize(cmd)
+  if cmd.has_brightness and (tonumber(cmd.brightness) or 0) > 0 then
+    cmd.brightness = math.max(1, byte(cmd.brightness)) / 255
+  end
+  if not setsColor(cmd) then
+    return
+  end
+  if cmd.has_rgb then
+    self.rgb = { cmd.red or 0, cmd.green or 0, cmd.blue or 0 }
+  end
+  local f = self:fieldsFrom(self:render(cmd))
+  if cmd.has_rgb then
+    cmd.red, cmd.green, cmd.blue = f.red, f.green, f.blue
+    self.rgb = { f.red, f.green, f.blue }
+  end
+  for _, field in ipairs({ "color_brightness", "white", "color_temperature" }) do
+    if cmd["has_" .. field] then
+      cmd[field] = f[field]
+    end
+  end
+end
+
+--- The JSON for a command's color: every segment, its effect stopped.
+--- @return table seg, integer r, integer g, integer b, integer w, integer cct
+function Adapter:colorJson(cmd)
+  local r, g, b, w, cct = self:render(cmd)
+  local col = self:whiteLeds() and { r, g, b, w } or { r, g, b }
+  local mode = self:mode()
+  local withCct = mode == CM.COLOR_MODE_RGB_COLOR_TEMPERATURE or mode == CM.COLOR_MODE_COLOR_TEMPERATURE
+  local segs = {}
+  for _, seg in ipairs(self.device.segments or {}) do
+    segs[#segs + 1] = { id = seg.id, col = { col }, fx = 0, cct = withCct and cct or nil }
+  end
+  if #segs == 0 then
+    segs = { col = { col }, fx = 0, cct = withCct and cct or nil }
+  end
+  return segs, r, g, b, w, cct
+end
+
+--- Remember what a command sets, for the next one's channels.
+function Adapter:apply(cmd)
+  local cur = self.fields or {}
+  for _, field in ipairs({ "color_brightness", "white", "color_temperature" }) do
+    if cmd["has_" .. field] then
+      cur[field] = cmd[field]
+    end
+  end
+  self.fields = cur
+end
+
+--- Master brightness (0-255) the output is at now, on the straight line of the
+--- last fade sent.
+--- @return number
+function Adapter:outputBri(now)
+  local out = self.out
+  if not out then
+    return self.device.on and (self.device.bri or 0) or 0
+  end
+  local p = out.ms > 0 and clamp((now - out.t0) / out.ms, 0, 1) or 1
+  return out.from + (out.to - out.from) * p
+end
+
+--- Send a command in channel fields to the controller.
+--- @param cmd table
+function Adapter:send(cmd)
+  self.legGen = self.legGen + 1
+  self.legs = nil
+  local now = C4:GetTime()
+  local color = setsColor(cmd)
+  if cmd.preOn then
+    -- The controller fades up from off by itself: only the color goes first.
+    if color then
+      local seg = self:colorJson(cmd)
+      self:apply(cmd)
+      self.sendJson({ seg = seg, tt = 0 })
+    end
+    return
+  end
+  local json = {}
+  if cmd.has_state then
+    json.on = cmd.state
+  end
+  local bri
+  if cmd.has_brightness and cmd.state ~= false and (tonumber(cmd.brightness) or 0) > 0 then
+    bri = math.max(1, byte(cmd.brightness))
+    json.bri = bri
+  end
+  local seg, r, g, b, w, cct
+  if color then
+    seg, r, g, b, w, cct = self:colorJson(cmd)
+    json.seg = seg
+    self.cct = cct
+  end
+  self:apply(cmd)
+  local ms = cmd.has_transition_length and (tonumber(cmd.transition_length) or 0) or nil
+  local from = self:outputBri(now)
+  local to = cmd.state == false and 0 or bri or from
+  self.out = { from = from, to = to, t0 = now, ms = ms or 0 }
+  if ms and ms > LEG_MS then
+    self:startLegs(json, ms, from, to, color and { r, g, b, w } or nil, now)
+    return
+  end
+  if ms then
+    json.tt = round(ms / 100)
+  end
+  self.sendJson(json)
+end
+
+--- A fade longer than one command carries, as legs along one straight line.
+function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now)
+  local n = math.ceil(ms / LEG_MS)
+  local legMs = ms / n
+  local fromCol = self.lastCol or toCol
+  local gen = self.legGen
+  local finalOn = json.on
+  local function leg(k)
+    if self.legGen ~= gen then
+      return
+    end
+    local p = k / n
+    local part = { tt = round(legMs / 100) }
+    local last = k == n
+    if last then
+      for key, value in pairs(json) do
+        part[key] = value
+      end
+      part.tt = round(legMs / 100)
+    else
+      part.on = finalOn ~= false or nil
+      part.bri = math.max(1, round(fromBri + (toBri - fromBri) * p))
+      if toCol and json.seg then
+        local col = {}
+        for i = 1, #toCol do
+          col[i] = round((fromCol[i] or 0) + (toCol[i] - (fromCol[i] or 0)) * p)
+        end
+        local seg = {}
+        for i, s in ipairs(json.seg) do
+          seg[i] = { id = s.id, col = { self:whiteLeds() and col or { col[1], col[2], col[3] } }, fx = 0, cct = s.cct }
+        end
+        if #seg == 0 then
+          seg = { col = { col }, fx = 0, cct = json.seg.cct }
+        end
+        part.seg = seg
+      end
+      local legCol = part.seg and (part.seg[1] or part.seg).col[1] or nil
+      self.legs = {
+        gen = gen,
+        leg = { bri = part.bri, on = part.on ~= false, col = legCol },
+        final = { on = finalOn, bri = toBri, col = toCol },
+      }
+    end
+    if last then
+      self.legs = nil
+    end
+    self.sendJson(part)
+    if not last then
+      delay(legMs):next(function()
+        leg(k + 1)
+      end)
+    end
+  end
+  self.out = { from = fromBri, to = toBri, t0 = now, ms = ms }
+  leg(1)
+end
+
+--- The light's state in channel fields, from the controller's model. A report
+--- of a leg of a long fade reads as the fade's end, as a single command's does.
+--- @return table
+function Adapter:state()
+  local device = self.device
+  local state = device.state or {}
+  local seg = mainSegment(state)
+  local r, g, b, w = primary(seg)
+  local cct = seg and tonumber(seg.cct) or 127
+  self.lastCol = { r, g, b, w }
+  local on, bri = device.on == true, device.bri or 0
+  local legs = self.legs
+  if legs then
+    local legCol = legs.leg.col
+    local sameCol = not legCol or (legCol[1] == r and legCol[2] == g and legCol[3] == b and (legCol[4] or 0) == w)
+    if on == legs.leg.on and bri == legs.leg.bri and sameCol then
+      on = legs.final.on ~= false
+      bri = legs.final.bri
+      if legs.final.col then
+        r, g, b, w = legs.final.col[1], legs.final.col[2], legs.final.col[3], legs.final.col[4] or 0
+      end
+    else
+      -- Another client moved the light: the legs left would undo it.
+      self.legGen = self.legGen + 1
+      self.legs = nil
+    end
+  end
+  local f = self:fieldsFrom(r, g, b, w, cct)
+  self.fields = {
+    color_brightness = f.color_brightness,
+    white = f.white,
+    color_temperature = f.color_temperature,
+  }
+  if f.color_brightness > 0 then
+    self.rgb = { f.red, f.green, f.blue }
+  end
+  f.state = on
+  f.brightness = bri / 255
+  return f
+end
+
+return Adapter

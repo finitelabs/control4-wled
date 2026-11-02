@@ -28,11 +28,14 @@ ______________________________________________________________________
 
 Integrate [WLED](https://kno.wled.ge) LED controllers into Control4. The driver
 connects to a WLED controller on the local network, keeps a live connection to
-it, and shows what the controller reports: its name, firmware, MAC address, LED
-count and segments.
+it, and gives the controller a Control4 light: on and off, level, color and
+white with fades, Advanced Lighting Scenes and keypad buttons. It also shows
+what the controller reports: its name, firmware, MAC address, LED count and
+segments.
 
-In this version the driver's light shows whether the controller is online. It
-does not turn the LEDs on or off, dim them or change their color yet.
+The light controls the whole controller: its power and level, and the color of
+every segment. WLED's effects, palettes, presets and playlists, and a light per
+segment, come in later versions.
 
 # <span style="color:#109EFF">Index</span>
 
@@ -41,6 +44,7 @@ does not turn the LEDs on or off, dim them or change their color yet.
 - [System Requirements](#system-requirements)
 - [Features](#features)
 - [Compatibility](#compatibility)
+  - [Colors and WLED effects](#colors-and-wled-effects)
 - [Installer Setup](#installer-setup)
   <!-- #ifdef DRIVERCENTRAL -->
   - [DriverCentral Cloud Setup](#drivercentral-cloud-setup)
@@ -68,6 +72,14 @@ does not turn the LEDs on or off, dim them or change their color yet.
 
 # <span style="color:#109EFF">Features</span>
 
+- A Control4 light for the controller: on, off, level and toggle, with the
+  Default On level, Previous Level and Min and Max On Level
+- Color and white as the controller's LEDs allow: color, color temperature
+  between the installer's white points, or level only
+- Fades of any length, run by the controller itself, with click and hold rates
+- Advanced Lighting Scenes: level and color steps, ramps, stops and flash
+- Color On Mode and Dim-To-Warm, as set on the light in Composer
+- On, Off and Toggle button links, with keypad LEDs that show the light's state
 - A live connection to the controller over WLED's WebSocket, so changes made in
   the WLED app, with a button or by another system show at once
 - HTTP while the live connection reconnects, so the controller stays reachable
@@ -101,6 +113,13 @@ shows it:
 
 > **Note:** WLED's own settings change what a segment reports. An RGBW strip
 > with WLED's white mode set to calculate the white from the color reports RGB.
+> The light follows such a change while it runs.
+
+## Colors and WLED effects
+
+Any color Control4 sends, from a color pick, a scene step, the Color On Mode or
+Dim-To-Warm, shows as that solid color on every segment and ends a running WLED
+effect. A level change alone dims an effect and leaves it running.
 
 # <span style="color:#109EFF">Installer Setup</span>
 
@@ -262,6 +281,18 @@ address at once.
 
 WLED's web port. Leave it at `80` unless it was changed in WLED.
 
+### Light Settings
+
+#### Warm White (K)
+
+The color temperature of the strip's warmest white, 2700 K by default. WLED does
+not know its strip's white points, so the light's color temperature range runs
+between this and Cool White.
+
+#### Cool White (K)
+
+The color temperature of the strip's coolest white, 6500 K by default.
+
 ### Device Info
 
 Read-only details the controller reports, updated whenever they change:
@@ -319,8 +350,21 @@ neither event.
 
 ### Light (provider)
 
-The Control4 Light proxy connection. In this version it shows the light online
-while the driver is connected and offline while it is not.
+The Control4 Light proxy connection. The light is online while the driver is
+connected and offline while it is not.
+
+### Button Links
+
+| Connection         | Description                        |
+| ------------------ | ---------------------------------- |
+| On Button Link     | Turns the light on when triggered  |
+| Toggle Button Link | Toggles the light when triggered   |
+| Off Button Link    | Turns the light off when triggered |
+
+A keypad button bound to a button link shows whether the light is on: lit while
+it is on, or for the Off Button Link while it is off. It shows that button's
+colors, set in Composer under the light's **Button and Button Connection Status
+LED Colors** (Top for On, Bottom for Off, Toggle for Toggle).
 
 <!-- #ifdef DRIVERCENTRAL -->
 
