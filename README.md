@@ -4,7 +4,7 @@
 
 ______________________________________________________________________
 
-# <span style="color:#109EFF">Overview</span>
+# <span style="color:#0094FF">Overview</span>
 
 > DISCLAIMER: This software is neither affiliated with nor endorsed by either
 > Control4 or WLED.
@@ -20,7 +20,7 @@ The light controls the whole controller: its power and level, and the color of
 every segment. WLED's effects, palettes, presets and playlists, and a light per
 segment, come in later versions.
 
-# <span style="color:#109EFF">Index</span>
+# <span style="color:#0094FF">Index</span>
 
 <div style="font-size: small">
 
@@ -46,13 +46,13 @@ segment, come in later versions.
 
 </div>
 
-# <span style="color:#109EFF">System Requirements</span>
+# <span style="color:#0094FF">System Requirements</span>
 
 - Control4 OS 3.3.2 or later
 - A WLED controller running WLED 0.15 or later, on a network the Control4
   controller can reach
 
-# <span style="color:#109EFF">Features</span>
+# <span style="color:#0094FF">Features</span>
 
 - A Control4 light for the controller: on, off, level and toggle, with the
   Default On level, Previous Level and Min and Max On Level
@@ -71,7 +71,7 @@ segment, come in later versions.
 - A check that the controller at the address is the one the driver was set up
   with, so it never drives another controller after an address change
 
-# <span style="color:#109EFF">Compatibility</span>
+# <span style="color:#0094FF">Compatibility</span>
 
 Any controller running WLED 0.15 or later: ESP32, ESP32-S3, ESP32-C3 and ESP8266
 boards, whether WLED came installed or was installed by hand.
@@ -103,7 +103,7 @@ Any color Control4 sends, from a color pick, a scene step, the Color On Mode or
 Dim-To-Warm, shows as that solid color on every segment and ends a running WLED
 effect. A level change alone dims an effect and leaves it running.
 
-# <span style="color:#109EFF">Installer Setup</span>
+# <span style="color:#0094FF">Installer Setup</span>
 
 > ⚠️ Add one **WLED** driver per WLED controller, and give each controller a
 > DHCP reservation in the router so its address does not change.
@@ -233,6 +233,12 @@ the address.
 A live connection that drops while the controller still answers over HTTP fires
 neither event.
 
+### Conditionals
+
+| Conditional                       | Tests                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| WLED controller connection status | Whether the driver is Connected or Disconnected, as the events follow it |
+
 ## Connections
 
 ### Light (provider)
@@ -253,7 +259,7 @@ it is on, or for the Off Button Link while it is off. It shows that button's
 colors, set in Composer under the light's **Button and Button Connection Status
 LED Colors** (Top for On, Bottom for Off, Toggle for Toggle).
 
-# <span style="color:#109EFF">Support</span>
+# <span style="color:#0094FF">Support</span>
 
 If you have any questions or issues integrating this driver with Control4, you
 can file an issue on GitHub:
@@ -262,7 +268,7 @@ https://github.com/finitelabs/control4-wled/issues/new
 
 <a href="https://www.buymeacoffee.com/derek.miller" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-# <span style="color:#109EFF">Changelog</span>
+# <span style="color:#0094FF">Changelog</span>
 
 <!--
 Template for a new release entry (copy below the heading, fill in, uncomment):

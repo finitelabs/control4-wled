@@ -28,7 +28,17 @@
       <description>When NAME loses its WLED controller</description>
     </event>
   </events>
-  <conditionals/>
+  <conditionals>
+    <conditional>
+      <id>1</id>
+      <name>CONTROLLER_CONNECTED</name>
+      <type>BOOL</type>
+      <condition_statement>WLED controller connection status</condition_statement>
+      <description>NAME is STRING</description>
+      <true_text>Connected</true_text>
+      <false_text>Disconnected</false_text>
+    </conditional>
+  </conditionals>
   <config>
     <script file="driver.lua" jit="1"/>
     <documentation file="www/documentation/index.html"/>

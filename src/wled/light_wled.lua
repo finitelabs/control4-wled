@@ -26,7 +26,17 @@ local RATE_MAX = 86400000
 local COLOR_FIELDS = { "rgb", "color_brightness", "white", "color_temperature", "color_mode" }
 
 --- @class WledLight
---- @field device WledDevice
+--- @field device WledDevice The controller's model.
+--- @field sendJson fun(json: table) Sends a JSON state command to the controller.
+--- @field warm fun(): number Warm White, in Kelvin.
+--- @field cool fun(): number Cool White, in Kelvin.
+--- @field rgb number[] The last full color sent or reported, 0-1 per channel.
+--- @field legGen integer Bumped by every command, so legs of an older fade stop.
+--- @field legs table|nil The fade going out in legs: the leg in flight and the fade's end.
+--- @field out table|nil The last fade sent: from, to (0-255), its start time and length.
+--- @field fields table|nil Color brightness, white and color temperature last sent or reported.
+--- @field cct integer|nil The CCT (0-255) last sent.
+--- @field lastCol integer[]|nil The main segment's color (0-255) at the last report.
 local Adapter = {}
 Adapter.__index = Adapter
 

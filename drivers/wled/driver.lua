@@ -6,7 +6,7 @@
 -- (src/wled/light_wled.lua).
 
 --#ifdef DRIVERCENTRAL
-DC_PID = 0
+DC_PID = 0 -- TODO: Assign DriverCentral product ID
 DC_X = nil
 DC_FILENAME = "wled.c4z"
 --#else
@@ -254,6 +254,11 @@ function OnDriverInit()
   --#else
   C4:AllowExecute(true)
   --#endif
+  -- Clear stale WebSocket binding addresses from earlier runs, whose delayed release KillAllTimers
+  -- ends. Address only: a NetDisconnect would drive an orphaned socket into a reconnect.
+  for i = 6100, 6199 do
+    pcall(C4.SetBindingAddress, C4, i, "")
+  end
   gInitialized = false
   log:setLogName(C4:GetDeviceData(C4:GetDeviceID(), "name"))
   log:setLogLevel(Properties["Log Level"])
@@ -273,6 +278,9 @@ function OnDriverLateInit()
     local ok, err = pcall(OnPropertyChanged, p)
     if not ok then
       log:error("OnPropertyChanged('%s') failed: %s", p, tostring(err))
+      --#ifdef DRIVERCENTRAL
+      diagnostics:captureError(tostring(err), nil, "WLED.OnPropertyChanged")
+      --#endif
     end
   end
 
@@ -300,9 +308,10 @@ OnDriverLateInit = diagnostics:wrapLateInit(OnDriverLateInit)
 --#endif
 
 function OnDriverDestroyed()
+  log:trace("OnDriverDestroyed()")
   client:stop()
-  CancelTimer("UpdateCheck")
-  CancelTimer("LogMode")
+  -- Ramps, scene steps, echo waits and fade legs are all named timers.
+  KillAllTimers()
 end
 
 -- ─── Property handlers (OPC dispatch) ──────────────────────────────────────
@@ -398,6 +407,21 @@ function EC.DiagnosticsSnapshot()
 end
 --#endif
 
+-- ─── Conditionals (TC dispatch) ────────────────────────────────────────────
+
+--- Test condition for the controller's connection, the state the Connected events follow.
+--- @param strConditionName string
+--- @param tParams table
+--- @return boolean
+function TC.CONTROLLER_CONNECTED(strConditionName, tParams)
+  log:trace("TC.CONTROLLER_CONNECTED(%s, %s)", strConditionName, tParams)
+  local test = Select(tParams, "VALUE") == "Connected"
+  if Select(tParams, "LOGIC") == "NOT_EQUAL" then
+    return test ~= gConnected
+  end
+  return test == gConnected
+end
+
 -- ─── Actions (EC dispatch) ─────────────────────────────────────────────────
 
 --#ifndef DRIVERCENTRAL
@@ -407,7 +431,20 @@ function EC.Update_Drivers()
 end
 --#endif
 
---- Forget the remembered controller and connect again, taking whichever controller answers.
+--- Settable properties a reset returns to their defaults; IP Address and Port are kept.
+--- @type table<string, string>
+local RESET_PROPERTY_VALUES = {
+  ["Log Level"] = "3 - Info",
+  ["Log Mode"] = "Off",
+  ["Automatic Updates"] = "On",
+  --#ifndef DRIVERCENTRAL
+  ["Update Channel"] = "Production",
+  --#endif
+  ["Warm White (K)"] = tostring(DEFAULT_WARM),
+  ["Cool White (K)"] = tostring(DEFAULT_COOL),
+}
+
+--- Return the driver to its first load and connect again, taking whichever controller answers.
 function EC.Reset_Driver(params)
   log:trace("EC.Reset_Driver(%s)", params)
   if Select(params, "Are You Sure?") ~= "Yes" then
@@ -415,10 +452,18 @@ function EC.Reset_Driver(params)
   end
   log:print("Resetting driver to initial state")
   persist:delete(MAC_KEY)
+  -- Tell the proxy and programming before the light's state is cleared.
+  setConnected(false, "Connecting")
+  values:reset()
+  light.reset(true)
   device = Device.new()
   wledLight.device = device
-  for _, item in ipairs(DEVICE_INFO) do
-    UpdateProperty(item[1], "N/A")
+  values:update("Connected", false, "BOOL")
+  for name, value in pairs(RESET_PROPERTY_VALUES) do
+    UpdateProperty(name, value, true)
+  end
+  for name, value in pairs(GetPropertyResetValues({ "Driver Version" })) do
+    UpdateProperty(name, value, true)
   end
   connect()
 end

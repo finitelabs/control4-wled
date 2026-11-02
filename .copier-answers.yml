@@ -7,7 +7,7 @@ extra_build_secrets: ''
 extra_required_checks: mock-wled
 github_org: finitelabs
 icon_style: shaped
-primary_color: '#109EFF'
+primary_color: '#0094FF'
 project_description: Control4 drivers for WLED LED controllers. Control WLED strips
     and their segments as Control4 lights with color, fades, effects, palettes, presets
     and playlists.

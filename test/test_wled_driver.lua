@@ -47,6 +47,13 @@ function C4:GetDriverConfigInfo(section)
   if section == "minimum_os_version" then
     return "3.3.2"
   end
+  if section == "config" then
+    -- Director gives the driver.xml <config> section, which property resets read.
+    local f = assert(io.open(XML, "r"))
+    local xml = f:read("*a")
+    f:close()
+    return xml:match("<config>(.-)</config>")
+  end
   return configInfo(self, section)
 end
 
@@ -303,6 +310,62 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("The Controller Connected conditional follows the connection")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  local function test(value, logic)
+    return TestCondition("CONTROLLER_CONNECTED", { VALUE = value, LOGIC = logic })
+  end
+  T.eq("is Connected while connected", test("Connected", "EQUAL"), true)
+  T.eq("is not Disconnected while connected", test("Disconnected", "EQUAL"), false)
+  T.eq("NOT_EQUAL Connected while connected", test("Connected", "NOT_EQUAL"), false)
+  fake.reachable = false
+  fake:drop()
+  W.run(30000)
+  T.eq("is Disconnected once the controller is lost", test("Disconnected", "EQUAL"), true)
+  T.eq("NOT_EQUAL Connected once lost", test("Connected", "NOT_EQUAL"), true)
+end
+
+--------------------------------------------------------------------------------
+T.section("Reset Driver returns the driver to its first load, keeping the address")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  Properties["Warm White (K)"] = "3000"
+  Properties["Cool White (K)"] = "5000"
+  Properties["Log Level"] = "5 - Debug"
+  T.eq("connected before the reset", Variables["Connected"], "1")
+  mark()
+  EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  W.run(5000)
+  T.eq("Warm White back to its default", Properties["Warm White (K)"], "2700")
+  T.eq("Cool White back to its default", Properties["Cool White (K)"], "6500")
+  T.eq("Log Level back to its default", Properties["Log Level"], "3 - Info")
+  T.eq("IP Address kept", Properties["IP Address"], fake.ip)
+  T.eq("connected again", Variables["Connected"], "1")
+  T.eq("and Connected fired for the new start", eventCount(1), 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("Reset Driver with the controller gone tells the proxy and programming it went away")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  fake.reachable = false
+  fake:drop()
+  mark()
+  EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  W.run(60000)
+  T.eq("the proxy hears offline", lastOnline(), false)
+  T.eq("Disconnected fires once", eventCount(2), 1)
+  T.eq("the variable reads disconnected", Variables["Connected"], "0")
+end
+
+--------------------------------------------------------------------------------
 T.section("The IP Address property")
 --------------------------------------------------------------------------------
 do
@@ -356,6 +419,39 @@ do
   T.eq("Disconnected event", eventCount(2), 1)
   T.eq("proxy offline", lastOnline(), false)
   T.eq("the old controller is left alone", fake.connects, 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("Destroying the driver stops its fades, timers and connection")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  ReceivedFromProxy(PROXY, "SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "200000" })
+  W.run(1000)
+  local sentBefore, connectsBefore = #fake.commands, fake.connects
+  mark()
+  OnDriverDestroyed()
+  W.run(300000)
+  T.eq("no fade leg after destroy", #fake.commands, sentBefore)
+  T.eq("no reconnect after destroy", fake.connects, connectsBefore)
+  T.eq("the proxy hears nothing after destroy", #told, 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("A start clears the WebSocket binding addresses an earlier run left")
+--------------------------------------------------------------------------------
+do
+  local cleared = 0
+  local original = C4.SetBindingAddress
+  function C4:SetBindingAddress(id, address)
+    if id >= 6100 and id <= 6199 and address == "" then
+      cleared = cleared + 1
+    end
+  end
+  OnDriverInit()
+  C4.SetBindingAddress = original
+  T.eq("all 100 network bindings cleared", cleared, 100)
 end
 
 --------------------------------------------------------------------------------
