@@ -86,6 +86,11 @@ segment, come in later versions.
 - The controller's name, brand, product, firmware version, MAC address, LED
   count and segments in Composer
 - A `Connected` variable and Connected and Disconnected events for programming
+- The controller's own WLED effects, palettes, presets and playlists in
+  programming: set an effect, its speed and intensity, or a palette, apply a
+  preset, and start or stop a playlist
+- `Effect`, `Palette`, `Preset` and `Playlist` variables, and events when the
+  effect or preset changes and when a playlist starts or ends
 - A check that the controller at the address is the one the driver was set up
   with, so it never drives another controller after an address change
 
@@ -120,6 +125,12 @@ shows it:
 Any color Control4 sends, from a color pick, a scene step, the Color On Mode or
 Dim-To-Warm, shows as that solid color on every segment and ends a running WLED
 effect. A level change alone dims an effect and leaves it running.
+
+The effect and palette commands in programming (see
+[Programming Reference](#programming-reference)) run on every segment and leave
+the light's power and level as they are: an effect set while the light is off
+shows when it next turns on. A preset or playlist sets whatever it was saved
+with in WLED, power and level included.
 
 # <span style="color:#0094FF">Installer Setup</span>
 
@@ -330,27 +341,65 @@ Monitoring is Enabled.
 
 ## Programming Reference
 
+### Commands
+
+| Command              | Does                                                                          |
+| -------------------- | ----------------------------------------------------------------------------- |
+| Set Effect           | Runs a WLED effect on every segment                                           |
+| Set Effect Speed     | Sets the effect speed on every segment, 0 to 255                              |
+| Set Effect Intensity | Sets the effect intensity on every segment, 0 to 255                          |
+| Set Palette          | Uses a WLED palette on every segment                                          |
+| Apply Preset         | Applies a WLED preset                                                         |
+| Start Playlist       | Starts a WLED playlist                                                        |
+| Stop Playlist        | Stops the running playlist; the light keeps the look the playlist last showed |
+
+The choices are the controller's own, read when the driver connects and again
+when the controller reports a change: a preset or playlist saved or deleted, an
+effect or palette added, or new firmware. Effects that need a 2D matrix are
+offered only on a controller set up with one. Custom palettes show as
+`Custom Palette 1`, `Custom Palette 2` and so on.
+
+Presets and playlists show as their name and WLED id, for example
+`Movie Night (4)`. The command finds the preset by its id, so programming keeps
+working after the preset is renamed in WLED. Effects and palettes are found by
+name.
+
+The controller applies a preset or starts a playlist on its next loop; the
+variables and events below follow once it reports the result.
+
 ### Variables
 
-| Variable  | Type | Description                                          |
-| --------- | ---- | ---------------------------------------------------- |
-| Connected | BOOL | True while the driver is connected to the controller |
+| Variable  | Type   | Description                                                                      |
+| --------- | ------ | -------------------------------------------------------------------------------- |
+| Connected | BOOL   | True while the driver is connected to the controller                             |
+| Effect    | STRING | The effect the controller runs, as its main segment shows it                     |
+| Palette   | STRING | The palette the controller uses, as its main segment shows it                    |
+| Preset    | STRING | The preset the controller last applied, or empty once its look has been changed  |
+| Playlist  | STRING | The playlist the controller runs, or empty when none runs or it was sent unnamed |
 
 ### Events
 
-| Event        | When                                                                      |
-| ------------ | ------------------------------------------------------------------------- |
-| Connected    | The driver connects to the controller, at start and after every reconnect |
-| Disconnected | The driver loses the controller                                           |
+| Event            | When                                                                      |
+| ---------------- | ------------------------------------------------------------------------- |
+| Connected        | The driver connects to the controller, at start and after every reconnect |
+| Disconnected     | The driver loses the controller                                           |
+| Effect Changed   | The main segment's effect changes                                         |
+| Preset Changed   | The controller applies a different preset, including each playlist step   |
+| Playlist Started | A playlist starts, or another one replaces it                             |
+| Playlist Ended   | The running playlist stops or ends                                        |
 
 A live connection that drops while the controller still answers over HTTP fires
-neither event.
+neither connection event. The effect, preset and playlist events fire only for a
+change: a driver start, a reload or a reconnect that finds the controller as it
+was fires none of them, and applying the preset already shown fires nothing.
+Each variable is set before its event fires.
 
 ### Conditionals
 
-| Conditional                       | Tests                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------ |
-| WLED controller connection status | Whether the driver is Connected or Disconnected, as the events follow it |
+| Conditional                       | Tests                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| WLED controller connection status | Whether the driver is Connected or Disconnected, as the events follow it       |
+| WLED playlist status              | Whether a playlist is Running or Not Running, as the Playlist events follow it |
 
 ## Connections
 
