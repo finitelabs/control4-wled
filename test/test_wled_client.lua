@@ -1,0 +1,368 @@
+--- The transport against a fake controller on a virtual clock: the socket's first state,
+--- commands, WLED's text ping, reconnect waits, HTTP while the socket is down, busy answers,
+--- a 1013 close, the frame limit and one HTTP request in flight.
+---
+--- Run from the driver root:
+---   make test
+--- or:
+---   ./test/run_test.sh test_wled_client.lua
+
+local T = require("testlib")
+local W = require("wled_fake")
+local Client = require("wled.client")
+
+-- The vendored WebSocket module logs every frame at Ultra.
+DEBUG_WEBSOCKET = false
+
+-- A new address per test: the WebSocket module keeps a socket per URL until its close finishes.
+local nextHost = 10
+
+local function newClient(profile, opts)
+  W.reset()
+  nextHost = nextHost + 1
+  opts = opts or {}
+  opts.ip = opts.ip or ("192.0.2." .. nextHost)
+  local fake = W.Fake.new(profile or "esp32-rgbw-pwm-16", opts)
+  local log = { states = {}, online = 0, offline = {} }
+  local client = Client.new({
+    http = W.http,
+    onState = function(state, info)
+      log.states[#log.states + 1] = { state = state, info = info, at = W.now() }
+    end,
+    onOnline = function()
+      log.online = log.online + 1
+    end,
+    onOffline = function(reason)
+      log.offline[#log.offline + 1] = reason
+    end,
+  })
+  return client, fake, log
+end
+
+local function count(list, pred)
+  local n = 0
+  for _, v in ipairs(list) do
+    if pred(v) then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+local function posts(fake)
+  return count(fake.requests, function(r)
+    return r.method == "POST"
+  end)
+end
+
+--------------------------------------------------------------------------------
+T.section("The socket opens and the controller's first state arrives")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  T.eq("over the socket", client.mode, "ws")
+  T.eq("online once", log.online, 1)
+  T.eq("one state", #log.states, 1)
+  T.eq("state carries info", log.states[1].info.mac, "02a1b2c3d402")
+  T.eq("no HTTP needed", #fake.requests, 0)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A command goes over the socket and the change comes back as a push")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local sent
+  client:send({ on = false }):next(function(v)
+    sent = v
+  end)
+  W.run(10)
+  T.truthy("resolved once sent", sent)
+  T.eq("the controller got it", fake.commands[1] and fake.commands[1].on, false)
+  W.run(1100)
+  T.eq("pushed back", #log.states, 2)
+  T.eq("the push shows the change", log.states[2].state.on, false)
+  T.eq("not over HTTP", posts(fake), 0)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("WLED's text ping every 30 s keeps the socket")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  W.run(Client.PING_MS * 3)
+  T.eq("three pings", fake.pings, 3)
+  T.eq("still on the socket", client.mode, "ws")
+  T.eq("connected once", fake.connects, 1)
+  T.eq("never offline", #log.offline, 0)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("Two unanswered pings close the socket; offline when HTTP fails too")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  -- A half-open link: the socket stays up but nothing answers, HTTP included.
+  fake.ignorePings, fake.reachable = true, false
+  W.run(Client.PING_MS * 2 + 100)
+  T.eq("two pings unanswered, still counted connected", client.mode, "ws")
+  T.eq("not offline after two", #log.offline, 0)
+  W.run(Client.PING_MS)
+  T.eq("third interval closes it", client.socketUp, false)
+  W.run(100)
+  T.eq("offline once HTTP fails", client.mode, "offline")
+  T.eq("told offline once", #log.offline, 1)
+  T.contains("reason names the silence", log.offline[1], "No answer")
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("Reconnect waits grow and stop at 30 s")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local attempts = {}
+  local onConnect = fake.onConnect
+  function fake:onConnect(binding)
+    attempts[#attempts + 1] = W.now()
+    return onConnect(self, binding)
+  end
+  fake.reachable = false
+  fake:drop()
+  W.run(200000)
+  local gaps = {}
+  for i = 2, #attempts do
+    gaps[#gaps + 1] = attempts[i] - attempts[i - 1]
+  end
+  T.truthy("several attempts", #attempts >= 6, #attempts)
+  local grows = true
+  for i = 2, #gaps do
+    if gaps[i] + 10 < gaps[i - 1] then
+      grows = false
+    end
+  end
+  T.truthy("waits never shrink", grows, table.concat(gaps, ","))
+  local capped = true
+  for _, g in ipairs(gaps) do
+    if g > Client.RECONNECT_MAX_MS + 100 then
+      capped = false
+    end
+  end
+  T.truthy("waits capped at 30 s", capped, table.concat(gaps, ","))
+  T.truthy("reaches the cap", gaps[#gaps] >= Client.RECONNECT_MAX_MS, gaps[#gaps])
+
+  fake.reachable = true
+  W.run(Client.RECONNECT_MAX_MS + 1000)
+  T.eq("back on the socket", client.mode, "ws")
+  local before = #attempts
+  fake:drop()
+  W.run(4000)
+  T.eq("wait starts over after a success", #attempts, before + 1)
+  T.eq("reconnected at once", client.mode, "ws")
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("Socket refused, HTTP answers: state by polling, commands by POST")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  fake.socketOpen = false
+  client:start(fake.ip, fake.port)
+  W.run(Client.OPEN_GRACE_MS + 100)
+  T.eq("reached over HTTP", client.mode, "http")
+  T.eq("online once", log.online, 1)
+  T.eq("state from /json/si", log.states[1] and log.states[1].info.ver, "16.0.1")
+  client:send({ bri = 40 })
+  W.run(50)
+  T.eq("command POSTed", posts(fake), 1)
+  T.eq("controller took it", fake.si.state.bri, 40)
+  local polls = count(fake.requests, function(r)
+    return r.path == "/json/si"
+  end)
+  W.run(Client.POLL_MS * 2)
+  T.eq(
+    "polls every 10 s",
+    count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end),
+    polls + 2
+  )
+  fake.socketOpen = true
+  W.run(Client.RECONNECT_MAX_MS + 4000)
+  T.eq("back on the socket", client.mode, "ws")
+  local after = #fake.requests
+  W.run(Client.POLL_MS * 3)
+  T.eq("polling stops with the socket", #fake.requests, after)
+  T.eq("never offline", #log.offline, 0)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A busy controller is retried with growing waits")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.busy = 2
+  local got, failed
+  client:get("/json/eff"):next(function(v)
+    got = v
+  end, function(e)
+    failed = e
+  end)
+  W.run(Client.BUSY_FIRST_MS + 20)
+  T.eq("first answer busy, retried once so far", #fake.requests, 2)
+  T.falsy("not yet", got)
+  W.run(Client.BUSY_FIRST_MS * 2 + 20)
+  T.eq("second retry", #fake.requests, 3)
+  T.eq("then the list", got and got[1], "Solid")
+  T.falsy("no failure", failed)
+
+  fake.busy = 100
+  got, failed = nil, nil
+  client:get("/json/pal"):next(function(v)
+    got = v
+  end, function(e)
+    failed = e
+  end)
+  W.run(20000)
+  T.falsy("never answered", got)
+  T.eq("gives up as busy", failed and failed.error, "busy")
+  T.eq(
+    "tried 1 + 5 times",
+    count(fake.requests, function(r)
+      return r.path == "/json/pal"
+    end),
+    1 + Client.BUSY_RETRIES
+  )
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A busy answer on the socket resends the command")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 1
+  client:send({ on = false })
+  W.run(20)
+  T.eq("first try refused", #fake.commands, 0)
+  W.run(Client.BUSY_FIRST_MS + 20)
+  T.eq("resent and taken", #fake.commands, 1)
+  T.eq("same command", fake.commands[1].on, false)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A 1013 close reconnects after a wait, without going offline")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake:close(1013)
+  W.run(20)
+  T.eq("socket down", client.socketUp, false)
+  W.run(100)
+  T.eq("HTTP keeps it online", client.mode, "http")
+  W.run(5000)
+  T.eq("reconnected", client.mode, "ws")
+  T.eq("second connection", fake.connects, 2)
+  T.eq("never offline", #log.offline, 0)
+  T.eq("online told once", log.online, 1)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A command too big for one ESP8266 frame goes over HTTP")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient("esp8266-ws2812b-015")
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  client:send({ bri = 100 })
+  W.run(20)
+  T.eq("short one on the socket", posts(fake), 0)
+  local seg = {}
+  for i = 0, 15 do
+    seg[#seg + 1] = { id = i, col = { { 255, 128, 0 }, { 0, 0, 0 }, { 0, 0, 0 } } }
+  end
+  client:send({ seg = seg })
+  W.run(50)
+  T.eq("long one POSTed", posts(fake), 1)
+
+  local big, bigFake = newClient("esp32-rgbw-pwm-16")
+  big:start(bigFake.ip, bigFake.port)
+  W.run(100)
+  big:send({ seg = seg })
+  W.run(50)
+  T.eq("an ESP32 takes the same command in one frame", posts(bigFake), 0)
+  big:stop()
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("One HTTP request in flight")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local order = {}
+  client:get("/json/eff"):next(function()
+    order[#order + 1] = "eff"
+  end)
+  client:get("/json/pal"):next(function()
+    order[#order + 1] = "pal"
+  end)
+  client:get("/presets.json"):next(function()
+    order[#order + 1] = "presets"
+  end)
+  T.eq("only the first sent", #fake.requests, 1)
+  W.run(100)
+  T.eq("all answered in order", table.concat(order, ","), "eff,pal,presets")
+  T.eq("three requests", #fake.requests, 3)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("Stop drops queued requests and tells nothing")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local rejected = 0
+  for _ = 1, 3 do
+    client:get("/json/eff"):next(nil, function(e)
+      if e.error == "stopped" then
+        rejected = rejected + 1
+      end
+    end)
+  end
+  client:stop()
+  W.run(60000)
+  T.eq("queued requests rejected", rejected, 3)
+  T.eq("no offline after stop", #log.offline, 0)
+  T.eq("offline mode", client.mode, "offline")
+  T.eq("no reconnect", fake.connects, 1)
+end
+
+T.finish()
