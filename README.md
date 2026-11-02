@@ -304,9 +304,12 @@ gives the address to another device, the driver does not drive it and
 replaced on purpose: the driver forgets the old one and takes the controller at
 the address.
 
-Reset Driver also removes every segment connection and the preset links, and
-makes them again for the controller that answers. Bind each **WLED Segment**
-light, and each keypad button on a preset link, again afterwards.
+Reset Driver returns the driver to a fresh install. It keeps the IP Address and
+Port, and the programming that uses the driver. It unwires every keypad button
+from the On, Toggle, Off, Next Preset and Previous Preset button links, removes
+every segment connection and preset link (making them again for the controller
+that answers), and returns the other properties to their defaults. Bind each
+**WLED Segment** light and each keypad button again afterwards.
 
 ## Programming Reference
 
