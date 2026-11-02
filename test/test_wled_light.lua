@@ -380,6 +380,22 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("a long fade to off leaves WLED the level it started from")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16")
+  proxy("SET_LEVEL", { LEVEL = "80" })
+  W.run(2000)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "0", RATE = "200000" })
+  W.run(201000)
+  local cmds = sent()
+  local last = cmds[#cmds]
+  T.eq("the last leg turns it off and keeps the starting level", last and { last.on, last.bri }, { false, 204 })
+  T.eq("told off at the end", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 0 })
+end
+
+--------------------------------------------------------------------------------
 T.section("a long fade after another client's change starts from the level it set")
 --------------------------------------------------------------------------------
 do

@@ -399,6 +399,10 @@ function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now)
         part[key] = value
       end
       part.tt = round(legMs / 100)
+      if finalOn == false and fromBri >= 1 then
+        -- WLED keeps bri while off: leave the level the fade started from, as a short fade does.
+        part.bri = round(fromBri)
+      end
     else
       part.on = finalOn ~= false or nil
       part.bri = math.max(1, round(fromBri + (toBri - fromBri) * p))
