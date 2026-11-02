@@ -222,11 +222,23 @@ function Extras.shape(view, listsVersion)
   return table.concat(parts, "\n")
 end
 
---- A state with the values that differ from those last sent, or nil when none do.
+--- Controls an effect can hide.
+local HIDEABLE = { pal = true }
+for _, s in ipairs(SLIDERS) do
+  HIDEABLE[s.id] = true
+end
+for _, c in ipairs(CHECKS) do
+  HIDEABLE[c.id] = true
+end
+
+--- A state with the values that differ from those last sent, or nil when none do. Given the
+--- controls, it also shows or hides every control an effect can hide, the way a state is known
+--- to change an open menu.
 --- @param values table<string, string>
 --- @param sent table<string, string>
+--- @param controls table<string, string>|nil From Extras.controls.
 --- @return string|nil
-function Extras.state(values, sent)
+function Extras.state(values, sent, controls)
   local out = {}
   local ids = {}
   for id in pairs(values) do
@@ -234,7 +246,10 @@ function Extras.state(values, sent)
   end
   table.sort(ids)
   for _, id in ipairs(ids) do
-    if values[id] ~= sent[id] then
+    if controls and HIDEABLE[id] then
+      out[#out + 1] =
+        string.format('<object id="%s" value="%s" hidden="%s"/>', id, attr(values[id]), tostring(controls[id] == nil))
+    elseif values[id] ~= sent[id] then
       out[#out + 1] = string.format('<object id="%s" value="%s"/>', id, attr(values[id]))
     end
   end

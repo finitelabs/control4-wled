@@ -272,7 +272,11 @@ do
   W.run(500)
 
   ExecuteCommand("Set Effect", { Effect = "Rainbow" })
-  T.eq("Set Effect: fx on every segment", lastCommand(fake), { seg = { { id = 0, fx = 9 }, { id = 1, fx = 9 } } })
+  T.eq(
+    "Set Effect: fx on every segment, from the effect's defaults as WLED's page starts it",
+    lastCommand(fake),
+    { seg = { { id = 0, fx = 9, fxdef = true }, { id = 1, fx = 9, fxdef = true } } }
+  )
   ExecuteCommand("Set Effect", { Effect = "65" })
   T.eq("Set Effect by id", lastCommand(fake).seg[1].fx, 65)
 

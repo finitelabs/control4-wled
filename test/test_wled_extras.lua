@@ -298,6 +298,20 @@ do
   T.eq("its first check", { object(xml, "o1").label, object(xml, "o1").hidden }, { "Dual", "false" })
   T.eq("its palette shown", object(xml, "pal").hidden, "false")
   T.eq("the setup carries the values, so they stay", object(xml, "sx").value, "200")
+  states = toldOf("EXTRAS_STATE_CHANGED")
+  local shown = states[#states] and states[#states].xml
+  T.truthy("a state follows the setup, for a menu that is open", shown)
+  T.eq("it shows Scanner's controls", {
+    object(shown, "ix").hidden,
+    object(shown, "c1").hidden,
+    object(shown, "o2").hidden,
+    object(shown, "pal").hidden,
+  }, { "false", "false", "false", "false" })
+  T.eq("and hides the ones it does not use", { object(shown, "c2").hidden, object(shown, "o3").hidden }, {
+    "true",
+    "true",
+  })
+  T.eq("lists carry no hidden flag", object(shown, "fx").hidden, nil)
 end
 
 --------------------------------------------------------------------------------
@@ -309,7 +323,11 @@ do
 
   mark()
   pick("fx", "9")
-  T.eq("an effect on both segments", lastCommand(fake).seg, { { id = 0, fx = 9 }, { id = 1, fx = 9 } })
+  T.eq(
+    "an effect on both segments, from its own defaults as WLED's page starts it",
+    lastCommand(fake).seg,
+    { { id = 0, fx = 9, fxdef = true }, { id = 1, fx = 9, fxdef = true } }
+  )
   local states = toldOf("EXTRAS_STATE_CHANGED")
   T.eq("the menu shows the pick at once", object(states[1] and states[1].xml, "fx").value, "9")
   W.run(1500)
@@ -352,6 +370,72 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A pick is an id, and a new effect starts from its own defaults")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f:presetsFile()["7"] = { n = "2", on = true }
+  end)
+  W.run(500)
+  mark()
+  pick("ps", "2")
+  T.eq("preset 2 applied, not the preset named 2", lastCommand(fake), { ps = 2 })
+  T.eq("the menu shows the id sent", object(toldOf("EXTRAS_STATE_CHANGED")[1].xml, "ps").value, "2")
+
+  -- Tetrix's metadata ends sx=0,ix=0,pal=11.
+  pick("sx", "200")
+  W.run(1500)
+  pick("fx", "44")
+  W.run(1500)
+  local states = toldOf("EXTRAS_STATE_CHANGED")
+  local last = states[#states].xml
+  T.eq("its own speed, not the last effect's", object(last, "sx").value, "0")
+  T.eq("its own palette", object(last, "pal").value, "11")
+
+  mark()
+  pick("ix", "77")
+  W.run(1500)
+  T.eq("a value the menu was shown is not told again", #toldOf("EXTRAS_STATE_CHANGED"), 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("Nothing goes to a different controller at the address")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  fake.si.info.mac = "02a1b2c3d4ee"
+  fake:drop()
+  W.run(5000)
+  T.contains("the driver sees the other controller", Properties["Driver Status"], "Reset Driver")
+  local n = #fake.commands
+  mark()
+  pick("fx", "9")
+  pick("sx", "10")
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  T.eq("no pick or command reaches it", #fake.commands, n)
+  T.eq("and the menu shows no pick", #toldOf("EXTRAS_STATE_CHANGED"), 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("A reconnect that finds the same lists sends no new setup")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local reads = #fake.requests
+  mark()
+  fake.reachable = false
+  fake:drop()
+  W.run(20000)
+  fake.reachable = true
+  W.run(20000)
+  T.eq("connected again", Properties["Driver Status"], "Connected")
+  T.truthy("the lists were read again", #fake.requests > reads + 3)
+  T.eq("the proxy keeps the setup it has", #toldOf("EXTRAS_SETUP_CHANGED"), 0)
+end
+
+--------------------------------------------------------------------------------
 T.section("The menu follows the controller")
 --------------------------------------------------------------------------------
 do
@@ -377,11 +461,14 @@ do
 end
 
 do
-  fresh("esp32-white-16")
+  local fake = fresh("esp32-white-16")
   W.run(500)
+  T.truthy("a white strip gets a menu too", lastSetup())
+  elsewhere(fake, { seg = { fx = 9 } })
+  W.run(1500)
   local xml = lastSetup()
-  T.truthy("a white strip gets a menu too", xml)
-  T.eq("without a palette, which needs color LEDs", object(xml, "pal").hidden, "true")
+  T.eq("Rainbow's own controls", object(xml, "ix").label, "Size")
+  T.eq("without its palette, which needs color LEDs", object(xml, "pal").hidden, "true")
   T.excludes("no presets on it", xml, "Presets")
 end
 

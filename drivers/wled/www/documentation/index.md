@@ -151,9 +151,12 @@ Extras menu. It shows what the controller's main segment shows:
   applies it, picking a playlist starts it, and `None` stops the running
   playlist.
 
-Each pick runs on every segment and leaves the light's power and level as they
-are, as the programming commands do. The menu follows the controller, so a
-change made in the WLED app, by a preset or by a playlist step shows there too.
+An effect, palette, slider or checkbox runs on every segment and leaves the
+light's power and level as they are, as the programming commands do. A new
+effect starts from its own speed, intensity and options, as in the WLED app. A
+preset or playlist sets whatever it was saved with, power and level included.
+The menu follows the controller, so a change made in the WLED app, by a preset
+or by a playlist step shows there too.
 
 # <span style="color:#0094FF">Installer Setup</span>
 
@@ -366,15 +369,15 @@ Monitoring is Enabled.
 
 ### Commands
 
-| Command              | Does                                                                          |
-| -------------------- | ----------------------------------------------------------------------------- |
-| Set Effect           | Runs a WLED effect on every segment                                           |
-| Set Effect Speed     | Sets the effect speed on every segment, 0 to 255                              |
-| Set Effect Intensity | Sets the effect intensity on every segment, 0 to 255                          |
-| Set Palette          | Uses a WLED palette on every segment                                          |
-| Apply Preset         | Applies a WLED preset                                                         |
-| Start Playlist       | Starts a WLED playlist                                                        |
-| Stop Playlist        | Stops the running playlist; the light keeps the look the playlist last showed |
+| Command              | Does                                                                           |
+| -------------------- | ------------------------------------------------------------------------------ |
+| Set Effect           | Runs a WLED effect on every segment, from its own speed, intensity and options |
+| Set Effect Speed     | Sets the effect speed on every segment, 0 to 255                               |
+| Set Effect Intensity | Sets the effect intensity on every segment, 0 to 255                           |
+| Set Palette          | Uses a WLED palette on every segment                                           |
+| Apply Preset         | Applies a WLED preset                                                          |
+| Start Playlist       | Starts a WLED playlist                                                         |
+| Stop Playlist        | Stops the running playlist; the light keeps the look the playlist last showed  |
 
 The choices are the controller's own, read when the driver connects and again
 when the controller reports a change: a preset or playlist saved or deleted, an

@@ -87,9 +87,14 @@ local client
 --- Installer white points, the ends of WLED's CCT range.
 local DEFAULT_WARM, DEFAULT_COOL = 2700, 6500
 
---- Send a state command; its result arrives in the controller's next report.
+--- Send a state command; its result arrives in the controller's next report. Nothing goes to a
+--- controller that is not the one this driver was set up with.
 --- @param json table
 local function send(json)
+  if gWrongMac then
+    log:warn("WLED command not sent: a different controller answers at this address")
+    return
+  end
   client:send(json):next(nil, function(err)
     log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
   end)
@@ -314,6 +319,8 @@ local function updateExtras()
   local shape = Extras.shape(view, lists.version)
   if shape ~= gExtrasShape then
     SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = Extras.setup(view) }, "NOTIFY")
+    -- A state shows and hides controls in an open menu; the setup alone may wait for a reopen.
+    SendToProxy(PROXY_BINDING, "EXTRAS_STATE_CHANGED", { XML = Extras.state(view.values, {}, view.controls) }, "NOTIFY")
     gExtrasShape, gExtrasSent = shape, view.values
     return
   end
@@ -663,7 +670,8 @@ function GCPL.Set_Effect(_paramName)
   return lists:effectNames()
 end
 
---- Run an effect on every segment, by name or id; power and level stay as they are.
+--- Run an effect on every segment, by name or id, from the effect's own defaults as WLED's page
+--- starts it; power and level stay as they are.
 --- @param params table
 function EC.Set_Effect(params)
   log:trace("EC.Set_Effect(%s)", params)
@@ -672,7 +680,7 @@ function EC.Set_Effect(params)
     log:warn("Set Effect: the controller has no effect %s", tostring(Select(params, "Effect")))
     return
   end
-  sendToSegments({ fx = id })
+  sendToSegments({ fx = id, fxdef = true })
 end
 
 --- A 0-255 slider value from a command parameter.
@@ -773,41 +781,41 @@ end
 
 -- ─── Extras menu (RFP dispatch) ────────────────────────────────────────────
 
---- What each list in the Extras menu sends for the id picked, or false for an id the controller
---- does not have.
---- @type table<string, fun(value: any): boolean>
+--- What each list in the Extras menu sends for the id picked. Each returns the id it sent, or
+--- nil for an id the controller does not have. A pick carries an id, never a name.
+--- @type table<string, fun(value: any): integer|nil>
 local EXTRA_LISTS = {
   fx = function(value)
-    local id = lists:effectId(value)
+    local id = Lists.byId(lists.effects, value)
     if id then
-      sendToSegments({ fx = id })
+      sendToSegments({ fx = id, fxdef = true })
     end
-    return id ~= nil
+    return id
   end,
   pal = function(value)
-    local id = lists:paletteId(value)
+    local id = Lists.byId(lists.palettes, value)
     if id then
       sendToSegments({ pal = id })
     end
-    return id ~= nil
+    return id
   end,
   ps = function(value)
-    local id = lists:presetId(value)
+    local id = Lists.byId(lists.presets, value)
     if id then
       send({ ps = id })
     end
-    return id ~= nil
+    return id
   end,
   pl = function(value)
     if tonumber(value) == Extras.NO_PLAYLIST then
       stopPlaylist()
-      return true
+      return Extras.NO_PLAYLIST
     end
-    local id = lists:playlistId(value)
+    local id = Lists.byId(lists.playlists, value)
     if id then
       send({ ps = id })
     end
-    return id ~= nil
+    return id
   end,
 }
 
@@ -821,22 +829,26 @@ function RFP.EXTRA_SET(idBinding, strCommand, tParams)
   if idBinding ~= PROXY_BINDING then
     return
   end
-  local id, value = Select(tParams, "id"), Select(tParams, "value")
-  local kind = Extras.KINDS[id or ""]
-  local sent
-  if kind == "list" then
-    sent = EXTRA_LISTS[id](value)
-  elseif kind == "bool" then
-    value = toboolean(value)
-    sendToSegments({ [id] = value })
-    sent, value = true, value and "true" or "false"
-  elseif type(kind) == "table" and tonumber(value) then
-    value = math.max(kind.min, math.min(kind.max, math.floor(tonumber(value) + 0.5)))
-    sendToSegments({ [id] = value })
-    sent = true
+  if gWrongMac then
+    log:warn("Extras: not sent, a different controller answers at this address")
+    return
   end
-  if not sent then
-    log:warn("Extras: the controller has no %s %s", tostring(id), tostring(value))
+  local id, picked = Select(tParams, "id"), Select(tParams, "value")
+  local kind = Extras.KINDS[id or ""]
+  -- What was sent, as the menu shows it.
+  local value
+  if kind == "list" then
+    value = EXTRA_LISTS[id](picked)
+  elseif kind == "bool" then
+    local on = toboolean(picked)
+    sendToSegments({ [id] = on })
+    value = on and "true" or "false"
+  elseif type(kind) == "table" and tonumber(picked) then
+    value = math.max(kind.min, math.min(kind.max, math.floor(tonumber(picked) + 0.5)))
+    sendToSegments({ [id] = value })
+  end
+  if value == nil then
+    log:warn("Extras: the controller has no %s %s", tostring(id), tostring(picked))
     return
   end
   if gExtrasShape then

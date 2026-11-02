@@ -292,9 +292,19 @@ function Fake:applyFields(cmd, fromPreset)
             seg.col[1] = copy(s.col[1])
             changed = true
           end
-          for _, key in ipairs({ "cct", "fx", "sx", "ix", "pal", "c1", "c2", "o1", "o2", "o3" }) do
+          if s.fx ~= nil then
+            if seg.fx ~= s.fx then
+              fxChanged = true
+              seg.fx = s.fx
+              if s.fxdef then
+                self:effectDefaults(seg)
+              end
+            end
+            changed = true
+          end
+          -- After the effect, so a field sent with it overrides the effect's default.
+          for _, key in ipairs({ "cct", "sx", "ix", "pal", "c1", "c2", "o1", "o2", "o3" }) do
             if s[key] ~= nil then
-              fxChanged = fxChanged or (key == "fx" and seg.fx ~= s.fx)
               seg[key] = s[key]
               changed = true
             end
@@ -315,6 +325,29 @@ function Fake:applyFields(cmd, fromPreset)
     if fxChanged then
       state.pl = -1
     end
+  end
+end
+
+--- Start a segment's effect from its own defaults, as WLED does for a command with fxdef: the
+--- `sx=24,pal=50` pairs after the last `;` of the effect's metadata, else WLED's defaults.
+--- @param seg table
+function Fake:effectDefaults(seg)
+  local meta = (self.files["/json/fxdata"] or {})[seg.fx + 1]
+  local tail = type(meta) == "string" and meta:match(";([^;]*)$") or nil
+  local function default(key)
+    local v = tail and tail:match(key .. "=(%d+)")
+    return v and tonumber(v)
+  end
+  for key, value in pairs({ sx = 128, ix = 128, c1 = 128, c2 = 128, c3 = 16 }) do
+    seg[key] = default(key) or value
+  end
+  for _, key in ipairs({ "o1", "o2", "o3" }) do
+    local v = default(key)
+    seg[key] = v ~= nil and v ~= 0
+  end
+  local pal = default("pal")
+  if pal then
+    seg.pal = pal
   end
 end
 
