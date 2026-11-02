@@ -482,6 +482,28 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A preset added and applied while the controller was away fires with its name")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  fake.reachable = false
+  fake:drop()
+  W.run(2000)
+  local presets = fake:presetsFile()
+  presets["4"] = { n = "Brand New", on = true, bri = 128 }
+  fake.files["/presets.json"] = presets
+  fake.si.info.fs = fake.si.info.fs or {}
+  fake.si.info.fs.pmt = (tonumber(fake.si.info.fs.pmt) or 0) + 100
+  fake:applyPreset(4)
+  mark()
+  fake.reachable = true
+  W.run(40000)
+  T.eq("Preset Changed once", eventCount(PRESET_CHANGED), 1)
+  T.eq("its variable already names the new preset", (firstEvent(PRESET_CHANGED) or {}).Preset, "Brand New")
+end
+
+--------------------------------------------------------------------------------
 T.section("Nothing fires at a start or reconnect for a state that stayed the same")
 --------------------------------------------------------------------------------
 do

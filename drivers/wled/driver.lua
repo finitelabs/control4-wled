@@ -303,8 +303,11 @@ local function readLists()
       return
     end
     gListsReading = nil
-    updateProgramming()
     readLists()
+    -- Events wait for the names they read: never while a list read is under way.
+    if not gListsReading then
+      updateProgramming()
+    end
   end)
 end
 
@@ -354,7 +357,9 @@ local function onState(state, info)
     end
   end
   readLists()
-  updateProgramming()
+  if not gListsReading then
+    updateProgramming()
+  end
 end
 
 local function onOnline()
