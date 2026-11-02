@@ -1,0 +1,287 @@
+<devicedata>
+  <name>WLED Segment</name>
+  <version/>
+  <manufacturer>Finite Labs</manufacturer>
+  <model>WLED Segment</model>
+  <creator>Derek Miller</creator>
+  <small image_source="c4z">icons/device_sm.png</small>
+  <large image_source="c4z">icons/device_lg.png</large>
+  <control>lua_gen</control>
+  <driver>DriverWorks</driver>
+  <copyright>Copyright 2026 Finite Labs, LLC. All rights reserved.</copyright>
+  <created>11/02/2026 12:00:00 PM</created>
+  <modified/>
+  <minimum_os_version>3.3.2</minimum_os_version>
+  <composer_categories>
+    <category>Lighting</category>
+  </composer_categories>
+  <events/>
+  <conditionals/>
+  <config>
+    <script file="driver.lua" jit="1"/>
+    <documentation file="www/documentation/index.html"/>
+    <properties>
+      <!-- #ifdef DRIVERCENTRAL -->
+      <property>
+        <name>Cloud</name>
+        <type>LABEL</type>
+        <default>Cloud Settings</default>
+      </property>
+      <property>
+        <name>Cloud Status</name>
+        <default/>
+        <type>STRING</type>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Automatic Updates</name>
+        <type>LIST</type>
+        <items>
+          <item>Off</item>
+          <item>On</item>
+        </items>
+        <default>On</default>
+      </property>
+      <!-- #endif -->
+      <property>
+        <name>Driver</name>
+        <type>LABEL</type>
+        <default>Driver Settings</default>
+      </property>
+      <property>
+        <name>Driver Status</name>
+        <type>STRING</type>
+        <default/>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Driver Version</name>
+        <type>STRING</type>
+        <default/>
+        <readonly>true</readonly>
+      </property>
+      <property>
+        <name>Log Level</name>
+        <type>LIST</type>
+        <default>3 - Info</default>
+        <items>
+          <item>0 - Fatal</item>
+          <item>1 - Error</item>
+          <item>2 - Warning</item>
+          <item>3 - Info</item>
+          <item>4 - Debug</item>
+          <item>5 - Trace</item>
+          <item>6 - Ultra</item>
+        </items>
+      </property>
+      <property>
+        <name>Log Mode</name>
+        <type>LIST</type>
+        <default>Off</default>
+        <items>
+          <item>Off</item>
+          <item>Print</item>
+          <item>Log</item>
+          <item>Print and Log</item>
+        </items>
+      </property>
+      <!-- #ifdef DRIVERCENTRAL -->
+      <property>
+        <name>Support Code</name>
+        <type>STRING</type>
+        <default/>
+        <description>Enter only a code from Finite Labs support. It opens the Lua window for an hour.</description>
+        <password>true</password>
+      </property>
+      <property>
+        <name>Cloud Monitoring</name>
+        <type>LIST</type>
+        <default>Enabled</default>
+        <items>
+          <item>Disabled</item>
+          <item>Enabled</item>
+        </items>
+        <description>Sends memory and error reports to Finite Labs so we can fix driver problems.</description>
+      </property>
+      <!-- #endif -->
+      <property>
+        <name>Light Settings</name>
+        <type>LABEL</type>
+        <default>Light Settings</default>
+      </property>
+      <property>
+        <name>Warm White (K)</name>
+        <type>RANGED_INTEGER</type>
+        <minimum>1900</minimum>
+        <maximum>10091</maximum>
+        <default>2700</default>
+        <description>The color temperature of the strip's warmest white.</description>
+      </property>
+      <property>
+        <name>Cool White (K)</name>
+        <type>RANGED_INTEGER</type>
+        <minimum>1900</minimum>
+        <maximum>10091</maximum>
+        <default>6500</default>
+        <description>The color temperature of the strip's coolest white.</description>
+      </property>
+      <property>
+        <name>Segment Info</name>
+        <type>LABEL</type>
+        <default>Segment Info</default>
+      </property>
+      <property>
+        <name>Segment</name>
+        <type>STRING</type>
+        <default>N/A</default>
+        <readonly>true</readonly>
+      </property>
+    </properties>
+    <commands/>
+    <actions>
+      <!-- #ifdef DRIVERCENTRAL -->
+      <action>
+        <name>Diagnostics Snapshot</name>
+        <command>DiagnosticsSnapshot</command>
+      </action>
+      <!-- #endif -->
+    </actions>
+  </config>
+  <capabilities>
+    <dimmer>True</dimmer>
+    <set_level>True</set_level>
+    <supports_target>True</supports_target>
+    <supports_brightness_stop>True</supports_brightness_stop>
+    <!--
+      Deprecated in 3.3.2, but Composer's test panel still gates on them: the
+      On/Off buttons, the Ramp button, and the Default On preset editor.
+    -->
+    <on_off>True</on_off>
+    <ramp_level>True</ramp_level>
+    <supports_default_on>True</supports_default_on>
+    <!-- True would mean the light's ramp rate cannot be changed. -->
+    <has_fixed_ramp_rate>False</has_fixed_ramp_rate>
+    <fixed_ramp_rate>0</fixed_ramp_rate>
+    <hide_proxy_properties>False</hide_proxy_properties>
+    <hide_proxy_events>False</hide_proxy_events>
+    <click_rates>True</click_rates>
+    <hold_rates>True</hold_rates>
+    <cold_start>False</cold_start>
+    <has_leds>True</has_leds>
+    <has_button_events>True</has_button_events>
+    <supports_broadcast_scenes>False</supports_broadcast_scenes>
+    <supports_multichannel_scenes>False</supports_multichannel_scenes>
+    <reduced_als_support>False</reduced_als_support>
+    <advanced_scene_support>True</advanced_scene_support>
+    <load_group_support>False</load_group_support>
+    <brightness_on_mode_preset>True</brightness_on_mode_preset>
+    <brightness_on_mode_previous>True</brightness_on_mode_previous>
+    <color_on_mode_fade>True</color_on_mode_fade>
+    <color_on_mode_preset>True</color_on_mode_preset>
+    <color_on_mode_previous>True</color_on_mode_previous>
+    <multi_click>False</multi_click>
+    <has_extras>False</has_extras>
+    <disable_flash>False</disable_flash>
+    <brightness_rate_min>0</brightness_rate_min>
+    <brightness_rate_max>65535</brightness_rate_max>
+    <!--
+      Not light_v2 capabilities; the proxy ignores both and still seeds its own
+      750 ms rate. Declared because Composer reads this list directly and may
+      seed its own rate control from it.
+    -->
+    <brightness_rate_default>0</brightness_rate_default>
+    <click_rate_min>0</click_rate_min>
+    <click_rate_max>65535</click_rate_max>
+    <hold_rate_min>1000</hold_rate_min>
+    <hold_rate_max>86400000</hold_rate_max>
+    <supports_color>False</supports_color>
+    <supports_color_correlated_temperature>False</supports_color_correlated_temperature>
+    <supports_color_stop>False</supports_color_stop>
+    <color_correlated_temperature_min>2000</color_correlated_temperature_min>
+    <color_correlated_temperature_max>6500</color_correlated_temperature_max>
+    <color_rate_behavior>1</color_rate_behavior>
+    <color_rate_min>0</color_rate_min>
+    <color_rate_max>65535</color_rate_max>
+    <color_rate_default>0</color_rate_default>
+  </capabilities>
+  <connections>
+    <connection>
+      <id>300</id>
+      <facing>6</facing>
+      <connectionname>On Button Link</connectionname>
+      <type>1</type>
+      <consumer>False</consumer>
+      <audiosource>False</audiosource>
+      <videosource>False</videosource>
+      <linelevel>True</linelevel>
+      <classes>
+        <class>
+          <classname>BUTTON_LINK</classname>
+        </class>
+      </classes>
+    </connection>
+    <connection>
+      <id>301</id>
+      <facing>6</facing>
+      <connectionname>Toggle Button Link</connectionname>
+      <type>1</type>
+      <consumer>False</consumer>
+      <audiosource>False</audiosource>
+      <videosource>False</videosource>
+      <linelevel>True</linelevel>
+      <classes>
+        <class>
+          <classname>BUTTON_LINK</classname>
+        </class>
+      </classes>
+    </connection>
+    <connection>
+      <id>302</id>
+      <facing>6</facing>
+      <connectionname>Off Button Link</connectionname>
+      <type>1</type>
+      <consumer>False</consumer>
+      <audiosource>False</audiosource>
+      <videosource>False</videosource>
+      <linelevel>True</linelevel>
+      <classes>
+        <class>
+          <classname>BUTTON_LINK</classname>
+        </class>
+      </classes>
+    </connection>
+    <connection>
+      <id>5001</id>
+      <facing>6</facing>
+      <connectionname>Light</connectionname>
+      <type>2</type>
+      <consumer>False</consumer>
+      <audiosource>False</audiosource>
+      <videosource>False</videosource>
+      <linelevel>False</linelevel>
+      <classes>
+        <class>
+          <classname>LIGHT_V2</classname>
+        </class>
+      </classes>
+    </connection>
+    <connection>
+      <id>5002</id>
+      <facing>6</facing>
+      <connectionname>WLED Controller</connectionname>
+      <type>2</type>
+      <consumer>True</consumer>
+      <audiosource>False</audiosource>
+      <videosource>False</videosource>
+      <linelevel>False</linelevel>
+      <classes>
+        <class>
+          <classname>WLED_SEGMENT</classname>
+        </class>
+      </classes>
+    </connection>
+  </connections>
+  <proxies>
+    <proxy proxybindingid="5001" primary="True" name="WLED Segment">light_v2</proxy>
+  </proxies>
+</devicedata>

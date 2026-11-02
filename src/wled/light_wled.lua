@@ -1,6 +1,8 @@
 --- The WLED controller's light for the light model (wled.light): the
 --- controller's master power and level, and the color of every segment,
---- translated between WLED's JSON state and the model's channel fields.
+--- translated between WLED's JSON state and the model's channel fields. A
+--- segment light runs it over a controller that holds just its segment
+--- (wled.segment).
 ---
 --- WLED behavior this follows (wled00/json.cpp, led.cpp and FX_fcn.cpp at
 --- v16.0.1 and v0.15.4):
@@ -37,6 +39,7 @@ local COLOR_FIELDS = { "rgb", "color_brightness", "white", "color_temperature", 
 --- @field fields table|nil Color brightness, white and color temperature last sent or reported.
 --- @field cct integer|nil The CCT (0-255) last sent.
 --- @field lastCol integer[]|nil The main segment's color (0-255) at the last report.
+--- @field extras boolean Whether the light has an Extras menu.
 local Adapter = {}
 Adapter.__index = Adapter
 
@@ -45,6 +48,7 @@ Adapter.__index = Adapter
 --- @field device WledDevice The controller's model.
 --- @field warm fun(): number Warm White, in Kelvin.
 --- @field cool fun(): number Cool White, in Kelvin.
+--- @field extras boolean|nil False for a light without an Extras menu.
 
 local function round(v)
   return math.floor(v + 0.5)
@@ -66,6 +70,7 @@ function Adapter.new(opts)
   self.device = opts.device
   self.warm = opts.warm
   self.cool = opts.cool
+  self.extras = opts.extras ~= false
   self.legGen = 0
   self.rgb = { 1, 1, 1 }
   return self
@@ -89,7 +94,7 @@ function Adapter:adapter()
       brightness_rate_max = RATE_MAX,
       color_rate_max = RATE_MAX,
       -- Effects, palettes, presets and playlists (src/wled/extras.lua).
-      has_extras = true,
+      has_extras = self.extras,
     },
   }
 end
@@ -232,6 +237,42 @@ function Adapter:fieldsFrom(r, g, b, w, cct)
     f.color_temperature = 1e6 / self:kelvinFromCct(cct)
   end
   return f
+end
+
+--- Whether any segment is on. A controller that lists no segments counts as one.
+--- @param device table
+--- @return boolean
+local function anySegmentOn(device)
+  local segs = device.segments or {}
+  for _, s in ipairs(segs) do
+    if s.on ~= false then
+      return true
+    end
+  end
+  return #segs == 0
+end
+
+--- Segment entries with every segment turned on, merged into the entries a command carries.
+--- @param seg table|nil The command's segment entries.
+--- @param device table
+--- @return table[]
+local function withAllOn(seg, device)
+  local list, byId = {}, {}
+  if type(seg) == "table" and seg[1] then
+    for _, e in ipairs(seg) do
+      list[#list + 1] = e
+      byId[e.id] = e
+    end
+  end
+  for _, s in ipairs(device.segments or {}) do
+    local e = byId[s.id]
+    if not e then
+      e = { id = s.id }
+      list[#list + 1] = e
+    end
+    e.on = true
+  end
+  return list
 end
 
 --- Whether a command sets any color or white channel.
@@ -378,12 +419,17 @@ function Adapter:send(cmd)
     self.cct = cct
   end
   self:apply(cmd)
+  -- With every segment off, turning the light on turns them all on, as it lights the whole strip.
+  local lightAll = json.on == true and not anySegmentOn(self.device)
+  if lightAll then
+    json.seg = withAllOn(json.seg, self.device)
+  end
   local ms = cmd.has_transition_length and (tonumber(cmd.transition_length) or 0) or nil
   local from = self:outputBri(now)
   local to = cmd.state == false and 0 or bri or from
   self.out = { from = from, to = to, t0 = now, ms = ms or 0 }
   if ms and ms > LEG_MS then
-    self:startLegs(json, ms, from, to, color and { r, g, b, w } or nil, now)
+    self:startLegs(json, ms, from, to, color and { r, g, b, w } or nil, now, lightAll)
     return
   end
   if ms then
@@ -393,7 +439,7 @@ function Adapter:send(cmd)
 end
 
 --- A fade longer than one command carries, as legs along one straight line.
-function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now)
+function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now, lightAll)
   local n = math.ceil(ms / LEG_MS)
   local legMs = ms / n
   local fromCol = self.lastCol or toCol
@@ -441,6 +487,8 @@ function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now)
     end
     if last then
       self.legs = nil
+    elseif lightAll and k == 1 then
+      part.seg = withAllOn(part.seg, self.device)
     end
     self.sendJson(part)
     if not last then
@@ -463,7 +511,8 @@ function Adapter:state()
   local r, g, b, w = primary(seg)
   local cct = seg and tonumber(seg.cct) or 127
   self.lastCol = { r, g, b, w }
-  local on, bri = device.on == true, device.bri or 0
+  -- The light is on while the master is on and a segment is lit, as the strip shows.
+  local on, bri = device.on == true and anySegmentOn(device), device.bri or 0
   local legs = self.legs
   if legs then
     local legCol = legs.leg.col

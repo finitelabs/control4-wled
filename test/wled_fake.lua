@@ -303,7 +303,7 @@ function Fake:applyFields(cmd, fromPreset)
             changed = true
           end
           -- After the effect, so a field sent with it overrides the effect's default.
-          for _, key in ipairs({ "cct", "sx", "ix", "pal", "c1", "c2", "o1", "o2", "o3" }) do
+          for _, key in ipairs({ "cct", "sx", "ix", "pal", "c1", "c2", "o1", "o2", "o3", "on", "bri" }) do
             if s[key] ~= nil then
               seg[key] = s[key]
               changed = true

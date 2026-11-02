@@ -3,7 +3,8 @@
 -- Owns the one connection to a WLED controller (src/wled/client.lua), keeps the controller's
 -- model (src/wled/device.lua) and shows it in Composer. The controller's light is the light_v2
 -- proxy on binding 5001, run by the light model (src/wled/light.lua) through the WLED adapter
--- (src/wled/light_wled.lua). Its Extras menu is src/wled/extras.lua.
+-- (src/wled/light_wled.lua). Its Extras menu is src/wled/extras.lua. WLED Segment lights bind to it,
+-- one per segment, and reach the controller through it (src/wled/segment.lua).
 
 --#ifdef DRIVERCENTRAL
 DC_PID = 0 -- TODO: Assign DriverCentral product ID
@@ -38,6 +39,7 @@ local Client = require("wled.client")
 local Device = require("wled.device")
 local Extras = require("wled.extras")
 local Cycle = require("wled.cycle")
+local Segment = require("wled.segment")
 local light = require("wled.light")
 local LightAdapter = require("wled.light_wled")
 local Lists = require("wled.lists")
@@ -65,6 +67,12 @@ local PRESET_LINKS = "PresetLinks"
 
 --- Namespace of the programming conditionals whose lists come from the controller.
 local PROGRAMMING = "Programming"
+
+--- Namespace of the connections segment lights bind to, one per segment, keyed by a record of it.
+local SEGMENTS = "Segments"
+
+--- Persist key for those records: the WLED id and LED range each connection last stood for.
+local SEGMENT_RECORDS_KEY = "WledSegmentRecords"
 
 --- A keypad tap sends DO_PUSH then DO_CLICK and some senders only one, so a link acts on the
 --- first of a burst and ignores the rest for this long.
@@ -114,6 +122,8 @@ local function send(json)
   client:send(json):next(nil, function(err)
     log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
   end)
+  -- The next command before the controller reports, from this light or a segment light, sees it.
+  Segment.note(json, device)
 end
 
 local wledLight = LightAdapter.new({
@@ -159,6 +169,21 @@ local gExtrasShape = nil
 --- @type table<string, string>
 local gExtrasSent = {}
 
+--- The WLED id and LED range each segment connection last stood for, by record key.
+--- @type table<string, {id: integer, start: integer, stop: integer}>
+local gSegmentRecords = persist:get(SEGMENT_RECORDS_KEY) or {}
+
+--- The segment each record stands for now; a record whose segment is gone is absent.
+--- @type table<string, WledSegment>
+local gSegmentOf = {}
+
+--- Whether segment lights were told the controller is there since it last went away.
+local gSegmentsTold = false
+
+--- The payload last told each segment connection, so a report tells only the lights it changed.
+--- @type table<integer, table>
+local gSegmentSent = {}
+
 --- All WLED instances on this controller, sorted by device id. The lowest runs updates.
 --- @return integer[]
 local function getWledDriverIds()
@@ -197,6 +222,13 @@ local function setConnected(connected, status)
   setStatus(status)
   if not connected and light.isOnline() then
     light.disconnect(false)
+  end
+  if not connected and gSegmentsTold then
+    gSegmentsTold = false
+    gSegmentSent = {}
+    for _, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
+      SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", {}, "NOTIFY")
+    end
   end
   if connected == gConnected then
     return
@@ -568,6 +600,139 @@ local function updateCycle()
   updateLinkLeds()
 end
 
+--- Whether two payloads hold the same values.
+--- @param a any
+--- @param b any
+--- @return boolean
+local function samePayload(a, b)
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return a == b
+  end
+  for k, v in pairs(a) do
+    if not samePayload(v, b[k]) then
+      return false
+    end
+  end
+  for k in pairs(b) do
+    if a[k] == nil then
+      return false
+    end
+  end
+  return true
+end
+
+--- Tell one segment light what its segment shows, or that it is not there. A report tells it
+--- only a payload that differs from the last it was told; a bind or a request always tells it.
+--- @param key string The segment's record key.
+--- @param bindingId integer
+--- @param always boolean|nil
+local function pushSegment(key, bindingId, always)
+  local seg = gSegmentOf[key]
+  if not gConnected or not seg then
+    gSegmentSent[bindingId] = nil
+    SendToProxy(bindingId, "UPDATE_DISCONNECT", gConnected and { status = "Segment not found" } or {}, "NOTIFY")
+    return
+  end
+  local payload = Segment.payload(device, seg.id)
+  if not always and samePayload(payload, gSegmentSent[bindingId]) then
+    return
+  end
+  gSegmentsTold = true
+  gSegmentSent[bindingId] = payload
+  SendToProxy(bindingId, "UPDATE_STATE", { segment = SerializeSafe(payload) }, "NOTIFY")
+end
+
+--- Tell every segment light what its segment shows, where that changed.
+local function pushSegments()
+  for key, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
+    pushSegment(key, binding.bindingId)
+  end
+end
+
+--- A segment's connection: a segment light asks for its state and sends its commands over it.
+--- A command goes to the controller only while its segment is still the one the light was told.
+--- @param key string The segment's record key.
+--- @param binding Binding
+local function registerSegmentLink(key, binding)
+  RFP[binding.bindingId] = function(idBinding, strCommand, tParams)
+    log:trace("RFP[%s](%s, %s)", idBinding, strCommand, tParams)
+    if strCommand == "REFRESH_STATE" then
+      pushSegment(key, idBinding, true)
+    elseif strCommand == "ENTITY_COMMAND" then
+      local seg = gSegmentOf[key]
+      local intent = DeserializeSafe(Select(tParams, "body"))
+      if not seg or tonumber(Select(tParams, "segment")) ~= seg.id or type(intent) ~= "table" then
+        log:warn("Segment light command not sent: its segment moved or is gone")
+        pushSegment(key, idBinding, true)
+        return
+      end
+      send(Segment.forward(intent, device))
+    end
+  end
+  OBC[binding.bindingId] = function(idBinding, _strClass, isBound)
+    if isBound then
+      pushSegment(key, idBinding, true)
+    elseif not gSegmentOf[key] then
+      -- Its segment is gone and nothing uses it any more.
+      bindings:deleteBinding(SEGMENTS, key)
+      gSegmentRecords[key] = nil
+      gSegmentSent[idBinding] = nil
+      persist:set(SEGMENT_RECORDS_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
+    end
+  end
+end
+
+--- A record key no segment uses yet.
+--- @return string
+local function newSegmentKey()
+  local n = 1
+  while gSegmentRecords["seg" .. n] do
+    n = n + 1
+  end
+  return "seg" .. n
+end
+
+--- Find each segment connection's segment again after a change of layout: a renumbered or resized
+--- segment keeps its connection, a new one gets one, and one whose segment is gone shows "Segment
+--- not found" while a segment light is connected to it and is removed otherwise.
+local function updateSegments()
+  local matched, unmatched = Segment.match(gSegmentRecords, device.segments)
+  for _, seg in ipairs(unmatched) do
+    local key = newSegmentKey()
+    gSegmentRecords[key] = { id = seg.id, start = seg.start, stop = seg.stop, name = seg.name }
+    matched[key] = seg
+  end
+  local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
+  local keys = {}
+  for key in pairs(gSegmentRecords) do
+    keys[#keys + 1] = key
+  end
+  table.sort(keys)
+  for _, key in ipairs(keys) do
+    local seg = matched[key]
+    if seg then
+      gSegmentRecords[key] = { id = seg.id, start = seg.start, stop = seg.stop, name = seg.name }
+      local binding = bindings:getOrAddDynamicBinding(SEGMENTS, key, "PROXY", true, Segment.name(seg), Segment.CLASS)
+      if binding then
+        registerSegmentLink(key, binding)
+      end
+    else
+      local binding = bindings:getDynamicBinding(SEGMENTS, key)
+      if binding and Select(wired, binding.bindingId, "isbound") then
+        gSegmentRecords[key].live = false
+        log:warn("Segment %s is gone from the controller; its segment light shows Segment not found", key)
+      else
+        if binding then
+          bindings:deleteBinding(SEGMENTS, key)
+        end
+        gSegmentRecords[key] = nil
+      end
+    end
+  end
+  gSegmentOf = matched
+  persist:set(SEGMENT_RECORDS_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
+end
+
 local function wantAllLists()
   for _, kind in ipairs(LIST_KINDS) do
     gListsWanted[kind] = true
@@ -642,6 +807,10 @@ local function onState(state, info)
   end
   if state ~= nil then
     light.state(wledLight:entity(), wledLight:state())
+    if changes.segments or changes.first or next(gSegmentOf) == nil then
+      updateSegments()
+    end
+    pushSegments()
   end
   for _, kind in ipairs(LIST_KINDS) do
     -- New firmware can rename an effect or palette without changing a count.
@@ -740,6 +909,9 @@ function OnDriverInit()
   bindings:restoreBindings()
   for key, binding in pairs(bindings:getDynamicBindings(PRESET_LINKS)) do
     registerPresetLink(key, binding)
+  end
+  for key, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
+    registerSegmentLink(key, binding)
   end
 end
 
@@ -1175,6 +1347,8 @@ function EC.Reset_Driver(params)
   conditionals:reset()
   gCycle, gCycleLast, gCycleSentFrom, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, nil, {}, nil
   gPresetShowing = nil
+  gSegmentRecords, gSegmentOf, gSegmentsTold, gSegmentSent = {}, {}, false, {}
+  persist:delete(SEGMENT_RECORDS_KEY)
   persist:delete(CYCLE_KEY)
   persist:delete(CYCLE_NAMES_KEY)
   SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = "<extras_setup><extra></extra></extras_setup>" }, "NOTIFY")
