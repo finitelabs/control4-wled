@@ -310,6 +310,25 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("The Controller Connected conditional follows the connection")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  local function test(value, logic)
+    return TestCondition("CONTROLLER_CONNECTED", { VALUE = value, LOGIC = logic })
+  end
+  T.eq("is Connected while connected", test("Connected", "EQUAL"), true)
+  T.eq("is not Disconnected while connected", test("Disconnected", "EQUAL"), false)
+  T.eq("NOT_EQUAL Connected while connected", test("Connected", "NOT_EQUAL"), false)
+  fake.reachable = false
+  fake:drop()
+  W.run(30000)
+  T.eq("is Disconnected once the controller is lost", test("Disconnected", "EQUAL"), true)
+  T.eq("NOT_EQUAL Connected once lost", test("Connected", "NOT_EQUAL"), true)
+end
+
+--------------------------------------------------------------------------------
 T.section("Reset Driver returns the driver to its first load, keeping the address")
 --------------------------------------------------------------------------------
 do

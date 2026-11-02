@@ -401,6 +401,21 @@ function EC.DiagnosticsSnapshot()
 end
 --#endif
 
+-- ─── Conditionals (TC dispatch) ────────────────────────────────────────────
+
+--- Test condition for the controller's connection, the state the Connected events follow.
+--- @param strConditionName string
+--- @param tParams table
+--- @return boolean
+function TC.CONTROLLER_CONNECTED(strConditionName, tParams)
+  log:trace("TC.CONTROLLER_CONNECTED(%s, %s)", strConditionName, tParams)
+  local test = Select(tParams, "VALUE") == "Connected"
+  if Select(tParams, "LOGIC") == "NOT_EQUAL" then
+    return test ~= gConnected
+  end
+  return test == gConnected
+end
+
 -- ─── Actions (EC dispatch) ─────────────────────────────────────────────────
 
 --#ifndef DRIVERCENTRAL

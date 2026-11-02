@@ -346,6 +346,12 @@ Monitoring is Enabled.
 A live connection that drops while the controller still answers over HTTP fires
 neither event.
 
+### Conditionals
+
+| Conditional                       | Tests                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| WLED controller connection status | Whether the driver is Connected or Disconnected, as the events follow it |
+
 ## Connections
 
 ### Light (provider)
