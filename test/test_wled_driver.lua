@@ -350,6 +350,22 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("Reset Driver with the controller gone tells the proxy and programming it went away")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  fake.reachable = false
+  fake:drop()
+  mark()
+  EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  W.run(60000)
+  T.eq("the proxy hears offline", lastOnline(), false)
+  T.eq("Disconnected fires once", eventCount(2), 1)
+  T.eq("the variable reads disconnected", Variables["Connected"], "0")
+end
+
+--------------------------------------------------------------------------------
 T.section("The IP Address property")
 --------------------------------------------------------------------------------
 do

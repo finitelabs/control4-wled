@@ -452,11 +452,12 @@ function EC.Reset_Driver(params)
   end
   log:print("Resetting driver to initial state")
   persist:delete(MAC_KEY)
+  -- Tell the proxy and programming before the light's state is cleared.
+  setConnected(false, "Connecting")
   values:reset()
   light.reset(true)
   device = Device.new()
   wledLight.device = device
-  gConnected = false
   values:update("Connected", false, "BOOL")
   for name, value in pairs(RESET_PROPERTY_VALUES) do
     UpdateProperty(name, value, true)
