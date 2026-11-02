@@ -406,6 +406,39 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("Destroying the driver stops its fades, timers and connection")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  ReceivedFromProxy(PROXY, "SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "200000" })
+  W.run(1000)
+  local sentBefore, connectsBefore = #fake.commands, fake.connects
+  mark()
+  OnDriverDestroyed()
+  W.run(300000)
+  T.eq("no fade leg after destroy", #fake.commands, sentBefore)
+  T.eq("no reconnect after destroy", fake.connects, connectsBefore)
+  T.eq("the proxy hears nothing after destroy", #told, 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("A start clears the WebSocket binding addresses an earlier run left")
+--------------------------------------------------------------------------------
+do
+  local cleared = 0
+  local original = C4.SetBindingAddress
+  function C4:SetBindingAddress(id, address)
+    if id >= 6100 and id <= 6199 and address == "" then
+      cleared = cleared + 1
+    end
+  end
+  OnDriverInit()
+  C4.SetBindingAddress = original
+  T.eq("all 100 network bindings cleared", cleared, 100)
+end
+
+--------------------------------------------------------------------------------
 T.section("Light commands reach the controller")
 --------------------------------------------------------------------------------
 do

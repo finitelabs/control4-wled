@@ -254,6 +254,11 @@ function OnDriverInit()
   --#else
   C4:AllowExecute(true)
   --#endif
+  -- Clear stale WebSocket binding addresses from earlier runs, whose delayed release KillAllTimers
+  -- ends. Address only: a NetDisconnect would drive an orphaned socket into a reconnect.
+  for i = 6100, 6199 do
+    pcall(C4.SetBindingAddress, C4, i, "")
+  end
   gInitialized = false
   log:setLogName(C4:GetDeviceData(C4:GetDeviceID(), "name"))
   log:setLogLevel(Properties["Log Level"])
@@ -303,9 +308,10 @@ OnDriverLateInit = diagnostics:wrapLateInit(OnDriverLateInit)
 --#endif
 
 function OnDriverDestroyed()
+  log:trace("OnDriverDestroyed()")
   client:stop()
-  CancelTimer("UpdateCheck")
-  CancelTimer("LogMode")
+  -- Ramps, scene steps, echo waits and fade legs are all named timers.
+  KillAllTimers()
 end
 
 -- ─── Property handlers (OPC dispatch) ──────────────────────────────────────
