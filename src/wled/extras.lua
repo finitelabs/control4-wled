@@ -32,6 +32,20 @@ local CHECKS = {
 --- WLED's name for the palette control.
 local PALETTE_LABEL = "Color palette"
 
+--- Controls an effect can hide, in setup order, and the same as a set.
+local HIDEABLE_IDS = {}
+for _, s in ipairs(SLIDERS) do
+  HIDEABLE_IDS[#HIDEABLE_IDS + 1] = s.id
+end
+for _, c in ipairs(CHECKS) do
+  HIDEABLE_IDS[#HIDEABLE_IDS + 1] = c.id
+end
+HIDEABLE_IDS[#HIDEABLE_IDS + 1] = "pal"
+local HIDEABLE = {}
+for _, id in ipairs(HIDEABLE_IDS) do
+  HIDEABLE[id] = true
+end
+
 --- Id ranges by control, for commands from the app.
 --- @type table<string, {min: integer, max: integer}|"bool"|"list">
 Extras.KINDS = { fx = "list", pal = "list", ps = "list", pl = "list" }
@@ -216,19 +230,10 @@ end
 --- @return string
 function Extras.shape(view, listsVersion)
   local parts = { tostring(listsVersion) }
-  for _, id in ipairs({ "sx", "ix", "c1", "c2", "c3", "o1", "o2", "o3", "pal" }) do
+  for _, id in ipairs(HIDEABLE_IDS) do
     parts[#parts + 1] = id .. "=" .. tostring(view.controls[id])
   end
   return table.concat(parts, "\n")
-end
-
---- Controls an effect can hide.
-local HIDEABLE = { pal = true }
-for _, s in ipairs(SLIDERS) do
-  HIDEABLE[s.id] = true
-end
-for _, c in ipairs(CHECKS) do
-  HIDEABLE[c.id] = true
 end
 
 --- A state with the values that differ from those last sent, or nil when none do. Given the

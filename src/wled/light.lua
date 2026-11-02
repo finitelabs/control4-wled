@@ -3148,13 +3148,22 @@ local function buttonIdFromBinding(idBinding)
   return nil
 end
 
+-- A button link the light does not own goes to its own RFP[binding] handler, where the common
+-- handler would send it if the light had no handler for the command.
+local function otherLink(idBinding, strCommand, tParams, args)
+  local own = RFP[idBinding]
+  if type(own) == "function" then
+    return own(idBinding, strCommand, tParams, args)
+  end
+end
+
 function RFP.REQUEST_BUTTON_COLORS(idBinding, strCommand, tParams, args)
   log:trace("RFP.REQUEST_BUTTON_COLORS(%s, %s)", idBinding, strCommand)
   if idBinding ~= PROXY_BINDING then
     -- A keypad button bound to a button link asks over that link, and is answered on it.
     local buttonId = buttonIdFromBinding(idBinding)
     if buttonId == nil then
-      return
+      return otherLink(idBinding, strCommand, tParams, args)
     end
     local onColor, offColor = getButtonColors(buttonId)
     SendToProxy(idBinding, "BUTTON_COLORS", { ON_COLOR = onColor, OFF_COLOR = offColor }, "NOTIFY")
@@ -3338,7 +3347,7 @@ function RFP.DO_CLICK(idBinding, strCommand, tParams, args)
   log:trace("RFP.DO_CLICK(%s, %s)", idBinding, strCommand)
   local buttonId = buttonIdFromBinding(idBinding)
   if buttonId == nil then
-    return
+    return otherLink(idBinding, strCommand, tParams, args)
   end
   handleButtonAction(buttonId, constants.ButtonActions.RELEASE_CLICK)
 end
@@ -3347,7 +3356,7 @@ function RFP.DO_PUSH(idBinding, strCommand, tParams, args)
   log:trace("RFP.DO_PUSH(%s, %s)", idBinding, strCommand)
   local buttonId = buttonIdFromBinding(idBinding)
   if buttonId == nil then
-    return
+    return otherLink(idBinding, strCommand, tParams, args)
   end
   handleButtonAction(buttonId, constants.ButtonActions.PRESS)
 end
@@ -3356,7 +3365,7 @@ function RFP.DO_RELEASE(idBinding, strCommand, tParams, args)
   log:trace("RFP.DO_RELEASE(%s, %s)", idBinding, strCommand)
   local buttonId = buttonIdFromBinding(idBinding)
   if buttonId == nil then
-    return
+    return otherLink(idBinding, strCommand, tParams, args)
   end
   handleButtonAction(buttonId, constants.ButtonActions.RELEASE_HOLD)
 end

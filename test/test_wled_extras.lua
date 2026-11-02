@@ -158,7 +158,7 @@ local function fresh(profile, setup)
   T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
   mark()
   dofile(DRIVER)
-  OnDriverLateInit()
+  ShimLateInit()
   return fake
 end
 

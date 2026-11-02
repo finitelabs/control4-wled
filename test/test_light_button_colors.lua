@@ -19,9 +19,11 @@ local src = fh:read("*a")
 fh:close()
 
 local mapSrc = src:match("\n(local function buttonIdFromBinding%b()\n.-\nend)\n")
+local otherSrc = src:match("\n(local function otherLink%b()\n.-\nend)\n")
 local handlerSrc = src:match("\n(function RFP%.REQUEST_BUTTON_COLORS%b()\n.-\nend)\n")
 local setSrc = src:match("\n(function RFP%.SET_BUTTON_COLOR%b()\n.-\nend)\n")
 T.check("buttonIdFromBinding was cut out", mapSrc ~= nil, "no match")
+T.check("otherLink was cut out", otherSrc ~= nil, "no match")
 T.check("RFP.REQUEST_BUTTON_COLORS was cut out", handlerSrc ~= nil, "no match")
 T.check("RFP.SET_BUTTON_COLOR was cut out", setSrc ~= nil, "no match")
 
@@ -56,7 +58,8 @@ local function compile(ledState)
     env.sends[#env.sends + 1] = { idBinding = idBinding, command = strCommand, params = tParams }
   end
   setmetatable(env, { __index = _G })
-  local chunk, err = loadstring(table.concat({ mapSrc, handlerSrc, setSrc }, "\n"), "light_request_button_colors")
+  local chunk, err =
+    loadstring(table.concat({ mapSrc, otherSrc, handlerSrc, setSrc }, "\n"), "light_request_button_colors")
   T.check("the cut handler compiles", chunk ~= nil, err)
   setfenv(chunk, env)
   chunk()
@@ -118,5 +121,15 @@ T.section("A request on another binding is ignored")
 env = compile(true)
 env.RFP.REQUEST_BUTTON_COLORS(1, "REQUEST_BUTTON_COLORS", {})
 T.eq("nothing sent", #env.sends, 0)
+
+T.section("A request on a link the driver owns goes to that link's handler")
+env = compile(true)
+local asked
+env.RFP[303] = function(idBinding, strCommand)
+  asked = { idBinding, strCommand }
+end
+env.RFP.REQUEST_BUTTON_COLORS(303, "REQUEST_BUTTON_COLORS", {})
+T.eq("the link's own handler answers", asked, { 303, "REQUEST_BUTTON_COLORS" })
+T.eq("and the light sends nothing", #env.sends, 0)
 
 T.finish()

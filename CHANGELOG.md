@@ -43,6 +43,10 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added the light's Extras menu: the controller's effects, with the sliders and
   options the running effect uses under WLED's names for them, its palettes,
   presets and playlists
+- Added preset cycling: Next Preset and Previous Preset button links and
+  commands, a `Cycle Presets` property for which presets cycle and in what
+  order, a button link for each of those presets with its keypad LED lit while
+  it shows, and a Preset Is conditional
   <!-- #ifdef DRIVERCENTRAL -->
 - Added a `Support Code` property, a `Cloud Monitoring` property, Enabled by
   default, and a `Diagnostics Snapshot` action
