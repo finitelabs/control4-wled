@@ -347,13 +347,26 @@ local function updateExtras()
   end
 end
 
+--- Persist keys for the cycle, kept so the buttons step at once after a reload, and for the id
+--- each name in Cycle Presets last stood for, so a rename on the controller keeps its place.
+local CYCLE_KEY, CYCLE_NAMES_KEY = "WledPresetCycle", "WledPresetCycleNames"
+
 --- The presets Next Preset and Previous Preset step through.
 --- @type WledListEntry[]
-local gCycle = {}
+local gCycle = persist:get(CYCLE_KEY) or {}
 
 --- The preset the cycle last applied, so a step after the look was changed goes on from there.
 --- @type integer|nil
 local gCycleLast = nil
+
+--- The preset showing when the cycle last sent one, until a report shows another: a step before
+--- the controller reports the preset it was sent goes on from that preset.
+--- @type integer|nil
+local gCycleSentFrom = nil
+
+--- The preset our controller shows, from its last report; nil before the first.
+--- @type integer|nil
+local gPresetShowing = nil
 
 --- What the cycle was last built from: Cycle Presets and the controller's presets.
 --- @type string|nil
@@ -370,13 +383,13 @@ local gPresetIsItems = nil
 --- The preset the controller shows, -1 for none.
 --- @return integer
 local function presetShowing()
-  local state = device.state
-  return type(state) == "table" and tonumber(state.ps) or -1
+  return gPresetShowing or -1
 end
 
 --- Apply a preset from the cycle; the controller applies it on its next loop.
 --- @param id integer
 local function applyCyclePreset(id)
+  gCycleSentFrom = presetShowing()
   gCycleLast = id
   send({ ps = id })
 end
@@ -384,7 +397,12 @@ end
 --- Step the cycle forward (1) or back (-1) from the preset showing.
 --- @param dir integer
 local function stepCycle(dir)
-  local id = Cycle.step(gCycle, presetShowing(), gCycleLast, dir)
+  local showing = presetShowing()
+  if gCycleSentFrom ~= nil and showing == gCycleSentFrom then
+    -- The controller has not reported the preset it was sent yet: a quick second tap steps on.
+    showing = gCycleLast
+  end
+  local id = Cycle.step(gCycle, showing, gCycleLast, dir)
   if not id then
     log:warn("No presets to cycle through")
     return
@@ -433,7 +451,8 @@ end)
 local function registerPresetLink(key, binding)
   local id = tonumber(key)
   registerButtonLink(binding.bindingId, function()
-    if not Lists.byId(lists.presets, id) then
+    -- Before the presets are read, as after a reload, the controller ignores an id it lacks.
+    if lists.presets and not Lists.byId(lists.presets, id) then
       log:warn("Preset %s is not on the controller", key)
       return
     end
@@ -461,14 +480,14 @@ local function listSafe(label)
   return (label:gsub(",", " "))
 end
 
---- Test for the preset showing, by the "Name (id)" programming shows it as.
+--- Test for the preset showing, by the id in the "Name (id)" programming shows it as, so the test
+--- holds after a rename on the controller.
 --- @param _strConditionName string
 --- @param tParams table
 --- @return boolean
 local function testPresetIs(_strConditionName, tParams)
-  local showing = presetShowing()
-  local name = showing > 0 and lists:presetName(showing) or nil
-  local matched = name ~= nil and listSafe(string.format("%s (%d)", name, showing)) == Select(tParams, "VALUE")
+  local picked = tonumber(tostring(Select(tParams, "VALUE") or ""):match("%((%d+)%)%s*$"))
+  local matched = picked ~= nil and picked == presetShowing()
   if Select(tParams, "LOGIC") == "NOT_EQUAL" then
     return not matched
   end
@@ -478,7 +497,8 @@ end
 --- Register the Preset Is conditional with the controller's presets, when its list changed.
 --- @param items string Comma-separated choices.
 local function registerPresetIs(items)
-  if items == gPresetIsItems then
+  -- A controller without presets gets no conditional, until it has some.
+  if items == gPresetIsItems or (items == "" and gPresetIsItems == nil) then
     return
   end
   gPresetIsItems = items
@@ -500,16 +520,23 @@ local function updateCycle()
   local from = tostring(Properties["Cycle Presets"] or "") .. "\n" .. table.concat(lists:presetChoices(), "\n")
   if from ~= gCycleFrom then
     gCycleFrom = from
-    local cycle, unknown = Cycle.parse(Properties["Cycle Presets"], lists.presets)
+    local cycle, unknown, named = Cycle.parse(Properties["Cycle Presets"], lists.presets, persist:get(CYCLE_NAMES_KEY))
     if #unknown > 0 then
       log:warn("Cycle Presets: the controller has no preset %s", table.concat(unknown, ", "))
     end
     gCycle = cycle
+    persist:set(CYCLE_KEY, #cycle > 0 and cycle or nil)
+    persist:set(CYCLE_NAMES_KEY, next(named) and named or nil)
     local labels, inCycle = {}, {}
     for _, e in ipairs(cycle) do
       local key, label = tostring(e.id), string.format("%s (%d)", e.name, e.id)
       labels[#labels + 1] = label
       inCycle[key] = true
+      local old = bindings:getDynamicBinding(PRESET_LINKS, key)
+      if old and old.displayName ~= label .. " Button Link" then
+        -- A rename adds the link again, so the keypad is told its LED again.
+        gLinkLeds[key] = nil
+      end
       local binding =
         bindings:getOrAddDynamicBinding(PRESET_LINKS, key, "CONTROL", true, label .. " Button Link", "BUTTON_LINK")
       if binding then
@@ -607,6 +634,12 @@ local function onState(state, info)
     updateDeviceInfo()
   end
   setConnected(true, connectedStatus())
+  if state ~= nil then
+    gPresetShowing = tonumber(state.ps) or -1
+    if gCycleSentFrom ~= nil and gPresetShowing ~= gCycleSentFrom then
+      gCycleSentFrom = nil
+    end
+  end
   if state ~= nil then
     light.state(wledLight:entity(), wledLight:state())
   end
@@ -742,7 +775,10 @@ function OnDriverLateInit()
   values:update("Connected", false, "BOOL")
   ensureVariables()
   -- Test functions live in memory: Preset Is answers from its saved list until the presets are read.
-  registerPresetIs(Select(conditionals:getConditionals(), PROGRAMMING, "preset_is", "list_items") or "")
+  local saved = Select(conditionals:getConditionals(), PROGRAMMING, "preset_is", "list_items")
+  if saved then
+    registerPresetIs(saved)
+  end
   gInitialized = true
   light.lateInit()
   connect()
@@ -1137,7 +1173,10 @@ function EC.Reset_Driver(params)
   gExtrasShape, gExtrasSent = nil, {}
   bindings:reset()
   conditionals:reset()
-  gCycle, gCycleLast, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, {}, nil
+  gCycle, gCycleLast, gCycleSentFrom, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, nil, {}, nil
+  gPresetShowing = nil
+  persist:delete(CYCLE_KEY)
+  persist:delete(CYCLE_NAMES_KEY)
   SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = "<extras_setup><extra></extra></extras_setup>" }, "NOTIFY")
   values:update("Connected", false, "BOOL")
   ensureVariables()

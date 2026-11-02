@@ -241,9 +241,10 @@ The color temperature of the strip's coolest white, 6500 K by default.
 The presets the Next and Previous Preset buttons and commands step through, in
 order: WLED preset ids or names, separated by commas, for example `4, 1, 7` or
 `Movie Night, Warm Glow`. Empty, the default, cycles every preset on the
-controller in id order. Playlists do not cycle. Use the id for a preset whose
-name has a comma in it. An entry the controller has no preset for is left out
-and written to the log.
+controller in id order. Playlists do not cycle. A number is read as a preset id;
+use the id for a preset whose name is a number or has a comma in it. A preset
+named here keeps its place when it is renamed in WLED. An entry the controller
+has no preset for is left out and written to the log.
 
 #### Presets in Cycle (read-only)
 
@@ -338,7 +339,8 @@ Each variable is set before its event fires.
 
 Preset Is lists the controller's presets as programming shows them, for example
 `Movie Night (4)`, and follows the controller as presets are saved, renamed and
-deleted.
+deleted. It tests by the preset's id, so programming keeps working after a
+rename in WLED.
 
 ## Connections
 

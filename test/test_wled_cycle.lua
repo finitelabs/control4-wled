@@ -193,6 +193,15 @@ do
   local cycle, unknown = Cycle.parse("9, Movie Night,7, Warm (1), 9", presets)
   T.eq("ids, names and Name (id) in the order given, each once", ids(cycle), { 9, 4, 1 })
   T.eq("an entry the controller has no preset for, apart", unknown, { "7" })
+  local _, _, named = Cycle.parse("Movie Night, 9", presets)
+  T.eq("the id each name stands for", named, { ["Movie Night"] = 4 })
+  local renamed = { { id = 1, name = "Warm" }, { id = 4, name = "Cinema" } }
+  T.eq(
+    "a name renamed on the controller keeps its preset",
+    ids((Cycle.parse("Movie Night, 1", renamed, named))),
+    { 4, 1 }
+  )
+  T.eq("a number is an id", ids((Cycle.parse("1", { { id = 1, name = "4" }, { id = 4, name = "1" } }))), { 1 })
 
   T.eq("next from the preset showing", Cycle.step(cycle, 4, nil, 1), 1)
   T.eq("wraps at the end", Cycle.step(cycle, 1, nil, 1), 9)
@@ -250,7 +259,9 @@ end
 T.section("Keypad buttons: Next and Previous Preset, and a preset's own link")
 --------------------------------------------------------------------------------
 do
-  local fake = fresh("esp32-rgbw-pwm-16")
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f:presetsFile()["4"] = { n = "Mock Ocean", on = true }
+  end)
   W.run(500)
   local n = #fake.commands
   press(303, "DO_PUSH", "DO_CLICK")
@@ -267,18 +278,31 @@ do
   press(304, "DO_RELEASE")
   T.eq("a release alone does nothing", #fake.commands, n)
 
+  press(303, "DO_CLICK")
+  W.run(600)
+  press(303, "DO_CLICK")
+  T.eq(
+    "two taps before the controller reports step twice",
+    { fake.commands[#fake.commands - 1].ps, lastPreset(fake) },
+    {
+      2,
+      4,
+    }
+  )
+  W.run(1500)
+
   press(300, "DO_CLICK")
   T.eq("the light's own On Button Link still turns it on", fake.commands[#fake.commands].on, true)
   W.run(1500)
 
   local links = presetLinks()
-  local warm, rainbow = links["1"].bindingId, links["2"].bindingId
+  local ocean, rainbow = links["4"].bindingId, links["2"].bindingId
   mark()
   press(rainbow, "DO_PUSH", "DO_CLICK")
   T.eq("a preset's link applies it", lastPreset(fake), 2)
   W.run(1500)
   T.eq("its LED lit while it shows", ledOf(rainbow), true)
-  T.eq("the other's off", ledOf(warm), false)
+  T.eq("the one lit before goes off", ledOf(ocean), false)
   mark()
   ReceivedFromProxy(rainbow, "REQUEST_BUTTON_COLORS", {})
   T.eq("a keypad that asks is told", ledOf(rainbow), true)
@@ -328,6 +352,7 @@ do
   -- A keypad button connected to Mock Warm Glow's link.
   C4:Bind(C4:GetDeviceID(), links["1"].bindingId, 555, 1, "BUTTON_LINK")
 
+  mark()
   local file = fake:presetsFile()
   file["2"].n = "Mock Sunset"
   file["1"] = nil
@@ -338,6 +363,7 @@ do
   links = presetLinks()
   T.eq("renamed on the controller, renamed here", links["2"] and links["2"].displayName, "Mock Sunset (2) Button Link")
   T.eq("under the same connection", links["2"] and links["2"].bindingId, rainbow)
+  T.eq("its keypad is told its LED again", ledOf(rainbow), false)
   T.eq("a new preset gets a link", links["6"] and links["6"].displayName, "Mock Ocean (6) Button Link")
   T.truthy("one deleted on the controller keeps the link a keypad is connected to", links["1"])
   T.eq("but leaves the cycle", Properties["Presets in Cycle"], "Mock Sunset (2), Mock Ocean (6)")
@@ -351,11 +377,36 @@ do
   T.eq("one nothing is connected to goes with its preset", presetLinks()["6"], nil)
 end
 
+do
+  local fake = fresh("esp32-rgbw-pwm-16", nil, { ["Cycle Presets"] = "Mock Rainbow, Mock Warm Glow" })
+  W.run(500)
+  local rainbow = presetLinks()["2"].bindingId
+  C4:Bind(C4:GetDeviceID(), rainbow, 556, 1, "BUTTON_LINK")
+  local file = fake:presetsFile()
+  file["2"].n = "Mock Sunset"
+  fake.files["/presets.json"] = file
+  fake:change(nil, { fs = { pmt = 1762000700 } })
+  W.run(2000)
+  T.eq(
+    "a preset Cycle Presets names keeps its place after a rename",
+    Properties["Presets in Cycle"],
+    "Mock Sunset (2), Mock Warm Glow (1)"
+  )
+  T.eq("and its link", presetLinks()["2"] and presetLinks()["2"].bindingId, rainbow)
+  local wired = false
+  for _, c in ipairs(ShimConnections()) do
+    wired = wired or (c.providerBinding == rainbow and c.consumer == 556)
+  end
+  T.truthy("with the keypad still connected", wired)
+end
+
 --------------------------------------------------------------------------------
 T.section("Preset Is, a conditional with the controller's presets")
 --------------------------------------------------------------------------------
 do
-  local fake = fresh("esp32-rgbw-pwm-16")
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f:presetsFile()["5"] = { n = "Mock, Comma", on = true }
+  end)
   W.run(500)
   local conditional
   for _, c in pairs(GetConditionals()) do
@@ -364,7 +415,11 @@ do
     end
   end
   T.truthy("listed for Composer", conditional)
-  T.eq("with each preset as programming shows it", conditional.list_items, "Mock Warm Glow (1),Mock Rainbow (2)")
+  T.eq(
+    "with each preset as programming shows it, a comma in a name made a space",
+    conditional.list_items,
+    "Mock Warm Glow (1),Mock Rainbow (2),Mock  Comma (5)"
+  )
   T.eq("a list conditional", conditional.type, "LIST")
   ExecuteCommand("Apply Preset", { Preset = "Mock Rainbow (2)" })
   W.run(1500)
@@ -374,17 +429,23 @@ do
   )
   T.falsy("false for another", TestCondition(conditional.name, { VALUE = "Mock Warm Glow (1)", LOGIC = "EQUAL" }))
   T.truthy("and Is Not", TestCondition(conditional.name, { VALUE = "Mock Warm Glow (1)", LOGIC = "NOT_EQUAL" }))
+  local file = fake:presetsFile()
+  file["2"].n = "Mock Sunset"
+  fake.files["/presets.json"] = file
+  fake:change(nil, { fs = { pmt = 1762000800 } })
+  W.run(2000)
+  T.truthy(
+    "a test written before a rename still holds",
+    TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "EQUAL" })
+  )
 
   restart()
   T.truthy(
     "after a reload it answers before the presets are read again",
-    TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "NOT_EQUAL" })
+    TestCondition(conditional.name, { VALUE = "Mock Sunset (2)", LOGIC = "NOT_EQUAL" })
   )
   W.run(1500)
-  T.truthy(
-    "and from the report after",
-    TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "EQUAL" })
-  )
+  T.truthy("and from the report after", TestCondition(conditional.name, { VALUE = "Mock Sunset (2)", LOGIC = "EQUAL" }))
   T.eq("the same conditional", GetConditionals()[tostring(conditional.conditionalId)].name, conditional.name)
   local _ = fake
 end
@@ -397,6 +458,12 @@ do
   W.run(500)
   local id = presetLinks()["2"].bindingId
   restart()
+  W.run(1)
+  local n = #fake.commands
+  press(303, "DO_CLICK")
+  press(id, "DO_CLICK")
+  W.run(100)
+  T.eq("its button and Next work before the presets are read again", #fake.commands, n + 2)
   T.eq(
     "restored at init under the same id",
     ShimDynamicBindings()[id] and ShimDynamicBindings()[id].name,
@@ -422,9 +489,23 @@ T.section("Nothing cycles a different controller, or one with no presets")
 do
   local fake = fresh("esp32-rgbw-pwm-16")
   W.run(500)
+  ExecuteCommand("Apply Preset", { Preset = "Mock Rainbow (2)" })
+  W.run(1500)
+  local warm = presetLinks()["1"].bindingId
+  mark()
   fake.si.info.mac = "02a1b2c3d4ee"
+  fake.si.state.ps = 1
   fake:drop()
   W.run(5000)
+  local preset
+  for _, c in pairs(GetConditionals()) do
+    preset = c.name
+  end
+  T.truthy(
+    "Preset Is answers from our controller, not the one at the address",
+    TestCondition(preset, { VALUE = "Mock Rainbow (2)", LOGIC = "EQUAL" })
+  )
+  T.eq("which lights no link", ledOf(warm), nil)
   local n = #fake.commands
   ExecuteCommand("Next Preset", {})
   press(303, "DO_CLICK")
@@ -436,6 +517,7 @@ do
   W.run(500)
   T.eq("a controller without presets", Properties["Presets in Cycle"], "None")
   T.eq("has no preset links", next(presetLinks()), nil)
+  T.eq("and no Preset Is", next(GetConditionals()), nil)
   local n = #fake.commands
   ExecuteCommand("Previous Preset", {})
   T.eq("and nothing to step through", #fake.commands, n)

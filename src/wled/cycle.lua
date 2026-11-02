@@ -9,51 +9,71 @@ local function trim(text)
 end
 
 --- @param presets WledListEntry[]
---- @param item string An id, a name, or "Name (id)" as programming shows a preset.
+--- @param id integer|nil
 --- @return WledListEntry|nil
-local function find(presets, item)
-  local id = tonumber(item) or tonumber(item:match("%((%d+)%)$"))
+local function byId(presets, id)
   for _, e in ipairs(presets) do
     if e.id == id then
-      return e
-    end
-  end
-  for _, e in ipairs(presets) do
-    if e.name == item then
       return e
     end
   end
   return nil
 end
 
+--- @param presets WledListEntry[]
+--- @param item string An id, a name, or "Name (id)" as programming shows a preset. A number is an id.
+--- @param remembered table<string, integer> The id each name last stood for.
+--- @return WledListEntry|nil entry
+--- @return boolean byName Whether the item named it.
+local function find(presets, item, remembered)
+  local entry = byId(presets, tonumber(item) or tonumber(item:match("%((%d+)%)$")))
+  if entry then
+    return entry, false
+  end
+  for _, e in ipairs(presets) do
+    if e.name == item then
+      return e, true
+    end
+  end
+  -- A preset renamed on the controller keeps its place under the name the installer gave.
+  return byId(presets, remembered[item]), true
+end
+
 --- The presets in the cycle, from the installer's list: ids or names separated by commas, in the
 --- order given, each once; empty for every preset, by id.
 --- @param text string|nil
 --- @param presets WledListEntry[]
+--- @param remembered table<string, integer>|nil The id each name last stood for, from `named`.
 --- @return WledListEntry[] cycle
 --- @return string[] unknown Entries the controller has no preset for.
-function Cycle.parse(text, presets)
-  local cycle, unknown, seen = {}, {}, {}
+--- @return table<string, integer> named The id each name in the list stands for now.
+function Cycle.parse(text, presets, remembered)
+  local cycle, unknown, named, seen = {}, {}, {}, {}
   text = trim(tostring(text or ""))
   if text == "" then
     for i, e in ipairs(presets) do
       cycle[i] = e
     end
-    return cycle, unknown
+    return cycle, unknown, named
   end
   for part in (text .. ","):gmatch("([^,]*),") do
     local item = trim(part)
     if item ~= "" then
-      local entry = find(presets, item)
+      local entry, byName = find(presets, item, remembered or {})
       if not entry then
         unknown[#unknown + 1] = item
-      elseif not seen[entry.id] then
-        seen[entry.id] = true
-        cycle[#cycle + 1] = entry
+      else
+        if byName then
+          named[item] = entry.id
+        end
+        if not seen[entry.id] then
+          seen[entry.id] = true
+          cycle[#cycle + 1] = entry
+        end
       end
     end
   end
-  return cycle, unknown
+  return cycle, unknown, named
 end
 
 --- The preset a step lands on: the one after (or before) the preset showing when it is in the
