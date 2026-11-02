@@ -239,7 +239,7 @@ local function restart(modes, on)
       end
     end
   end
-  OnDriverLateInit()
+  ShimLateInit()
   if modes then
     RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
       entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = modes }),
