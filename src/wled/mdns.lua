@@ -18,6 +18,9 @@ local MAX_POINTERS = 32
 --- The longest name DNS allows, in bytes.
 local MAX_NAME = 255
 
+--- A controller's answer holds four records; more than this in one message is not read.
+local MAX_RECORDS = 32
+
 --- @class MdnsName
 --- @field labels string[] As sent.
 --- @field key string Lowercase labels joined by dots, for matching.
@@ -198,10 +201,13 @@ function Mdns.records(data)
   if not flags or flags < 32768 then
     return {}
   end
-  local questions = r:u16(5)
+  local questions = r:u16(5) or 0
   local count = (r:u16(7) or 0) + (r:u16(9) or 0) + (r:u16(11) or 0)
+  if questions > MAX_RECORDS then
+    return {}
+  end
   local pos = 13
-  for _ = 1, questions or 0 do
+  for _ = 1, questions do
     local _, after = r:name(pos)
     if not after then
       return {}
@@ -209,7 +215,7 @@ function Mdns.records(data)
     pos = after + 4
   end
   local records = {}
-  for _ = 1, count do
+  for _ = 1, math.min(count, MAX_RECORDS) do
     local record, after = r:record(pos)
     if not record or not after then
       break

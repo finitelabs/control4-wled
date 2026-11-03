@@ -252,6 +252,27 @@ do
   )
   T.eq("another service is not WLED", #Mdns.services({ { data = answer, ip = "192.0.2.60" } }, "_http._tcp.local"), 0)
 
+  -- A message is read for at most 32 records and 32 questions.
+  local service = "\5_wled\4_tcp\5local\0"
+  local ptrs = {}
+  for i = 1, 40 do
+    local target = string.char(#tostring(i) + 1) .. "w" .. i .. service
+    ptrs[i] = service .. "\0\12\0\1\0\0\0\10" .. string.char(0, #target) .. target
+  end
+  local forty = "\0\0\132\0\0\0\0\40\0\0\0\0" .. table.concat(ptrs)
+  T.eq("40 records: 32 read", #Mdns.records(forty), 32)
+  --- A message with n questions, each the service, then one PTR to an instance of it.
+  local function asking(n)
+    local q = "\0\12\0\1"
+    local msg = "\0\0\132\0\0" .. string.char(n) .. "\0\1\0\0\0\0" .. service .. q
+    for _ = 2, n do
+      msg = msg .. "\192\12" .. q
+    end
+    return msg .. "\192\12\0\12\0\1\0\0\0\10\0\4\1w\192\12"
+  end
+  T.eq("32 questions, then the answer read", #Mdns.records(asking(32)), 1)
+  T.eq("33 questions: nothing read", #Mdns.records(asking(33)), 0)
+
   -- A PTR for the service must name an instance of it.
   local function ptrTo(target)
     local service = "\5_wled\4_tcp\5local\0"
@@ -335,22 +356,41 @@ do
   W.run(2100)
   T.eq("a search with a nameless answer still answers", settled and #settled, 2)
 
-  -- A flood of answers is cut at 32.
-  local flooded
-  Discovery.search():next(function(f)
-    flooded = f
-  end)
-  local fl = W.sockets[#W.sockets]
-  for i = 1, 40 do
-    local name = "flood-" .. i
-    fl.inbox[#fl.inbox + 1] = {
-      W.mdnsAnswer({ instance = name, host = name, port = 80, mac = "02a1b2c3d4aa", ip = "198.51.100." .. i }),
-      "198.51.100." .. i,
-      5353,
-    }
+  --- A search fed answers as they arrive: { name, sender } pairs, each sent `times` times.
+  local function searchWith(list, times)
+    local result
+    Discovery.search():next(function(f)
+      result = f
+    end)
+    local inbox = W.sockets[#W.sockets].inbox
+    for _ = 1, times do
+      for _, a in ipairs(list) do
+        inbox[#inbox + 1] = {
+          W.mdnsAnswer({ instance = a[1], host = a[1], port = 80, mac = "02a1b2c3d4aa", ip = a[2] }),
+          a[2],
+          5353,
+        }
+      end
+    end
+    W.run(2100)
+    return result and #result
   end
-  W.run(2100)
-  T.eq("32 answers read", flooded and #flooded, 32)
+  local site = {}
+  for i = 1, 40 do
+    site[i] = { "wled-" .. i, "198.51.100." .. i }
+  end
+  -- The section's two fakes answer as well.
+  T.eq("40 controllers answering both questions are all found", searchWith(site, 2), 42)
+  local one = {}
+  for i = 1, 40 do
+    one[i] = { "flood-" .. i, "198.51.100.200" }
+  end
+  T.eq("one sender's flood is cut at 4 answers", searchWith(one, 1), 4 + 2)
+  local many = {}
+  for i = 1, 300 do
+    many[i] = { "wled-" .. i, "10." .. math.floor(i / 256) .. "." .. (i % 256) .. ".1" }
+  end
+  T.eq("and every search at 256", searchWith(many, 1), 256)
 
   W.sendFails = "permission denied"
   local refused
