@@ -79,11 +79,7 @@ local proxyCaps = {}
 local CAPABILITY_KEYS = {
   "dimmer",
   "supports_target",
-  "set_level",
   "supports_brightness_stop",
-  "ramp_level",
-  "has_fixed_ramp_rate",
-  "fixed_ramp_rate",
   "supports_color",
   "supports_color_correlated_temperature",
   "supports_color_stop",
