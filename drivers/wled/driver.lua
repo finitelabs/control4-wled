@@ -182,9 +182,14 @@ local gExtrasShape = nil
 --- @type table<string, string>
 local gExtrasSent = {}
 
---- The WLED id and LED range each segment connection last stood for, by record key.
---- @type table<string, {id: integer, start: integer, stop: integer}>
+--- What each segment connection last stood for, by record key: the WLED id, LED range and name,
+--- and whether the last report still had the segment.
+--- @type table<string, WledSegmentRecord>
 local gSegmentRecords = persist:get(SEGMENT_RECORDS_KEY) or {}
+
+--- The records a report since this load found gone while a segment light was still connected.
+--- @type table<string, boolean>
+local gSegmentsGone = {}
 
 --- The segment each record stands for now; a record whose segment is gone is absent.
 --- @type table<string, WledSegment>
@@ -694,10 +699,11 @@ local function registerSegmentLink(key, binding)
     log:trace("OBC[%s](%s, %s)", idBinding, strClass, isBound)
     if isBound then
       pushSegment(key, idBinding, true)
-    elseif Select(gSegmentRecords, key, "live") == false then
-      -- A report found its segment gone, and nothing uses it any more. Before the first report
-      -- after a load nothing is known gone: Director may unbind and rebind at a controller start.
+    elseif gSegmentsGone[key] then
+      -- Only a report since this load counts: the stored live flag outlives a reload, and Director
+      -- may unbind and rebind at a controller start.
       bindings:deleteBinding(SEGMENTS, key)
+      gSegmentsGone[key] = nil
       gSegmentRecords[key] = nil
       gSegmentSent[idBinding] = nil
       persist:set(SEGMENT_RECORDS_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
@@ -735,6 +741,7 @@ local function updateSegments()
     local seg = matched[key]
     if seg then
       gSegmentRecords[key] = { id = seg.id, start = seg.start, stop = seg.stop, name = seg.name }
+      gSegmentsGone[key] = nil
       local binding = bindings:getOrAddDynamicBinding(SEGMENTS, key, "PROXY", true, Segment.name(seg), Segment.CLASS)
       if binding then
         registerSegmentLink(key, binding)
@@ -743,11 +750,13 @@ local function updateSegments()
       local binding = bindings:getDynamicBinding(SEGMENTS, key)
       if binding and Select(wired, binding.bindingId, "isbound") then
         gSegmentRecords[key].live = false
+        gSegmentsGone[key] = true
         log:warn("Segment %s is gone from the controller; its segment light shows Segment not found", key)
       else
         if binding then
           bindings:deleteBinding(SEGMENTS, key)
         end
+        gSegmentsGone[key] = nil
         gSegmentRecords[key] = nil
       end
     end
@@ -1601,7 +1610,7 @@ function EC.Reset_Driver(params)
   conditionals:reset()
   gCycle, gCycleLast, gCycleSentFrom, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, nil, {}, nil
   gPresetShowing = nil
-  gSegmentRecords, gSegmentOf, gSegmentsTold, gSegmentSent = {}, {}, false, {}
+  gSegmentRecords, gSegmentsGone, gSegmentOf, gSegmentsTold, gSegmentSent = {}, {}, {}, false, {}
   persist:delete(SEGMENT_RECORDS_KEY)
   persist:delete(CYCLE_KEY)
   persist:delete(CYCLE_NAMES_KEY)

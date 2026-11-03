@@ -709,4 +709,44 @@ do
   T.truthy("the controller answered", fake.connects > 0)
 end
 
+for _, how in ipairs({ "update", "restart" }) do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local accent = linkNamed("Accent").bindingId
+  connectLight(accent)
+  fake.si.state.seg = { fake.si.state.seg[1] }
+  fake:pushNow()
+  W.run(1500)
+  T.eq(
+    "a gone segment's record is stored as gone (" .. how .. ")",
+    Select(require("lib.persist"):get("WledSegmentRecords"), "seg2", "live"),
+    false
+  )
+  restart(how)
+  OBC[accent](accent, "WLED_SEGMENT", false)
+  T.truthy(
+    "an unbind before this load's first report keeps its connection (" .. how .. ")",
+    ShimDynamicBindings()[accent]
+  )
+  T.truthy("and its record (" .. how .. ")", Select(require("lib.persist"):get("WledSegmentRecords"), "seg2"))
+  if OBC[accent] then
+    OBC[accent](accent, "WLED_SEGMENT", true)
+  end
+  mark()
+  W.run(1500)
+  local gone = toldOn(accent, "UPDATE_DISCONNECT")
+  T.eq(
+    "rebound, its light shows Segment not found after the report (" .. how .. ")",
+    gone[#gone] and gone[#gone].params.status,
+    "Segment not found"
+  )
+  OBC[accent](accent, "WLED_SEGMENT", false)
+  T.eq(
+    "an unbind after a report that found it gone removes the connection (" .. how .. ")",
+    ShimDynamicBindings()[accent],
+    nil
+  )
+  T.eq("and its record (" .. how .. ")", Select(require("lib.persist"):get("WledSegmentRecords"), "seg2"), nil)
+end
+
 T.finish()
