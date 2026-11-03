@@ -56,8 +56,8 @@ local HTTP_TIMEOUT_S = 10
 --- Each client's timers are named apart, so stop() cancels its own.
 local gClients = 0
 
---- A callback the WebSocket module runs in its own pcall, which only prints an error: Cloud
---- Monitoring hears of it this way.
+--- A callback whose error would otherwise be lost (the WebSocket module's pcall only prints it,
+--- and a deferred handler's error becomes a rejection nothing reads): Cloud Monitoring hears of it.
 --- @param fn function
 --- @param source string
 --- @return function
@@ -181,9 +181,9 @@ function Client:setMode(mode, reason)
   local was = self.mode
   self.mode = mode
   if not reachable(was) and reachable(mode) then
-    self.onOnline()
+    guarded(self.onOnline, "WLED.Online")()
   elseif was ~= "offline" and mode == "offline" then
-    self.onOffline(reason or "Not connected")
+    guarded(self.onOffline, "WLED.Offline")(reason or "Not connected")
   end
 end
 
@@ -228,6 +228,9 @@ function Client:closeSocket()
   end)
   if not ok then
     log:warn("WLED WebSocket not closed cleanly: %s", tostring(err))
+    --#ifdef DRIVERCENTRAL
+    diagnostics:captureError(tostring(err), nil, "WLED.WsDelete")
+    --#endif
     if self.closing == d then
       self.closingUrl = nil
     end
@@ -272,9 +275,16 @@ end
 --- @param gen integer The start it belongs to.
 function Client:openSocket(gen)
   local url = self:socketUrl()
-  local made, ws, err = pcall(self.WebSocket.new, self.WebSocket, url)
-  if not made or not ws then
-    self:socketDown(gen, "No connection to the controller: " .. tostring(made and err or ws))
+  local ok, ws, err = pcall(self.WebSocket.new, self.WebSocket, url)
+  if not ok then
+    -- A raise is a fault, unlike a socket the module declines with nil and an error.
+    ws, err = nil, ws
+    --#ifdef DRIVERCENTRAL
+    diagnostics:captureError(tostring(err), nil, "WLED.WsNew")
+    --#endif
+  end
+  if not ws then
+    self:socketDown(gen, "No connection to the controller: " .. tostring(err))
     return
   end
   self.ws = ws
@@ -314,9 +324,12 @@ function Client:openSocket(gen)
       self:socketDown(gen, "No connection to the controller")
     end
   end, "WLED.WsOffline"))
-  local started, startErr = pcall(ws.Start, ws)
-  if not started then
-    self:socketDown(gen, "No connection to the controller: " .. tostring(startErr))
+  ok, err = pcall(ws.Start, ws)
+  if not ok then
+    --#ifdef DRIVERCENTRAL
+    diagnostics:captureError(tostring(err), nil, "WLED.WsStart")
+    --#endif
+    self:socketDown(gen, "No connection to the controller: " .. tostring(err))
   end
 end
 
@@ -409,7 +422,13 @@ function Client:onSocketError(code)
   end
   if code == 9 then
     local last = table.remove(self.recent)
-    self:enqueue("POST", "/json/state", last.cmd)
+    self:enqueue("POST", "/json/state", last.cmd):next(nil, function(err)
+      if type(err) == "table" and err.error == "stopped" then
+        return
+      end
+      log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
+      self:refresh()
+    end)
     return
   end
   if code ~= 3 or self.replaying then
@@ -469,11 +488,18 @@ function Client:sendFrame(frame)
 end
 
 --- Ask the controller for its state and report it, for a command it may not have taken. An
---- answer asked for before a later write is dropped; that write's report tells the state.
+--- answer asked for before a later write is dropped; that write's report tells the state. An
+--- answer while the socket is down reports the controller reachable first, as a poll does.
 function Client:refresh()
   local gen, writes = self.gen, self.writes
   self:enqueue("GET", "/json/si"):next(function(si)
-    if self.gen == gen and self.writes == writes and type(si) == "table" then
+    if self.gen ~= gen or type(si) ~= "table" then
+      return
+    end
+    if not self.socketUp then
+      self:setMode("http")
+    end
+    if self.writes == writes then
       guarded(self.onState, "WLED.Refresh")(si.state, si.info)
     end
   end, function() end)

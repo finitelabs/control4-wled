@@ -629,4 +629,184 @@ do
   client:stop()
 end
 
+local function has(list, value)
+  for _, v in ipairs(list) do
+    if v == value then
+      return true
+    end
+  end
+  return false
+end
+
+local function siRequests(fake)
+  return count(fake.requests, function(r)
+    return r.path == "/json/si"
+  end)
+end
+
+--- Swap Cloud Monitoring's capture for a recorder; returns the sources seen and a restore.
+local function recordCaptures()
+  local diagnostics = require("lib.diagnostics")
+  local capture = diagnostics.captureError
+  local sources = {}
+  diagnostics.captureError = function(_, _message, _traceback, source)
+    sources[#sources + 1] = source
+  end
+  return sources, function()
+    diagnostics.captureError = capture
+  end
+end
+
+--------------------------------------------------------------------------------
+T.section("A socket the module cannot make, start or close reaches Cloud Monitoring")
+--------------------------------------------------------------------------------
+do
+  local function socket(url, failStart, failDelete)
+    local ws = { url = url }
+    for _, name in ipairs({
+      "SetEstablishedFunction",
+      "SetProcessMessageFunction",
+      "SetClosedByRemoteFunction",
+      "SetOfflineFunction",
+    }) do
+      ws[name] = function() end
+    end
+    function ws:Start()
+      if failStart then
+        error("no start")
+      end
+    end
+    function ws:delete(done)
+      if failDelete then
+        error("socket gone")
+      end
+      if done then
+        done()
+      end
+    end
+    return ws
+  end
+  local function clientWith(new)
+    W.reset()
+    return Client:new({ http = W.http, WebSocket = { new = new } })
+  end
+
+  local sources, restore = recordCaptures()
+  local raising = clientWith(function()
+    error("no sockets")
+  end)
+  raising:start("192.0.2.210", 80)
+  W.run(10)
+  raising:stop()
+  T.truthy("a socket the module cannot make", has(sources, "WLED.WsNew"))
+
+  local declined = clientWith(function()
+    return nil, "refused"
+  end)
+  local before = #sources
+  declined:start("192.0.2.211", 80)
+  W.run(10)
+  declined:stop()
+  T.eq("a socket the module declines is no fault", #sources, before)
+
+  local unstarted = clientWith(function(_, url)
+    return socket(url, true, false)
+  end)
+  unstarted:start("192.0.2.212", 80)
+  W.run(10)
+  unstarted:stop()
+  T.truthy("a socket that cannot start", has(sources, "WLED.WsStart"))
+
+  local unclosed = clientWith(function(_, url)
+    return socket(url, false, true)
+  end)
+  unclosed:start("192.0.2.213", 80)
+  W.run(10)
+  unclosed:stop()
+  restore()
+  T.truthy("a socket that cannot close", has(sources, "WLED.WsDelete"))
+end
+
+--------------------------------------------------------------------------------
+T.section("An error in the driver's online or offline handler is reported, and polling goes on")
+--------------------------------------------------------------------------------
+do
+  W.reset()
+  local fake = W.Fake.new("esp32-rgbw-pwm-16", { ip = "192.0.2.214" })
+  fake.socketOpen, fake.reachable = false, false
+  local sources, restore = recordCaptures()
+  local client = Client:new({
+    http = W.http,
+    onOnline = function()
+      error("broken online handler")
+    end,
+    onOffline = function()
+      error("broken offline handler")
+    end,
+  })
+  client:start(fake.ip, fake.port)
+  W.run(Client.OPEN_GRACE_MS + 100)
+  T.eq("offline", client.mode, "offline")
+  T.truthy("the offline handler's error is reported", has(sources, "WLED.Offline"))
+  local polls = siRequests(fake)
+  fake.reachable = true
+  W.run(Client.POLL_MS + 100)
+  restore()
+  T.truthy("polling goes on", siRequests(fake) > polls)
+  T.truthy("the online handler's error is reported", has(sources, "WLED.Online"))
+  T.eq("and the controller is reached over HTTP", client.mode, "http")
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A refresh after an outage reports the controller reachable before its state")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  fake.socketOpen, fake.reachable = false, false
+  client:start(fake.ip, fake.port)
+  W.run(Client.OPEN_GRACE_MS + 100)
+  T.eq("offline while the controller is away", client.mode, "offline")
+  local seen = {}
+  client.onState = function()
+    seen[#seen + 1] = { mode = client.mode, online = log.online }
+  end
+  fake.reachable = true
+  client:refresh()
+  W.run(100)
+  T.eq("the refresh answers before the next poll", #seen, 1)
+  T.eq("told online first", seen[1] and seen[1].online, 1)
+  T.eq("reached over HTTP", seen[1] and seen[1].mode, "http")
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A command too big for a frame that cannot be POSTed: its state is asked for")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  client:send({ bri = 40 })
+  W.run(20)
+  fake.busy = 100
+  client:onMessage('{"error":9}')
+  W.run(20000)
+  T.eq("the POST was tried", posts(fake) > 0, true)
+  T.eq("then the state asked for", siRequests(fake) > 0, true)
+  client:stop()
+
+  local stopped, stoppedFake = newClient()
+  stopped:start(stoppedFake.ip, stoppedFake.port)
+  W.run(100)
+  stopped:send({ bri = 40 })
+  W.run(20)
+  stoppedFake.busy = 100
+  stopped:onMessage('{"error":9}')
+  W.run(10)
+  stopped:stop()
+  W.run(20000)
+  T.eq("not after a stop", siRequests(stoppedFake), 0)
+end
+
 T.finish()
