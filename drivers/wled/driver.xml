@@ -220,7 +220,7 @@
         <name>Cycle Presets</name>
         <type>STRING</type>
         <default></default>
-        <description>The presets Next Preset and Previous Preset step through, in order: WLED preset ids or names, separated by commas. Empty for every preset, by id.</description>
+        <description>WLED presets to step through, by id or name, separated by commas.</description>
       </property>
       <property>
         <name>Presets in Cycle</name>
