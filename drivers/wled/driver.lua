@@ -223,16 +223,17 @@ end
 --- the controller's first report.
 --- @param connected boolean
 --- @param status string
-local function setConnected(connected, status)
+--- @param suspend boolean|nil The driver dropped the connection itself, so the lights keep their level.
+local function setConnected(connected, status, suspend)
   setStatus(status)
   if not connected and light.isOnline() then
-    light.disconnect(false)
+    light.disconnect(suspend == true)
   end
   if not connected and gSegmentsTold then
     gSegmentsTold = false
     gSegmentSent = {}
     for _, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
-      SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", {}, "NOTIFY")
+      SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", { suspended = suspend or nil }, "NOTIFY")
     end
   end
   if connected == gConnected then
@@ -1476,6 +1477,9 @@ local RESET_PROPERTY_VALUES = {
   ["Warm White (K)"] = tostring(DEFAULT_WARM),
   ["Cool White (K)"] = tostring(DEFAULT_COOL),
   ["Cycle Presets"] = "",
+  --#ifdef DRIVERCENTRAL
+  ["Cloud Monitoring"] = "Enabled",
+  --#endif
 }
 
 --- Look for WLED controllers and list them in Found Controllers.
@@ -1494,10 +1498,12 @@ function EC.Reset_Driver(params)
   log:print("Resetting driver to initial state")
   persist:delete(MAC_KEY)
   stopFollowing()
-  -- Tell the proxy and programming before the light's state is cleared.
-  setConnected(false, "Connecting")
+  -- Tell the proxy and programming before the light's state is cleared. The controller is still
+  -- there, so its lights keep their level: no Light Off for a light that did not change.
+  setConnected(false, "Connecting", true)
   values:reset()
-  light.reset(true)
+  -- As an unbind does: a fresh install has no white of its own remembered.
+  light.reset(false)
   device = Device.new()
   wledLight.device = device
   lists.device = device

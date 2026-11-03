@@ -337,10 +337,18 @@ do
   Properties["Warm White (K)"] = "3000"
   Properties["Cool White (K)"] = "5000"
   Properties["Log Level"] = "5 - Debug"
+  Properties["Cloud Monitoring"] = "Disabled"
+  local persist = require("lib.persist")
+  persist:set("white_point", { x = 0.4, y = 0.4, picked = { x = 0.45, y = 0.41 } })
   T.eq("connected before the reset", Variables["Connected"], "1")
+  T.eq("lit before the reset", proxyVars[1001] ~= nil and proxyVars[1001] ~= "0", true)
   mark()
   EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  T.eq("the white this light picked is forgotten", persist:get("white_point"), nil)
   W.run(5000)
+  T.eq("the proxy hears offline, then online", toldCount("ONLINE_CHANGED") >= 2 and lastOnline(), true)
+  T.eq("no level told for a light that did not change", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
+  T.eq("Cloud Monitoring back to its default", Properties["Cloud Monitoring"], "Enabled")
   T.eq("Warm White back to its default", Properties["Warm White (K)"], "2700")
   T.eq("Cool White back to its default", Properties["Cool White (K)"], "6500")
   T.eq("Log Level back to its default", Properties["Log Level"], "3 - Info")

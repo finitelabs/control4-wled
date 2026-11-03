@@ -317,6 +317,26 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A suspended disconnect keeps the level")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16", 1)
+  report()
+  local level = lastLevel()
+  T.eq("lit to start", level ~= nil and level > 0, true)
+  mark()
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", { suspended = "true" })
+  T.eq("the light goes offline", (toldOf(PROXY, "ONLINE_CHANGED")[1] or {}).STATE, false)
+  T.eq("and tells no level: no Light Off", #toldOf(PROXY, "LIGHT_BRIGHTNESS_CHANGED"), 0)
+
+  fresh("esp32-rgbw-pwm-16", 1)
+  report()
+  mark()
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", {})
+  T.eq("a controller that went away reads off", lastLevel(), 0)
+end
+
+--------------------------------------------------------------------------------
 T.section("Segment not found, and binding")
 --------------------------------------------------------------------------------
 do
