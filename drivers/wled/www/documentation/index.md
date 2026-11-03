@@ -46,6 +46,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 - [Features](#features)
 - [Compatibility](#compatibility)
 - [Using the light](#using-the-light)
+  - [On, off, level and scenes](#on-off-level-and-scenes)
   - [Colors and WLED effects](#colors-and-wled-effects)
   - [The Extras menu](#the-extras-menu)
   - [Segment lights](#segment-lights)
@@ -83,38 +84,14 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 
 # <span style="color:#0094FF">Features</span>
 
-- A Control4 light for the controller: on, off, level and toggle, with the
-  Default On level, Previous Level and Min and Max On Level
-- Color and white as the controller's LEDs allow: color, color temperature
-  between the installer's white points, or level only
-- Fades of any length, run by the controller itself, with click and hold rates
-- Advanced Lighting Scenes: level and color steps, ramps, stops and flash
-- Color On Mode and Dim-To-Warm, as set on the light in Composer
-- On, Off and Toggle button links, with keypad LEDs that show the light's state
-- A live connection to the controller over WLED's WebSocket, so changes made in
-  the WLED app, with a button or by another system show at once
-- HTTP while the live connection reconnects, so the controller stays reachable
-- The controller's name, brand, product, firmware version, MAC address, LED
-  count and segments in Composer
-- A `Connected` variable and Connected and Disconnected events for programming
-- The controller's own WLED effects, palettes, presets and playlists in
-  programming: set an effect, its speed and intensity, or a palette, apply a
-  preset, and start or stop a playlist
-- `Effect`, `Palette`, `Preset` and `Playlist` variables, and events when the
-  effect or preset changes and when a playlist starts or ends
-- The same effects, palettes, presets and playlists in the light's Extras menu,
-  with the sliders and options each effect uses, under WLED's names for them
-- Preset cycling from keypads and programming: Next and Previous Preset button
-  links and commands over the presets the installer picks, a button link for
-  each of those presets with its keypad LED lit while it shows, and a Preset Is
-  conditional
-- A connection for each segment, for **WLED Segment** lights that control one
-  part of the strip each, through this driver's one connection
-- WLED controllers found on the network, to pick from instead of typing an
-  address, and IP Address following the driver's controller when its address
-  changes
-- A check that the controller at the address is the one the driver was set up
-  with, so it never drives another controller after an address change
+- A Control4 light with color and white, fades, Color On Mode and Dim-To-Warm
+- Advanced Lighting Scenes and keypad button links with LEDs
+- WLED's effects, palettes, presets and playlists in programming and the Extras
+  menu, with preset cycling from keypads
+- A light for each segment, with the **WLED Segment** driver
+- Controllers found on the network, and followed when their address changes
+- Live updates when the WLED app, a button or another system changes the
+  controller
 
 # <span style="color:#0094FF">Compatibility</span>
 
@@ -156,6 +133,17 @@ If you have a board or controller that does not work, please
 <!-- #endif -->
 
 # <span style="color:#0094FF">Using the light</span>
+
+## On, off, level and scenes
+
+The light works as any Control4 light does: on, off, level and toggle, with the
+Default On level, Previous Level and Min and Max On Level set on the light in
+Composer. Fades of any length run on the WLED controller itself, with the
+light's click and hold rates. Advanced Lighting Scenes run level and color
+steps, ramps, stops and flash. The light offers color and white as the
+controller's LEDs allow (see [Compatibility](#compatibility)), with color
+temperature between `Warm White (K)` and `Cool White (K)`, or level only, and
+follows the Color On Mode and Dim-To-Warm set on the light in Composer.
 
 ## Colors and WLED effects
 
