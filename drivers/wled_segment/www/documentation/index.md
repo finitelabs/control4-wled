@@ -302,7 +302,7 @@ by U.S. and Foreign Patents, patents in process, and are protected by trade
 secret or copyright law. Dissemination of this information or reproduction of
 this material is strictly forbidden unless prior written permission is obtained
 from Finite Labs LLC. For the latest information, please visit
-https://drivercentral.io/platforms/control4-drivers/lighting/wled
+https://drivercentral.io/platforms/control4-drivers/lighting/wled-lights
 
 <!-- #endif -->
 

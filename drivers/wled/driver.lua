@@ -7,7 +7,7 @@
 -- one per segment, and reach the controller through it (src/wled/segment.lua).
 
 --#ifdef DRIVERCENTRAL
-DC_PID = 0 -- TODO: Assign DriverCentral product ID
+DC_PID = 978
 DC_X = nil
 DC_FILENAME = "wled.c4z"
 --#else

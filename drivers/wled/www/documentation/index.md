@@ -236,7 +236,7 @@ for setting it up.
 <!-- #ifdef DRIVERCENTRAL -->
 
 1. Download the latest `control4-wled.zip` from
-   [DriverCentral](https://drivercentral.io/platforms/control4-drivers/lighting/wled).
+   [DriverCentral](https://drivercentral.io/platforms/control4-drivers/lighting/wled-lights).
 
 1. Extract and
    [install](https://www.control4.com/help/c4/software/cpro/dealer-composer-help/content/composerpro_userguide/adding_drivers_manually.htm)
@@ -640,7 +640,7 @@ by U.S. and Foreign Patents, patents in process, and are protected by trade
 secret or copyright law. Dissemination of this information or reproduction of
 this material is strictly forbidden unless prior written permission is obtained
 from Finite Labs LLC. For the latest information, please visit
-https://drivercentral.io/platforms/control4-drivers/lighting/wled
+https://drivercentral.io/platforms/control4-drivers/lighting/wled-lights
 
 <!-- #endif -->
 
