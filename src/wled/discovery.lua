@@ -17,8 +17,9 @@ local SERVICE = "_wled._tcp.local"
 --- How long answers are read, how often the socket is read, and when the question is asked again.
 local WINDOW_MS, READ_MS, REPEAT_MS = 2 * ONE_SECOND, ONE_SECOND / 5, ONE_SECOND
 
---- Answers kept from one search; a network has far fewer controllers, and each is read.
-local MAX_ANSWERS = 32
+--- Answers kept from one search. A controller answers each of its two questions once, and an
+--- mDNS reflector sends the answers of every controller behind it, so only the total is capped.
+local MAX_ANSWERS = 256
 
 local TIMER = "WledDiscovery"
 
