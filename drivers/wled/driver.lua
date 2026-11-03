@@ -181,6 +181,9 @@ local gShown = persist:get(SHOWN_KEY)
 local gExtrasShape = nil
 --- @type table<string, string>
 local gExtrasSent = {}
+--- The entries the last setup offered, by list control: a pick comes back as one's text.
+--- @type table<string, WledExtrasChoices>|nil
+local gExtrasChoices = nil
 
 --- What each segment connection last stood for, by record key: the WLED id, LED range and name,
 --- and whether the last report still had the segment.
@@ -396,14 +399,15 @@ local function updateExtras()
     presets = lists.presets or {},
     playlists = lists.playlists or {},
     controls = Extras.controls(fx, lists:effectMeta(fx), Device.has(device.lc, Device.CAP_RGB)),
-    values = Extras.values(seg, tonumber(state.ps) or -1, tonumber(state.pl) or -1),
   }
+  view.choices = Extras.choices(view)
+  view.values = Extras.values(seg, tonumber(state.ps) or -1, tonumber(state.pl) or -1, view.choices)
   local shape = Extras.shape(view, lists.version)
   if shape ~= gExtrasShape then
     SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = Extras.setup(view) }, "NOTIFY")
     -- A state shows and hides controls in an open menu; the setup alone may wait for a reopen.
     SendToProxy(PROXY_BINDING, "EXTRAS_STATE_CHANGED", { XML = Extras.state(view.values, {}, view.controls) }, "NOTIFY")
-    gExtrasShape, gExtrasSent = shape, view.values
+    gExtrasShape, gExtrasSent, gExtrasChoices = shape, view.values, view.choices
     return
   end
   local xml = Extras.state(view.values, gExtrasSent)
@@ -1443,8 +1447,8 @@ end
 
 -- ─── Extras menu (RFP dispatch) ────────────────────────────────────────────
 
---- What each list in the Extras menu sends for the id picked. Each returns the id it sent, or
---- nil for an id the controller does not have. A pick carries an id, never a name.
+--- What each list in the Extras menu sends for the id of the entry picked. Each returns the id it
+--- sent, or nil for an id the controller does not have.
 --- @type table<string, fun(value: any): integer|nil>
 local EXTRA_LISTS = {
   fx = function(value)
@@ -1481,8 +1485,9 @@ local EXTRA_LISTS = {
   end,
 }
 
---- Set one Extras control on every segment and show it in the menu: a list pick by id, a slider
---- clamped to its range, or a check. The controller's next report shows what it did.
+--- Set one Extras control on every segment and show it in the menu: a list pick by the text the
+--- last setup gave its entry, a slider clamped to its range, or a check. The controller's next
+--- report shows what it did.
 --- @param id string The control's id, as the menu names it (fx, sx, c1, o1, ...).
 --- @param picked any
 local function setExtra(id, picked)
@@ -1494,7 +1499,14 @@ local function setExtra(id, picked)
   -- What was sent, as the menu shows it.
   local value
   if kind == "list" then
-    value = EXTRA_LISTS[id](picked)
+    -- A text the menu was not given, an id among them, picks nothing.
+    local entry = Select(gExtrasChoices, id, "id", tostring(picked))
+    if entry == nil then
+      log:warn("Extras: the menu has no %s %s", tostring(id), tostring(picked))
+      return
+    end
+    local sent = EXTRA_LISTS[id](entry)
+    value = sent and (Select(gExtrasChoices, id, "text", sent) or tostring(sent))
   elseif kind == "bool" then
     local on = toboolean(picked)
     sendToSegments({ [id] = on })
@@ -1614,7 +1626,7 @@ function EC.Reset_Driver(params)
   lists:clear()
   gShown = nil
   persist:delete(SHOWN_KEY)
-  gExtrasShape, gExtrasSent = nil, {}
+  gExtrasShape, gExtrasSent, gExtrasChoices = nil, {}, nil
   -- A fresh install has no keypad wired to a button link; the light's own proxy stays bound.
   local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
   for _, id in ipairs(BUTTON_LINKS) do

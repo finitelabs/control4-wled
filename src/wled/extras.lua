@@ -4,6 +4,9 @@
 --- The proxy keeps the whole setup and answers the app from it. A setup sent again relabels the
 --- controls in place and keeps the values it carries, so the setup goes out when a list or the
 --- running effect's controls change, and otherwise a state with only the values that moved.
+---
+--- A list's items carry their names as values, made unique within the list (Extras.choices), so
+--- the menu shows names in place of ids and a pick comes back as a name.
 
 local Extras = {}
 
@@ -12,6 +15,9 @@ Extras.COMMAND = "EXTRA_SET"
 
 --- The playlist list's entry for no playlist; picking it stops the running one.
 Extras.NO_PLAYLIST = -1
+
+--- The text of the playlist list's entry for no playlist.
+local NO_PLAYLIST_TEXT = "None"
 
 --- Sliders in the order an effect's metadata names them, with WLED's own names and ranges.
 local SLIDERS = {
@@ -113,16 +119,75 @@ local function attr(value)
   return XMLEncode(tostring(value == nil and "" or value))
 end
 
---- @param entries WledListEntry[]
---- @param first {id: integer, name: string}|nil An entry ahead of the controller's.
+--- @class WledExtrasChoice
+--- @field id integer The controller's id for the entry.
+--- @field text string What the menu shows for it and sends back when it is picked.
+
+--- @class WledExtrasChoices
+--- @field items WledExtrasChoice[] The entries in list order.
+--- @field text table<integer, string> Each entry's text, by id.
+--- @field id table<string, integer> Each entry's id, by text.
+
+--- @param e {id: integer, name: string|nil}
 --- @return string
-local function items(entries, first)
-  local out = {}
+local function baseText(e)
+  return (e.name == nil or e.name == "") and tostring(e.id) or e.name
+end
+
+--- A list's entries with a text for each that no other entry in the list has: its name, with its
+--- id after it when the name repeats. A fixed first entry keeps its own text.
+--- @param entries WledListEntry[]|nil
+--- @param first {id: integer, name: string}|nil An entry ahead of the controller's.
+--- @return WledExtrasChoices
+local function choicesOf(entries, first)
+  local all = {}
   if first then
-    out[#out + 1] = string.format('<item text="%s" value="%d"/>', attr(first.name), first.id)
+    all[1] = first
   end
-  for _, e in ipairs(entries) do
-    out[#out + 1] = string.format('<item text="%s" value="%d"/>', attr(e.name), e.id)
+  for _, e in ipairs(entries or {}) do
+    all[#all + 1] = e
+  end
+  local count = {}
+  for _, e in ipairs(all) do
+    local text = baseText(e)
+    count[text] = (count[text] or 0) + 1
+  end
+  local out = { items = {}, text = {}, id = {} }
+  for i, e in ipairs(all) do
+    local text = baseText(e)
+    if count[text] > 1 and not (first and i == 1) then
+      text = string.format("%s (%d)", text, e.id)
+    end
+    -- A name that already reads like another entry's "Name (id)" takes its own id too.
+    while out.id[text] ~= nil do
+      text = string.format("%s (%d)", text, e.id)
+    end
+    out.items[#out.items + 1] = { id = e.id, text = text }
+    out.text[e.id] = text
+    out.id[text] = e.id
+  end
+  return out
+end
+
+--- What each list control offers, by control id. Values are the entries' texts, not their ids:
+--- once a setup reaches an open menu, the app matches a list's value to its items only by text.
+--- @param lists {effects: WledListEntry[]|nil, palettes: WledListEntry[]|nil, presets: WledListEntry[]|nil, playlists: WledListEntry[]|nil}
+--- @return table<string, WledExtrasChoices> choices For fx, pal, ps and pl.
+function Extras.choices(lists)
+  return {
+    fx = choicesOf(lists.effects),
+    pal = choicesOf(lists.palettes),
+    ps = choicesOf(lists.presets),
+    pl = choicesOf(lists.playlists, { id = Extras.NO_PLAYLIST, name = NO_PLAYLIST_TEXT }),
+  }
+end
+
+--- @param choices WledExtrasChoices
+--- @return string
+local function items(choices)
+  local out = {}
+  for _, c in ipairs(choices.items) do
+    out[#out + 1] = string.format('<item text="%s" value="%s"/>', attr(c.text), attr(c.text))
   end
   return table.concat(out)
 end
@@ -151,22 +216,35 @@ end
 --- @field palettes WledListEntry[]
 --- @field presets WledListEntry[]
 --- @field playlists WledListEntry[]
+--- @field choices table<string, WledExtrasChoices> From Extras.choices on the same lists.
 --- @field controls table<string, string> From Extras.controls.
 --- @field values table<string, string> Each control's value as the setup and state carry it.
 
+--- @param choices WledExtrasChoices|nil
+--- @param id any
+--- @return string text The entry's text, or the id itself for an entry the list does not have.
+local function textOf(choices, id)
+  id = tonumber(id)
+  if id == nil then
+    return ""
+  end
+  return Select(choices, "text", id) or tostring(id)
+end
+
 --- The values the controls show for a report: the main segment's effect, its controls and
---- palette, the preset showing and the running playlist.
+--- palette, the preset showing and the running playlist; a list's value is its entry's text.
 --- @param seg table|nil The main segment of the controller's state.
 --- @param ps integer The preset showing, -1 for none.
 --- @param pl integer The running playlist, -1 for none.
+--- @param choices table<string, WledExtrasChoices>|nil From Extras.choices.
 --- @return table<string, string> values Each control's value, by id.
-function Extras.values(seg, ps, pl)
+function Extras.values(seg, ps, pl, choices)
   seg = type(seg) == "table" and seg or {}
   local v = {
-    fx = tostring(tonumber(seg.fx) or ""),
-    pal = tostring(tonumber(seg.pal) or ""),
-    ps = ps > 0 and tostring(ps) or "",
-    pl = tostring(pl > 0 and pl or Extras.NO_PLAYLIST),
+    fx = textOf(Select(choices, "fx"), seg.fx),
+    pal = textOf(Select(choices, "pal"), seg.pal),
+    ps = ps > 0 and textOf(Select(choices, "ps"), ps) or "",
+    pl = pl > 0 and textOf(Select(choices, "pl"), pl) or NO_PLAYLIST_TEXT,
   }
   for _, s in ipairs(SLIDERS) do
     v[s.id] = tostring(tonumber(seg[s.id]) or 0)
@@ -182,9 +260,9 @@ end
 --- @param view WledExtrasView The lists, controls and values to show.
 --- @return string xml The extras_setup document.
 function Extras.setup(view)
-  local c, v = view.controls, view.values
+  local c, v, choices = view.controls, view.values, view.choices
   local out = { "<extras_setup><extra>", '<section label="Effect">' }
-  out[#out + 1] = list("fx", "Effect", v.fx, false, items(view.effects))
+  out[#out + 1] = list("fx", "Effect", v.fx, false, items(choices.fx))
   for _, s in ipairs(SLIDERS) do
     out[#out + 1] = string.format(
       '<object type="slider" id="%s" label="%s" command="%s" value="%s" hidden="%s" readonly="false"'
@@ -207,16 +285,15 @@ function Extras.setup(view)
       tostring(c[ch.id] == nil)
     )
   end
-  out[#out + 1] = list("pal", c.pal or PALETTE_LABEL, v.pal, c.pal == nil, items(view.palettes))
+  out[#out + 1] = list("pal", c.pal or PALETTE_LABEL, v.pal, c.pal == nil, items(choices.pal))
   out[#out + 1] = "</section>"
   if #view.presets > 0 or #view.playlists > 0 then
     out[#out + 1] = '<section label="Presets">'
     if #view.presets > 0 then
-      out[#out + 1] = list("ps", "Preset", v.ps, false, items(view.presets))
+      out[#out + 1] = list("ps", "Preset", v.ps, false, items(choices.ps))
     end
     if #view.playlists > 0 then
-      out[#out + 1] =
-        list("pl", "Playlist", v.pl, false, items(view.playlists, { id = Extras.NO_PLAYLIST, name = "None" }))
+      out[#out + 1] = list("pl", "Playlist", v.pl, false, items(choices.pl))
     end
     out[#out + 1] = "</section>"
   end

@@ -175,6 +175,21 @@ local function pick(id, value)
   ReceivedFromProxy(5001, "EXTRA_SET", { id = id, value = value })
 end
 
+--- The driver's warnings while fn runs.
+--- @param fn function
+--- @return string[]
+local function warnings(fn)
+  local logging = require("lib.logging")
+  local seen, warn = {}, logging.warn
+  logging.warn = function(_, text, ...)
+    seen[#seen + 1] = string.format(text, ...)
+  end
+  local ok, err = pcall(fn)
+  logging.warn = warn
+  assert(ok, err)
+  return seen
+end
+
 --------------------------------------------------------------------------------
 T.section("Each effect's controls, named as WLED's own page names them")
 --------------------------------------------------------------------------------
@@ -221,17 +236,40 @@ end
 --------------------------------------------------------------------------------
 T.section("The setup: lists in the controller's order, names made safe, unused controls hidden")
 --------------------------------------------------------------------------------
+--- A view of the given lists, with its choices and the values for a segment, preset and playlist.
+--- @param lists table
+--- @param seg table
+--- @param ps integer
+--- @param pl integer
+--- @return table
+local function viewOf(lists, seg, ps, pl)
+  local view = {
+    effects = lists.effects or {},
+    palettes = lists.palettes or {},
+    presets = lists.presets or {},
+    playlists = lists.playlists or {},
+    controls = lists.controls or {},
+  }
+  view.choices = Extras.choices(view)
+  view.values = Extras.values(seg, ps, pl, view.choices)
+  return view
+end
+
 do
-  local xml = Extras.setup({
+  local xml = Extras.setup(viewOf({
     effects = { { id = 0, name = "Solid" }, { id = 9, name = "Rainbow" } },
     palettes = { { id = 0, name = "Default" } },
     presets = { { id = 2, name = 'Tom & "Jerry" <1>' } },
-    playlists = {},
     controls = { sx = "Effect speed", ix = "Size" },
-    values = Extras.values({ fx = 9, sx = 10, ix = 20, c3 = 31, o1 = true, pal = 0 }, 2, -1),
-  })
-  T.eq("effects listed", listItems(xml, "fx"), { { text = "Solid", value = "0" }, { text = "Rainbow", value = "9" } })
-  T.eq("the running effect picked", object(xml, "fx").value, "9")
+  }, { fx = 9, sx = 10, ix = 20, c3 = 31, o1 = true, pal = 0 }, 2, -1))
+  T.eq(
+    "effects listed, each name its own value",
+    listItems(xml, "fx"),
+    { { text = "Solid", value = "Solid" }, { text = "Rainbow", value = "Rainbow" } }
+  )
+  T.eq("the running effect picked by its name", object(xml, "fx").value, "Rainbow")
+  T.eq("the palette by its name", object(xml, "pal").value, "Default")
+  T.eq("the preset showing by its name", object(xml, "ps").value, "Tom &amp; &quot;Jerry&quot; &lt;1&gt;")
   T.eq("speed shown", object(xml, "sx").hidden, "false")
   T.eq("intensity named by the effect", object(xml, "ix").label, "Size")
   T.eq("Custom 1 hidden", object(xml, "c1").hidden, "true")
@@ -239,19 +277,61 @@ do
   T.eq("Custom 3's value", object(xml, "c3").value, "31")
   T.eq("checks hidden, values kept", { object(xml, "o1").hidden, object(xml, "o1").value }, { "true", "true" })
   T.eq("palette hidden when the effect has none", object(xml, "pal").hidden, "true")
-  T.eq("a preset name made safe for XML", listItems(xml, "ps")[1].text, "Tom &amp; &quot;Jerry&quot; &lt;1&gt;")
+  T.eq("a preset name made safe for XML", listItems(xml, "ps")[1], {
+    text = "Tom &amp; &quot;Jerry&quot; &lt;1&gt;",
+    value = "Tom &amp; &quot;Jerry&quot; &lt;1&gt;",
+  })
   T.eq("no playlist list without playlists", object(xml, "pl"), nil)
   T.eq("every control sends the same command", object(xml, "ps").command, "EXTRA_SET")
 
-  local bare = Extras.setup({
-    effects = { { id = 0, name = "Solid" } },
-    palettes = {},
-    presets = {},
-    playlists = {},
-    controls = {},
-    values = Extras.values({ fx = 0 }, -1, -1),
-  })
+  local bare = Extras.setup(viewOf({ effects = { { id = 0, name = "Solid" } } }, { fx = 0 }, -1, -1))
   T.excludes("no Presets section without presets or playlists", bare, "Presets")
+end
+
+--------------------------------------------------------------------------------
+T.section("Each list entry's text is unique in its list, and values are texts")
+--------------------------------------------------------------------------------
+do
+  local view = viewOf({
+    effects = { { id = 0, name = "Solid" }, { id = 9, name = "Rainbow" } },
+    palettes = { { id = 11, name = "Rainbow" } },
+    presets = {
+      { id = 1, name = "Glow" },
+      { id = 2, name = "Glow" },
+      { id = 3, name = "Night" },
+      { id = 4, name = "" },
+      { id = 8, name = "Glow (2)" },
+    },
+    playlists = { { id = 5, name = "None" }, { id = 6, name = "Party" } },
+  }, { fx = 9, pal = 11 }, 2, 6)
+  local function texts(id)
+    local out = {}
+    for _, c in ipairs(view.choices[id].items) do
+      out[#out + 1] = c.text
+    end
+    return out
+  end
+  T.eq(
+    "a repeated name takes its id on each entry, and no two entries share a text",
+    texts("ps"),
+    { "Glow (1)", "Glow (2)", "Night", "4", "Glow (2) (8)" }
+  )
+  T.eq("None keeps its text, a playlist named None takes its id", texts("pl"), { "None", "None (5)", "Party" })
+  T.eq("the same name in two lists stays plain in each", { texts("fx")[2], texts("pal")[1] }, { "Rainbow", "Rainbow" })
+  T.eq("a text maps back to its id", { view.choices.ps.id["Glow (2)"], view.choices.pl.id["None"] }, { 2, -1 })
+  T.eq("values are the texts", {
+    view.values.fx,
+    view.values.pal,
+    view.values.ps,
+    view.values.pl,
+  }, { "Rainbow", "Rainbow", "Glow (2)", "Party" })
+  local other = Extras.values({ fx = 999 }, -1, -1, view.choices)
+  T.eq("an id the list lacks shows as itself; no preset, no playlist", { other.fx, other.ps, other.pl }, {
+    "999",
+    "",
+    "None",
+  })
+  T.eq("a state carries the texts", object(Extras.state(view.values, {}), "ps").value, "Glow (2)")
 end
 
 --------------------------------------------------------------------------------
@@ -266,18 +346,18 @@ do
   local xml = setups[1].xml
   T.eq("on the light's proxy", setups[1].binding, 5001)
   T.eq("the effects programming offers", #listItems(xml, "fx"), 163)
-  T.eq("Solid running", object(xml, "fx").value, "0")
+  T.eq("Solid running, by its name", object(xml, "fx").value, "Solid")
   T.eq("Solid shows no speed", object(xml, "sx").hidden, "true")
   T.eq("built-in palettes", #listItems(xml, "pal"), 72)
   T.eq("presets apart from playlists", listItems(xml, "ps"), {
-    { text = "Mock Warm Glow", value = "1" },
-    { text = "Mock Rainbow", value = "2" },
+    { text = "Mock Warm Glow", value = "Mock Warm Glow" },
+    { text = "Mock Rainbow", value = "Mock Rainbow" },
   })
   T.eq("playlists after None", listItems(xml, "pl"), {
-    { text = "None", value = "-1" },
-    { text = "Mock Cycle", value = "3" },
+    { text = "None", value = "None" },
+    { text = "Mock Cycle", value = "Mock Cycle" },
   })
-  T.eq("no playlist running", object(xml, "pl").value, "-1")
+  T.eq("no playlist running", object(xml, "pl").value, "None")
   T.eq("no preset showing", object(xml, "ps").value, "")
 
   mark()
@@ -313,6 +393,8 @@ do
     "true",
   })
   T.eq("lists carry no hidden flag", object(shown, "fx").hidden, nil)
+  T.eq("the state after a new setup names the effect, as an open menu matches it", object(shown, "fx").value, "Scanner")
+  T.eq("and the palette", object(shown, "pal").value, "Default")
 end
 
 --------------------------------------------------------------------------------
@@ -323,14 +405,14 @@ do
   W.run(500)
 
   mark()
-  pick("fx", "9")
+  pick("fx", "Rainbow")
   T.eq(
-    "an effect on both segments, from its own defaults as WLED's page starts it",
+    "an effect picked by its name, on both segments, from its own defaults as WLED's page starts it",
     lastCommand(fake).seg,
     { { id = 0, fx = 9, fxdef = true }, { id = 1, fx = 9, fxdef = true } }
   )
   local states = toldOf("EXTRAS_STATE_CHANGED")
-  T.eq("the menu shows the pick at once", object(states[1] and states[1].xml, "fx").value, "9")
+  T.eq("the menu shows the pick at once, by its name", object(states[1] and states[1].xml, "fx").value, "Rainbow")
   W.run(1500)
   T.eq("Rainbow's own controls follow", object(lastSetup(), "ix").label, "Size")
 
@@ -342,31 +424,37 @@ do
   T.eq("a check on", lastCommand(fake).seg[2].o2, true)
   pick("o2", "False")
   T.eq("and off", lastCommand(fake).seg[2].o2, false)
-  pick("pal", "11")
+  pick("pal", "Rainbow")
   T.eq("a palette", lastCommand(fake).seg[1].pal, 11)
 
-  pick("ps", "2")
+  pick("ps", "Mock Rainbow")
   T.eq("a preset applied", lastCommand(fake), { ps = 2 })
   mark()
-  pick("pl", "3")
+  pick("pl", "Mock Cycle")
   T.eq("a playlist started", lastCommand(fake), { ps = 3 })
   states = toldOf("EXTRAS_STATE_CHANGED")
-  T.eq("the menu shows it running at once", object(states[1] and states[1].xml, "pl").value, "3")
+  T.eq("the menu shows it running at once", object(states[1] and states[1].xml, "pl").value, "Mock Cycle")
   W.run(1500)
-  pick("pl", "-1")
+  pick("pl", "None")
   T.eq("None stops it", type(lastCommand(fake).playlist), "table")
 
   local n = #fake.commands
   mark()
-  pick("fx", "999")
-  pick("ps", "3")
-  pick("pl", "1")
+  local warned = warnings(function()
+    pick("fx", "Nothing Like This")
+    pick("fx", "9")
+    pick("ps", "2")
+    pick("ps", "Mock Cycle")
+    pick("pl", "Mock Warm Glow")
+    pick("pl", "-1")
+  end)
   pick("zz", "1")
   pick("sx", "fast")
-  T.eq("an id the controller does not have sends nothing", #fake.commands, n)
+  T.eq("a text the menu was not given, a bare id among them, sends nothing", #fake.commands, n)
   T.eq("and the menu is not told", #toldOf("EXTRAS_STATE_CHANGED"), 0)
+  T.eq("each list pick it could not place is a warning", #warned, 6)
 
-  ReceivedFromProxy(5002, "EXTRA_SET", { id = "fx", value = "9" })
+  ReceivedFromProxy(5002, "EXTRA_SET", { id = "fx", value = "Rainbow" })
   T.eq("another binding is not the menu", #fake.commands, n)
 
   -- Programming sets the same controls by the menu's names.
@@ -390,7 +478,7 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A pick is an id, and a new effect starts from its own defaults")
+T.section("A pick is the text the menu gave its entry, and a new effect starts from its own defaults")
 --------------------------------------------------------------------------------
 do
   local fake = fresh("esp32-rgbw-pwm-16", function(f)
@@ -399,18 +487,20 @@ do
   W.run(500)
   mark()
   pick("ps", "2")
-  T.eq("preset 2 applied, not the preset named 2", lastCommand(fake), { ps = 2 })
-  T.eq("the menu shows the id sent", object(toldOf("EXTRAS_STATE_CHANGED")[1].xml, "ps").value, "2")
+  T.eq("the preset named 2 applied, not preset 2", lastCommand(fake), { ps = 7 })
+  T.eq("the menu shows the name sent", object(toldOf("EXTRAS_STATE_CHANGED")[1].xml, "ps").value, "2")
+  pick("ps", "Mock Rainbow")
+  T.eq("preset 2 by its own name", lastCommand(fake), { ps = 2 })
 
   -- Tetrix's metadata ends sx=0,ix=0,pal=11.
   pick("sx", "200")
   W.run(1500)
-  pick("fx", "44")
+  pick("fx", "Tetrix")
   W.run(1500)
   local states = toldOf("EXTRAS_STATE_CHANGED")
   local last = states[#states].xml
   T.eq("its own speed, not the last effect's", object(last, "sx").value, "0")
-  T.eq("its own palette", object(last, "pal").value, "11")
+  T.eq("its own palette", object(last, "pal").value, "Rainbow")
 
   mark()
   pick("ix", "77")
@@ -430,7 +520,7 @@ do
   T.contains("the driver sees the other controller", Properties["Driver Status"], "Reset Driver")
   local n = #fake.commands
   mark()
-  pick("fx", "9")
+  pick("fx", "Rainbow")
   pick("sx", "10")
   ExecuteCommand("Set Effect", { Effect = "Rainbow" })
   ExecuteCommand("Set Effect Custom Value", { Control = "Custom 1", Value = "50" })
@@ -471,15 +561,16 @@ do
   local states = toldOf("EXTRAS_STATE_CHANGED")
   local last = states[#states] and states[#states].xml
   T.truthy("a playlist started elsewhere is told", last)
-  T.eq("it shows running", (object(last, "pl") or {}).value, "3")
-  T.eq("with the preset it shows", (object(last, "ps") or {}).value, tostring(fake.si.state.ps))
+  T.eq("it shows running, by its name", (object(last, "pl") or {}).value, "Mock Cycle")
+  local presetNames = { [1] = "Mock Warm Glow", [2] = "Mock Rainbow" }
+  T.eq("with the preset it shows, by its name", (object(last, "ps") or {}).value, presetNames[fake.si.state.ps])
 
   mark()
   fake:presetsFile()["4"] = { n = "Mock Added", on = true }
   fake:change(nil, { fs = { pmt = 1762000099 } })
   W.run(2000)
   T.eq("a preset added on the controller: a new setup", #toldOf("EXTRAS_SETUP_CHANGED"), 1)
-  T.eq("with it listed", listItems(lastSetup(), "ps")[3], { text = "Mock Added", value = "4" })
+  T.eq("with it listed", listItems(lastSetup(), "ps")[3], { text = "Mock Added", value = "Mock Added" })
 end
 
 do
