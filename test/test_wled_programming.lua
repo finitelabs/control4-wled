@@ -594,6 +594,30 @@ for _, how in ipairs({ "update", "restart" }) do
 end
 
 --------------------------------------------------------------------------------
+T.section("After a reload an event waits until its list names the new value")
+--------------------------------------------------------------------------------
+for _, how in ipairs({ "update", "restart" }) do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  T.eq("the effect shows (" .. how .. ")", Variables["Effect"], "Solid")
+  local effects = fake.files["/json/eff"]
+  restart(how, function()
+    fake.si.state.seg[1].fx = 9
+    fake.files["/json/eff"] = nil
+  end)
+  W.run(1500)
+  T.eq("no Effect Changed while the effect list is unread (" .. how .. ")", eventCount(EFFECT_CHANGED), 0)
+  T.eq("its variable still names the old effect (" .. how .. ")", Variables["Effect"], "Solid")
+  fake.files["/json/eff"] = effects
+  local reads = requestCount(fake, "/json/eff")
+  fake:change({ bri = 90 })
+  W.run(1500)
+  T.eq("the next report reads the list again (" .. how .. ")", requestCount(fake, "/json/eff"), reads + 1)
+  T.eq("Effect Changed fires once the list is read (" .. how .. ")", eventCount(EFFECT_CHANGED), 1)
+  T.eq("with its variable naming the new effect (" .. how .. ")", (firstEvent(EFFECT_CHANGED) or {}).Effect, "Rainbow")
+end
+
+--------------------------------------------------------------------------------
 T.section("A list read that fails does not hold back the next")
 --------------------------------------------------------------------------------
 do
