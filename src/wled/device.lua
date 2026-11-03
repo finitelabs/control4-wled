@@ -5,6 +5,8 @@
 --- controller's own bits, and the counters that say when the effect, palette or preset lists
 --- changed. Each update returns what changed, so callers act only on real changes.
 
+require("lib.utils")
+
 --- Capability bits, as WLED's const.h names them.
 local CAP_RGB, CAP_WHITE, CAP_CCT = 0x01, 0x02, 0x04
 
@@ -85,14 +87,6 @@ function Device.isV16(ver)
   return major ~= nil and major >= 16
 end
 
-local function integer(v)
-  local n = tonumber(v)
-  if n == nil or n ~= n then
-    return nil
-  end
-  return math.floor(n)
-end
-
 local function str(v)
   if type(v) ~= "string" or v == "" then
     return nil
@@ -110,20 +104,20 @@ local function readSegments(state, info)
   local seglc = info and info.leds and info.leds.seglc
   local position = 0
   for _, s in ipairs(type(state.seg) == "table" and state.seg or {}) do
-    local start, stop = integer(s.start) or 0, integer(s.stop) or 0
+    local start, stop = tointeger(s.start) or 0, tointeger(s.stop) or 0
     if stop > start then
       position = position + 1
-      local lc = integer(s.lc)
+      local lc = tointeger(s.lc)
       if lc == nil and type(seglc) == "table" then
-        lc = integer(seglc[position])
+        lc = tointeger(seglc[position])
       end
       segs[#segs + 1] = {
-        id = integer(s.id) or (position - 1),
+        id = tointeger(s.id) or (position - 1),
         start = start,
         stop = stop,
         name = str(s.n),
         on = s.on ~= false,
-        bri = integer(s.bri) or 255,
+        bri = tointeger(s.bri) or 255,
         lc = lc or 0,
       }
     end
@@ -180,7 +174,7 @@ function Device:update(state, info)
     local identity = {
       name = str(info.name),
       ver = str(info.ver),
-      vid = integer(info.vid),
+      vid = tointeger(info.vid),
       arch = str(info.arch),
       brand = str(info.brand),
       product = str(info.product),
@@ -191,19 +185,19 @@ function Device:update(state, info)
       end
     end
     local leds = type(info.leds) == "table" and info.leds or {}
-    local count, lc = integer(leds.count), integer(leds.lc)
+    local count, lc = tointeger(leds.count), tointeger(leds.lc)
     if count ~= self.ledCount or lc ~= self.lc then
       c.leds, self.ledCount, self.lc = true, count, lc
     end
-    local fxcount, palcount = integer(info.fxcount), integer(info.palcount)
+    local fxcount, palcount = tointeger(info.fxcount), tointeger(info.palcount)
     if fxcount ~= self.fxcount then
       c.effects, self.fxcount = true, fxcount
     end
-    local cpalcount = integer(info.cpalcount)
+    local cpalcount = tointeger(info.cpalcount)
     if palcount ~= self.palcount or cpalcount ~= self.cpalcount then
       c.palettes, self.palcount, self.cpalcount = true, palcount, cpalcount
     end
-    local pmt = type(info.fs) == "table" and integer(info.fs.pmt) or nil
+    local pmt = type(info.fs) == "table" and tointeger(info.fs.pmt) or nil
     if pmt ~= self.pmt then
       c.presets, self.pmt = true, pmt
     end
@@ -215,7 +209,7 @@ function Device:update(state, info)
     if type(on) ~= "boolean" then
       on = self.on
     end
-    self.on, self.bri = on, integer(state.bri) or self.bri
+    self.on, self.bri = on, tointeger(state.bri) or self.bri
     if state.seg ~= nil then
       local segs = readSegments(state, info or self.info)
       if not sameSegments(segs, self.segments) then

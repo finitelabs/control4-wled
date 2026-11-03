@@ -484,7 +484,7 @@ do
   W.run(3000)
   T.contains("a different controller is not driven without Reset Driver", Properties["Driver Status"], "Reset Driver")
   W.run(65000)
-  T.eq("and the pick is kept, though ours answers elsewhere", Properties["IP Address"], "192.0.2.42")
+  T.eq("and the pick is kept, though the driver's controller answers elsewhere", Properties["IP Address"], "192.0.2.42")
 
   EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
   -- The fake never answers a close frame, so the socket to the same address takes up to 30 s.
@@ -567,7 +567,7 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("When another controller takes its address, it follows ours")
+T.section("When another controller takes its address, it follows the driver's controller")
 --------------------------------------------------------------------------------
 do
   local old = fresh({ { profile = RGBW, ip = "192.0.2.41" } })[1]
@@ -577,7 +577,7 @@ do
   old:drop()
   W.Fake.new(RGBW, { ip = "192.0.2.97" })
   W.run(10000)
-  T.eq("followed ours", Properties["IP Address"], "192.0.2.97")
+  T.eq("followed the driver's controller", Properties["IP Address"], "192.0.2.97")
   T.eq("connected", Properties["Driver Status"], "Connected")
   T.eq("its MAC", Properties["MAC Address"], "02:A1:B2:C3:D4:02")
 end
@@ -592,12 +592,12 @@ do
   W.run(5000)
   T.contains("a different controller there", Properties["Driver Status"], "Reset Driver")
   W.run(65000)
-  T.eq("not moved back to ours", Properties["IP Address"], "192.0.2.42")
+  T.eq("not moved back to the driver's controller", Properties["IP Address"], "192.0.2.42")
 
   set("IP Address", "192.0.2.41")
   W.run(5000)
-  T.eq("ours again", Properties["Driver Status"], "Connected")
-  -- Once ours answers at the installer's address, it may follow again.
+  T.eq("the driver's controller again", Properties["Driver Status"], "Connected")
+  -- Once the driver's controller answers at the installer's address, it may follow again.
   goDark(fakes[1])
   W.Fake.new(RGBW, { ip = "192.0.2.96" })
   W.run(5000)
@@ -713,7 +713,8 @@ for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh({ { profile = RGBW, ip = "192.0.2.41" } })[1]
   W.run(3000)
   reload(how, function()
-    -- After the reload it answers only at 3 s, after the first search, and only ours at .40 announces.
+    -- After the reload it answers only at 3 s, after the first search, and only the driver's
+    -- controller at .40 announces.
     fake.connectDelayMs, fake.mdns = 3000, false
     W.Fake.new(RGBW, { ip = "192.0.2.40" })
   end)
