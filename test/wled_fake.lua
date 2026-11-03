@@ -546,7 +546,8 @@ function Fake:onSend(data)
   end
   if not self.upgraded then
     local key = data:match("Sec%-WebSocket%-Key: ([^\r\n]+)")
-    if not key then
+    -- noUpgrade: it takes the connection but never answers the upgrade.
+    if not key or self.noUpgrade then
       return
     end
     local accept = C4:Hash("SHA1", key .. "258EAFA5-E914-47DA-95CA-C5AB0DC85B11", { return_encoding = "BASE64" })
