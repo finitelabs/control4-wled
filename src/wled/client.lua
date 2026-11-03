@@ -429,7 +429,10 @@ end
 function Client:sendFrame(frame)
   if self.socketUp and self.ws then
     frame.at = now()
-    self:recentFrames()
+    -- A resend that waits still owes every frame it holds, however long it waits.
+    if not self.replaying then
+      self:recentFrames()
+    end
     self.recent[#self.recent + 1] = frame
     self.ws:Send(frame.body)
     return true

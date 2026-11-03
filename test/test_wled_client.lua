@@ -315,6 +315,29 @@ do
   W.run(Client.BUSY_FIRST_MS + 100)
   T.eq("one refused during the wait is sent again too, last", fake.si.state.bri, 80)
   client:stop()
+
+  -- The last busy wait (4 s) is longer than the window: a command refused early in it is still sent.
+  client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 5
+  client:send({ bri = 40 })
+  W.run(3900)
+  fake.wsBusy = 1
+  client:send({ nl = { on = true } })
+  W.run(2400)
+  client:send({ bri = 90 })
+  W.run(3000)
+  local wire = {}
+  for _, payload in ipairs(fake.wire) do
+    wire[#wire + 1] = payload:match('"nl"') and "nl" or payload:match('"bri":(%d+)')
+  end
+  T.eq(
+    "all three on the wire, in order, at the end",
+    { wire[#wire - 2], wire[#wire - 1], wire[#wire] },
+    { "40", "nl", "90" }
+  )
+  client:stop()
 end
 
 --------------------------------------------------------------------------------
