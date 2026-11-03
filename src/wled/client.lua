@@ -404,7 +404,19 @@ function Client:onSocketError(code)
     if not (self.socketUp and self.ws) then
       return
     end
-    for _, frame in ipairs(frames) do
+    -- Then every command sent during the wait, so the latest still comes last; one refused
+    -- while this waited is sent again here too.
+    local replay, seen = {}, {}
+    for _, list in ipairs({ frames, self.recent }) do
+      for _, frame in ipairs(list) do
+        if not seen[frame] then
+          seen[frame] = true
+          replay[#replay + 1] = frame
+        end
+      end
+    end
+    self.recent = replay
+    for _, frame in ipairs(replay) do
       frame.tries = frame.tries + 1
       frame.at = now()
       self.ws:Send(frame.body)
@@ -431,7 +443,7 @@ function Client:refresh()
   local gen, writes = self.gen, self.writes
   self:enqueue("GET", "/json/si"):next(function(si)
     if self.gen == gen and self.writes == writes and type(si) == "table" then
-      self.onState(si.state, si.info)
+      guarded(self.onState, "WLED.Refresh")(si.state, si.info)
     end
   end, function() end)
 end

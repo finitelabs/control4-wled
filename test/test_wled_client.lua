@@ -290,6 +290,34 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A command sent while a busy resend waits is kept, and still comes last")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 1
+  client:send({ bri = 40 })
+  W.run(50)
+  client:send({ bri = 80 })
+  W.run(Client.BUSY_FIRST_MS + 100)
+  T.eq("one taken during the wait stays the latest", fake.si.state.bri, 80)
+  client:stop()
+
+  client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 1
+  client:send({ bri = 40 })
+  W.run(50)
+  fake.wsBusy = 1
+  client:send({ bri = 80 })
+  W.run(Client.BUSY_FIRST_MS + 100)
+  T.eq("one refused during the wait is sent again too, last", fake.si.state.bri, 80)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
 T.section("Commands dropped by a busy controller: its state is asked for")
 --------------------------------------------------------------------------------
 do
@@ -451,8 +479,11 @@ do
   })
   client:start(fake.ip, fake.port)
   W.run(100)
-  diagnostics.captureError = capture
   T.eq("reported with its source", sources[1], "WLED.WsMessage")
+  client:refresh()
+  W.run(100)
+  diagnostics.captureError = capture
+  T.eq("and one in a state it asked for", sources[#sources], "WLED.Refresh")
   client:stop()
 end
 
