@@ -69,11 +69,55 @@ end
 local told, events = {}, {}
 
 -- The proxy's variables as it keeps them over a driver reload: Brightness Percent (1001) and
--- its target (1110), Current Color Chromaticity (1200) and its target (1210), and the
--- Navigator Dynamic Capabilities it was told (6661).
+-- its target (1110), Current Color Chromaticity (1200) and its target (1210), and its
+-- Navigator Dynamic Capabilities (6661), driver.xml's until it is told others and again after a
+-- controller start (test_light_scenes.lua's model, measured on dev).
 local PROXY_DEVICE = 9001
 local proxyVars = {}
 local proxyCaps = {}
+
+local CAPABILITY_KEYS = {
+  "dimmer",
+  "supports_target",
+  "set_level",
+  "supports_brightness_stop",
+  "ramp_level",
+  "has_fixed_ramp_rate",
+  "fixed_ramp_rate",
+  "supports_color",
+  "supports_color_correlated_temperature",
+  "supports_color_stop",
+  "brightness_rate_min",
+  "brightness_rate_max",
+  "color_correlated_temperature_min",
+  "color_correlated_temperature_max",
+  "color_rate_behavior",
+  "color_rate_min",
+  "color_rate_max",
+  "has_extras",
+  "click_rate_min",
+  "click_rate_max",
+  "hold_rate_min",
+  "hold_rate_max",
+  "cold_start",
+  "supports_color_cycling",
+  "advanced_scene_support",
+  "hide_proxy_properties",
+  "hide_proxy_commands",
+  "hide_proxy_events",
+  "hide_proxy_conditionals_loops",
+}
+
+--- Put the proxy's 6661 back on driver.xml's capabilities, as a new proxy and a controller start do.
+local function showStaticCapabilities()
+  local f = assert(io.open(XML, "rb"))
+  local static = f:read("*a"):match("<capabilities>(.-)</capabilities>")
+  f:close()
+  proxyCaps = {}
+  for _, key in ipairs(CAPABILITY_KEYS) do
+    proxyCaps[key] = static:match("<" .. key .. ">([^<]*)</" .. key .. ">") or "False"
+  end
+end
 
 function C4:GetProxyDevices()
   return PROXY_DEVICE
@@ -161,7 +205,8 @@ local nextHost = 40
 --- @param unreachable boolean|nil The controller does not answer from the start.
 local function fresh(profile, unreachable)
   W.reset()
-  proxyVars, proxyCaps = {}, {}
+  proxyVars = {}
+  showStaticCapabilities()
   nextHost = nextHost + 1
   local fake = W.Fake.new(profile, { ip = "192.0.2." .. nextHost })
   fake.reachable = not unreachable
@@ -186,6 +231,9 @@ end
 local function restart(how)
   OnDriverDestroyed()
   W.reload(how)
+  if how == "restart" then
+    showStaticCapabilities()
+  end
   mark()
   dofile(DRIVER)
   OnDriverInit()
@@ -228,25 +276,31 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A start tells the light its level and color once; a restart with nothing changed tells neither")
+T.section("A start tells the light its level and color once and its capabilities where driver.xml differs")
 --------------------------------------------------------------------------------
-for _, how in ipairs({ "update", "restart" }) do
-  fresh("esp32-rgbw-pwm-16")
-  W.run(200)
-  T.eq("capabilities told once", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 1)
-  T.eq("the level told once", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
-  T.eq("the color told once", toldCount("LIGHT_COLOR_CHANGED"), 1)
-  restart(how)
-  W.run(200)
-  T.eq(
-    "no capabilities after a restart: the proxy shows them (" .. how .. ")",
-    toldCount("DYNAMIC_CAPABILITIES_CHANGED"),
-    0
-  )
-  T.eq("no level after a restart (" .. how .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
-  T.eq("no color after a restart (" .. how .. ")", toldCount("LIGHT_COLOR_CHANGED"), 0)
-  T.eq("Connected event fires at a restart's connect (" .. how .. ")", eventCount(1), 1)
-  T.eq("Connected again (" .. how .. ")", Variables["Connected"], "1")
+-- A controller start puts the proxy back on driver.xml's capabilities: a color light differs in
+-- supports_color and is told them again, a white light matches and is told none (and no color).
+for _, case in ipairs({ { "esp32-rgbw-pwm-16", 1 }, { "esp32-white-16", 0 } }) do
+  local profile, color = case[1], case[2]
+  for _, how in ipairs({ "update", "restart" }) do
+    local name = ("%s, %s"):format(profile, how)
+    fresh(profile)
+    W.run(200)
+    T.eq("capabilities told at the first start (" .. name .. ")", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), color)
+    T.eq("the level told once (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
+    T.eq("the color told once, if it has one (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), color)
+    restart(how)
+    W.run(200)
+    T.eq(
+      "capabilities told again only at a restart, where driver.xml differs (" .. name .. ")",
+      toldCount("DYNAMIC_CAPABILITIES_CHANGED"),
+      how == "restart" and color or 0
+    )
+    T.eq("no level after a reload (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
+    T.eq("no color after a reload (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), 0)
+    T.eq("Connected event fires at a reload's connect (" .. name .. ")", eventCount(1), 1)
+    T.eq("Connected again (" .. name .. ")", Variables["Connected"], "1")
+  end
 end
 
 --------------------------------------------------------------------------------
