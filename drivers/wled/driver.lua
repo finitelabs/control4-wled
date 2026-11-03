@@ -1009,7 +1009,7 @@ local function onOffline(reason)
   startFollowing()
 end
 
-client = Client.new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
+client = Client:new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
 
 -- ─── Updates ───────────────────────────────────────────────────────────────
 
@@ -1475,7 +1475,7 @@ local function setExtra(id, picked)
     sendToSegments({ [id] = on })
     value = on and "true" or "false"
   elseif type(kind) == "table" and tonumber(picked) then
-    value = math.max(kind.min, math.min(kind.max, math.floor(tonumber(picked) + 0.5)))
+    value = InRange(round(tonumber(picked)), kind.min, kind.max)
     sendToSegments({ [id] = value })
   end
   if value == nil then
