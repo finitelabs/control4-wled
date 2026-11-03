@@ -133,7 +133,7 @@ local function fresh(profile, setup, props)
     setup(fake)
   end
   local persist = require("lib.persist")
-  for _, key in ipairs({ "WledControllerMac", "ConnectionBindings", "Conditionals" }) do
+  for _, key in ipairs({ "WledControllerMac", "WledShown", "ConnectionBindings", "Conditionals" }) do
     persist:delete(key)
   end
   ShimResetDynamicBindings()
@@ -463,6 +463,34 @@ do
   T.truthy("and from the report after", TestCondition(conditional.name, { VALUE = "Mock Sunset (2)", LOGIC = "EQUAL" }))
   T.eq("the same conditional", GetConditionals()[tostring(conditional.conditionalId)].name, conditional.name)
   local _ = fake
+end
+
+--------------------------------------------------------------------------------
+T.section("Preset Is answers after a reload with every preset deleted")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local conditional
+  for _, c in pairs(GetConditionals()) do
+    if c.condition_statement == "Preset Is" then
+      conditional = c
+    end
+  end
+  fake.files["/presets.json"] = { ["0"] = {} }
+  fake:change(nil, { fs = { pmt = 1762000900 } })
+  W.run(2000)
+  T.eq("every preset deleted: an empty list", GetConditionals()[tostring(conditional.conditionalId)].list_items, "")
+  restart()
+  T.truthy(
+    "after a reload Is Not still answers",
+    TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "NOT_EQUAL" })
+  )
+  W.run(1500)
+  T.truthy(
+    "and after the presets are read",
+    TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "NOT_EQUAL" })
+  )
 end
 
 --------------------------------------------------------------------------------

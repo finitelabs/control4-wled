@@ -167,6 +167,7 @@ local function fresh(profile, unreachable)
   fake.reachable = not unreachable
   local persist = require("lib.persist")
   persist:delete("WledControllerMac")
+  persist:delete("WledShown")
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end

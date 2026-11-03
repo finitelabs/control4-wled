@@ -162,7 +162,7 @@ local function fresh(profile, setup)
     setup(fake)
   end
   local persist = require("lib.persist")
-  for _, key in ipairs({ "WledControllerMac", "ConnectionBindings", "Conditionals", "WledSegmentRecords" }) do
+  for _, key in ipairs({ "WledControllerMac", "WledShown", "ConnectionBindings", "Conditionals", "WledSegmentRecords" }) do
     persist:delete(key)
   end
   ShimResetDynamicBindings()

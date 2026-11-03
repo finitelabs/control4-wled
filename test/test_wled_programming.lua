@@ -155,6 +155,7 @@ local function fresh(profile, setup)
     setup(fake)
   end
   require("lib.persist"):delete("WledControllerMac")
+  require("lib.persist"):delete("WledShown")
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end
@@ -555,6 +556,50 @@ do
   T.eq("Reset Driver takes it", Properties["Driver Status"], "Connected")
   T.eq("taking it with Reset Driver fires nothing", programmingEvents(), 0)
   T.eq("and shows its preset", Variables["Preset"], "Mock Warm Glow")
+end
+
+--------------------------------------------------------------------------------
+T.section("A change made while the driver reloads fires at the reload")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f:applyPreset(3)
+  end)
+  W.run(500)
+  T.eq("a running playlist shows", Variables["Playlist"], "Mock Cycle")
+  OnDriverDestroyed()
+  fake:applyPreset(2)
+  restart()
+  W.run(1500)
+  T.eq("the preset it changed to fires", eventCount(PRESET_CHANGED), 1)
+  T.eq("and the playlist it ended", eventCount(PLAYLIST_ENDED), 1)
+  T.eq("named", Variables["Preset"], "Mock Rainbow")
+  mark()
+  restart()
+  W.run(1500)
+  T.eq("a reload with nothing changed fires nothing", programmingEvents(), 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("A list read that fails does not hold back the next")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local Lists = require("wled.lists")
+  local presetLists = Lists.presetLists
+  Lists.presetLists = function()
+    error("unreadable presets")
+  end
+  fake:change(nil, { fs = { pmt = 1762000950 } })
+  W.run(1500)
+  Lists.presetLists = presetLists
+  local file = fake:presetsFile()
+  file["2"].n = "Evening"
+  fake.files["/presets.json"] = file
+  fake:change(nil, { fs = { pmt = 1762000960 } })
+  W.run(1500)
+  T.truthy("the next read goes ahead", contains(choices("Apply Preset", "Preset"), "Evening (2)"))
 end
 
 T.finish()

@@ -109,6 +109,7 @@ local function fresh(profile, props)
   nextHost = nextHost + 1
   fake = W.Fake.new(profile, { ip = "192.0.2." .. nextHost })
   require("lib.persist"):delete("WledControllerMac")
+  require("lib.persist"):delete("WledShown")
   for _, key in ipairs({ "color_on_mode", "previous_color", "white_point", "brightness_on_mode" }) do
     require("lib.persist"):delete(key)
   end
