@@ -10,8 +10,8 @@
 ---   ./test/run_test.sh test_wled_segment_light.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
-require("color_math").install()
+local W = require("wled_fixtures")
+require("c4_local")
 
 local HERE = debug.getinfo(1, "S").source:match("^@(.*)/") or "."
 local DRIVER = HERE .. "/../drivers/wled_segment/driver.lua"

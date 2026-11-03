@@ -8,8 +8,8 @@
 ---   ./test/run_test.sh test_wled_discovery.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
-require("color_math").install()
+local W = require("wled_fixtures")
+require("c4_local")
 
 DEBUG_WEBSOCKET = false
 
@@ -113,7 +113,21 @@ local function loadDriver()
   PropertyLists, shownList, hidden = nil, {}, {}
   events = {}
   dofile(DRIVER)
+  OnDriverInit()
   ShimLateInit()
+end
+
+--- Reload the driver over what it stored: the old instance is destroyed and the new one loads in a
+--- fresh Lua state, as a driver update or a Director restart makes it.
+--- @param how "update"|"restart"
+--- @param whileOff fun()|nil What happens after the old instance ends and before the new one loads.
+local function reload(how, whileOff)
+  OnDriverDestroyed()
+  if whileOff then
+    whileOff()
+  end
+  W.reload(how)
+  loadDriver()
 end
 
 --- A fresh project with the IP Address set to the first fake, and every fake made.
@@ -632,16 +646,16 @@ end
 --------------------------------------------------------------------------------
 T.section("A load follows a controller that moved while the driver was off")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local old = fresh({ { profile = RGBW, ip = "192.0.2.41" } })[1]
   W.run(3000)
-  OnDriverDestroyed()
-  old.reachable = false
-  W.Fake.new(RGBW, { ip = "192.0.2.95" })
-  loadDriver()
+  reload(how, function()
+    old.reachable = false
+    W.Fake.new(RGBW, { ip = "192.0.2.95" })
+  end)
   W.run(5000)
-  T.eq("followed at the load", Properties["IP Address"], "192.0.2.95")
-  T.eq("connected", Properties["Driver Status"], "Connected")
+  T.eq("followed at the load (" .. how .. ")", Properties["IP Address"], "192.0.2.95")
+  T.eq("connected (" .. how .. ")", Properties["Driver Status"], "Connected")
 end
 
 --------------------------------------------------------------------------------
@@ -695,17 +709,17 @@ end
 --------------------------------------------------------------------------------
 T.section("A first connection still under way is not moved")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh({ { profile = RGBW, ip = "192.0.2.41" } })[1]
   W.run(3000)
-  OnDriverDestroyed()
-  -- After the reload it answers only at 3 s, after the first search, and only ours at .40 announces.
-  fake.connectDelayMs, fake.mdns = 3000, false
-  W.Fake.new(RGBW, { ip = "192.0.2.40" })
-  loadDriver()
+  reload(how, function()
+    -- After the reload it answers only at 3 s, after the first search, and only ours at .40 announces.
+    fake.connectDelayMs, fake.mdns = 3000, false
+    W.Fake.new(RGBW, { ip = "192.0.2.40" })
+  end)
   W.run(5000)
-  T.eq("kept at its address", Properties["IP Address"], "192.0.2.41")
-  T.eq("connected there", Properties["Driver Status"], "Connected")
+  T.eq("kept at its address (" .. how .. ")", Properties["IP Address"], "192.0.2.41")
+  T.eq("connected there (" .. how .. ")", Properties["Driver Status"], "Connected")
 end
 
 --------------------------------------------------------------------------------

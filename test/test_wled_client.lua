@@ -8,7 +8,7 @@
 ---   ./test/run_test.sh test_wled_client.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
+local W = require("wled_fixtures")
 local Client = require("wled.client")
 
 -- The vendored WebSocket module logs every frame at Ultra.
