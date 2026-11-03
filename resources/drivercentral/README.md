@@ -41,9 +41,12 @@ popup is scrolled, so the frame keeps everything above that line (`SAFE` in
 `frame.html`).
 
 The screenshots come from the Control4 app and from Composer on the dev
-controller running the DriverCentral build, with the WLED driver connected to a
-mock controller from `test/mock-wled`. The controller, segment and preset names,
-the MAC address and the firmware are the mock's demo values. The setup photo's
-IP addresses and the found controllers in it are placeholders set for the shot.
-Each crop leaves out the project and every other device. Retake a screenshot
-when the view it shows changes, then rerender.
+controller running the DriverCentral build, with the WLED driver connected to
+mock controllers from `test/mock-wled` running the demo profiles in
+`photos/mock/`: from `test/mock-wled`,
+`python -m mock_wled --config ../../resources/drivercentral/photos/mock/instances.json`.
+The controller, segment and preset names, the MAC addresses and the firmware
+come from those profiles. The setup photo's IP addresses and the found
+controllers in it are placeholders set for the shot. Each crop leaves out the
+project and every other device. Retake a screenshot when the view it shows
+changes, then rerender.

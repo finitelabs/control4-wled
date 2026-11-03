@@ -1,0 +1,60 @@
+{
+  "name": "Patio Strip",
+  "firmware": "16.0.1",
+  "chip": "esp32",
+  "mac": "02a1b2c3d4e2",
+  "buses": [
+    {
+      "type": 22,
+      "start": 0,
+      "len": 120
+    }
+  ],
+  "presets": {
+    "1": {
+      "n": "Warm White",
+      "on": true,
+      "bri": 180,
+      "seg": [
+        {
+          "id": 0,
+          "fx": 0,
+          "col": [
+            [
+              255,
+              170,
+              90,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    "2": {
+      "n": "Fireflies",
+      "on": true,
+      "bri": 150,
+      "seg": [
+        {
+          "id": 0,
+          "fx": 74,
+          "sx": 60,
+          "ix": 90,
+          "pal": 0
+        }
+      ]
+    }
+  }
+}
