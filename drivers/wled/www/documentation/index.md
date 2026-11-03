@@ -463,17 +463,19 @@ Monitoring is Enabled.
 
 ### Commands
 
-| Command              | Does                                                                           |
-| -------------------- | ------------------------------------------------------------------------------ |
-| Set Effect           | Runs a WLED effect on every segment, from its own speed, intensity and options |
-| Set Effect Speed     | Sets the effect speed on every segment, 0 to 255                               |
-| Set Effect Intensity | Sets the effect intensity on every segment, 0 to 255                           |
-| Set Palette          | Uses a WLED palette on every segment                                           |
-| Apply Preset         | Applies a WLED preset                                                          |
-| Start Playlist       | Starts a WLED playlist                                                         |
-| Stop Playlist        | Stops the running playlist; the light keeps the look the playlist last showed  |
-| Next Preset          | Applies the next preset in the cycle                                           |
-| Previous Preset      | Applies the previous preset in the cycle                                       |
+| Command                 | Does                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| Set Effect              | Runs a WLED effect on every segment, from its own speed, intensity and options    |
+| Set Effect Speed        | Sets the effect speed on every segment, 0 to 255                                  |
+| Set Effect Intensity    | Sets the effect intensity on every segment, 0 to 255                              |
+| Set Effect Custom Value | Sets the effect's Custom 1, 2 or 3 on every segment, 0 to 255 (Custom 3: 0 to 31) |
+| Set Effect Option       | Turns the effect's Check 1, 2 or 3 on or off on every segment                     |
+| Set Palette             | Uses a WLED palette on every segment                                              |
+| Apply Preset            | Applies a WLED preset                                                             |
+| Start Playlist          | Starts a WLED playlist                                                            |
+| Stop Playlist           | Stops the running playlist; the light keeps the look the playlist last showed     |
+| Next Preset             | Applies the next preset in the cycle                                              |
+| Previous Preset         | Applies the previous preset in the cycle                                          |
 
 The choices are the controller's own, read when the driver connects and again
 when the controller reports a change: a preset or playlist saved or deleted, an

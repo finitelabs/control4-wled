@@ -1437,21 +1437,15 @@ local EXTRA_LISTS = {
   end,
 }
 
---- A pick or a slider in the light's Extras menu, sent to every segment as programming's commands
---- are. The menu shows the pick at once; the controller's next report shows what it did.
---- @param idBinding integer
---- @param strCommand string
---- @param tParams table {id = control id, value = what was picked}
-function RFP.EXTRA_SET(idBinding, strCommand, tParams)
-  log:trace("RFP.EXTRA_SET(%s, %s, %s)", idBinding, strCommand, tParams)
-  if idBinding ~= PROXY_BINDING then
-    return
-  end
+--- Set one Extras control on every segment and show it in the menu: a list pick by id, a slider
+--- clamped to its range, or a check. The controller's next report shows what it did.
+--- @param id string The control's id, as the menu names it (fx, sx, c1, o1, ...).
+--- @param picked any
+local function setExtra(id, picked)
   if gWrongMac then
     log:warn("Extras: not sent, a different controller answers at this address")
     return
   end
-  local id, picked = Select(tParams, "id"), Select(tParams, "value")
   local kind = Extras.KINDS[id or ""]
   -- What was sent, as the menu shows it.
   local value
@@ -1474,6 +1468,50 @@ function RFP.EXTRA_SET(idBinding, strCommand, tParams)
     gExtrasSent[id] = value
     SendToProxy(PROXY_BINDING, "EXTRAS_STATE_CHANGED", { XML = Extras.state({ [id] = value }, {}) }, "NOTIFY")
   end
+end
+
+--- A pick or a slider in the light's Extras menu, sent to every segment as programming's commands
+--- are. The menu shows the pick at once; the controller's next report shows what it did.
+--- @param idBinding integer
+--- @param strCommand string
+--- @param tParams table {id = control id, value = what was picked}
+function RFP.EXTRA_SET(idBinding, strCommand, tParams)
+  log:trace("RFP.EXTRA_SET(%s, %s, %s)", idBinding, strCommand, tParams)
+  if idBinding ~= PROXY_BINDING then
+    return
+  end
+  setExtra(Select(tParams, "id"), Select(tParams, "value"))
+end
+
+--- The running effect's Custom sliders and Check options, by the names the menu and programming
+--- show, as the controls they set.
+local EFFECT_CUSTOM = { ["Custom 1"] = "c1", ["Custom 2"] = "c2", ["Custom 3"] = "c3" }
+local EFFECT_OPTIONS = { ["Check 1"] = "o1", ["Check 2"] = "o2", ["Check 3"] = "o3" }
+
+--- Set one of the running effect's Custom sliders on every segment, as the Extras menu does:
+--- 0 to 255, Custom 3 0 to 31.
+--- @param params table {Control = "Custom 1"|"Custom 2"|"Custom 3", Value = 0-255}
+function EC.Set_Effect_Custom_Value(params)
+  log:trace("EC.Set_Effect_Custom_Value(%s)", params)
+  local id = EFFECT_CUSTOM[Select(params, "Control") or ""]
+  if not id then
+    log:warn("Set Effect Custom Value: no control %s", tostring(Select(params, "Control")))
+    return
+  end
+  setExtra(id, Select(params, "Value"))
+end
+
+--- Turn one of the running effect's Check options on or off on every segment, as the Extras menu
+--- does.
+--- @param params table {Option = "Check 1"|"Check 2"|"Check 3", State = "On"|"Off"}
+function EC.Set_Effect_Option(params)
+  log:trace("EC.Set_Effect_Option(%s)", params)
+  local id = EFFECT_OPTIONS[Select(params, "Option") or ""]
+  if not id then
+    log:warn("Set Effect Option: no option %s", tostring(Select(params, "Option")))
+    return
+  end
+  setExtra(id, Select(params, "State") == "On")
 end
 
 -- ─── Actions (EC dispatch) ─────────────────────────────────────────────────

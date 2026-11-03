@@ -193,7 +193,7 @@ do
       T.eq(name .. " has a GCPL handler", type(GCPL[(name:gsub("%s+", "_"))]), "function")
     end
   end
-  T.eq("nine commands", n, 9)
+  T.eq("eleven commands", n, 11)
   T.eq("programming variables exist before the controller reports", Variables["Effect"], "")
   T.eq("Playlist variable exists", Variables["Playlist"], "")
 end
