@@ -653,4 +653,54 @@ do
   T.eq("a light that asks is told all the same", #toldOn(accent, "UPDATE_STATE"), 1)
 end
 
+--------------------------------------------------------------------------------
+T.section("A light whose command the controller did not take is told its segment again")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local strip, accent = linkNamed("Strip").bindingId, linkNamed("Accent").bindingId
+  connectLight(accent)
+  W.run(1500)
+  local shown = fake.si.state.seg[2].on
+  -- The controller takes the command but does not apply it.
+  fake.apply = function() end
+  lightSends(accent, Segment.intent({ on = not shown, tt = 0 }, 1), 1)
+  mark()
+  W.run(1500)
+  fake.apply = nil
+  elsewhere(fake, { seg = { { id = 0, col = { { 9, 9, 9 } } } } })
+  W.run(1500)
+  T.eq("the light that wrote is told its segment once", #toldOn(accent, "UPDATE_STATE"), 1)
+  T.eq("as the controller shows it", lastPayload(accent) and lastPayload(accent).segment.on, shown)
+  T.eq("another light is told only its change", #toldOn(strip, "UPDATE_STATE"), 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("An unbind before the controller reports keeps the connection")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local accent = linkNamed("Accent").bindingId
+  connectLight(accent)
+  restart()
+  -- Director may unbind and rebind at a controller start, before any report.
+  OBC[accent](accent, "WLED_SEGMENT", false)
+  T.truthy("the connection is kept", ShimDynamicBindings()[accent])
+  local records = 0
+  for _ in pairs(require("lib.persist"):get("WledSegmentRecords") or {}) do
+    records = records + 1
+  end
+  T.eq("and every record", records, 2)
+  if OBC[accent] then
+    OBC[accent](accent, "WLED_SEGMENT", true)
+  end
+  mark()
+  W.run(1500)
+  T.eq("rebound, the light is told its segment", lastPayload(accent) and lastPayload(accent).segment.id, 1)
+  T.eq("on the same connection", (linkNamed("Accent") or {}).bindingId, accent)
+  T.truthy("the controller answered", fake.connects > 0)
+end
+
 T.finish()

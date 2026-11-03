@@ -148,7 +148,8 @@ local function proxy(command, params)
   ReceivedFromProxy(PROXY, command, params or {})
 end
 
-local function fresh(profile, id, setup)
+--- @param unbound boolean|nil The light is not bound to a WLED driver's segment connection.
+local function fresh(profile, id, setup, unbound)
   W.reset()
   fake = W.Fake.new(profile)
   if setup then
@@ -164,6 +165,11 @@ local function fresh(profile, id, setup)
     require("lib.persist"):delete(key)
   end
   mark()
+  -- Bound to a WLED driver's segment connection, as Director has it at a start.
+  C4:Unbind(C4:GetDeviceID(), CONTROLLER)
+  if not unbound then
+    C4:Bind(700, 6000, C4:GetDeviceID(), CONTROLLER, "WLED_SEGMENT")
+  end
   dofile(DRIVER)
   OnDriverInit()
   ShimLateInit()
@@ -190,6 +196,18 @@ do
   }, { true, true })
   T.eq("no Extras", last.has_extras, false)
   T.eq("its level is its segment's", lastLevel(), 100)
+
+  fresh("esp32-rgbw-pwm-16", 1, nil, true)
+  T.eq(
+    "unbound at start: says what to do",
+    Properties["Driver Status"],
+    "Bind this light to a WLED driver's segment connection"
+  )
+  T.eq("and asks nothing", #toldOf(CONTROLLER, "REFRESH_STATE"), 0)
+  mark()
+  OBC[CONTROLLER](CONTROLLER, "WLED_SEGMENT", true)
+  T.eq("bound later: asks for its segment", #toldOf(CONTROLLER, "REFRESH_STATE"), 1)
+  T.eq("and connects", Properties["Driver Status"], "Connecting")
 end
 
 do

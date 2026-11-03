@@ -22,8 +22,8 @@ JSON = require("JSON")
 
 local log = require("lib.logging")
 local values = require("lib.values")
-local updateSettings = require("lib.update-settings")
 --#ifdef DRIVERCENTRAL
+local updateSettings = require("lib.update-settings")
 local supportCode = require("lib.support-code")
 local diagnostics = require("lib.diagnostics")
 --#endif
@@ -173,10 +173,14 @@ function OnDriverLateInit()
     end
   end
 
-  -- Shown off until the WLED driver tells it the segment; the proxy keeps its last level meanwhile.
-  setStatus("Connecting", false)
   gInitialized = true
   light.lateInit()
+  if (tointeger(C4:GetBoundProviderDevice(C4:GetDeviceID(), CONTROLLER_BINDING)) or 0) == 0 then
+    setStatus("Bind this light to a WLED driver's segment connection", false)
+    return
+  end
+  -- Shown off until the WLED driver tells it the segment; the proxy keeps its last level meanwhile.
+  setStatus("Connecting", false)
   refresh()
 end
 
@@ -234,12 +238,12 @@ function OPC.Cool_White_K(_v)
   whitePointChanged()
 end
 
+--#ifdef DRIVERCENTRAL
 --- An update setting changed on another item; this light keeps only those it has.
 function EC.SET_UPDATE_SETTING(params)
   updateSettings:take(params)
 end
 
---#ifdef DRIVERCENTRAL
 function OPC.Automatic_Updates(propertyValue)
   if gInitialized then
     updateSettings:share("Automatic Updates", propertyValue)
