@@ -175,9 +175,11 @@ end
 
 --- Read the lists the change table names from the controller, one request at a time.
 --- @param what {effects: boolean|nil, palettes: boolean|nil, presets: boolean|nil} The lists to read.
---- @return Deferred done Resolves once every requested list is read or has failed.
+--- @return Deferred done Resolves once every requested list is read or has failed, with the
+--- kinds that failed as keys.
 function Lists:refresh(what)
   local gen = self.gen
+  local failed = {}
   local chain = deferred.new():resolve(nil)
   local function step(fn)
     chain = chain:next(function()
@@ -213,9 +215,12 @@ function Lists:refresh(what)
               self.version = self.version + 1
             end
             self.effects, self.fxdata = effects, fxdata
+          elseif self.gen == gen then
+            failed.effects = true
           end
         end, function(err)
           if self.gen == gen then
+            failed.effects = true
             warnNotRead("effect", err)
           end
         end)
@@ -230,9 +235,12 @@ function Lists:refresh(what)
             self.version = self.version + 1
           end
           self.palettes = palettes
+        elseif self.gen == gen then
+          failed.palettes = true
         end
       end, function(err)
         if self.gen == gen then
+          failed.palettes = true
           warnNotRead("palette", err)
         end
       end)
@@ -247,15 +255,20 @@ function Lists:refresh(what)
             self.version = self.version + 1
           end
           self.presets, self.playlists = presets, playlists
+        elseif self.gen == gen then
+          failed.presets = true
         end
       end, function(err)
         if self.gen == gen then
+          failed.presets = true
           warnNotRead("preset", err)
         end
       end)
     end)
   end
-  return chain
+  return chain:next(function()
+    return failed
+  end)
 end
 
 --- @param list WledListEntry[]|nil

@@ -343,6 +343,18 @@ local function updateProgramming()
     values:update("Playlist", now.pl > 0 and lists:playlistName(now.pl) or "", "STRING")
   end
   local was = gShown
+  if was then
+    -- A field moves on only once its list names it, so its event fires with its variable set.
+    if not lists.effects then
+      now.fx = was.fx
+    end
+    if not lists.palettes then
+      now.pal = was.pal
+    end
+    if not lists.presets then
+      now.ps, now.pl = was.ps, was.pl
+    end
+  end
   gShown = now
   if not was or now.fx ~= was.fx or now.pal ~= was.pal or now.ps ~= was.ps or now.pl ~= was.pl then
     persist:set(SHOWN_KEY, now)
@@ -771,12 +783,16 @@ local function readLists()
   gListsWanted = {}
   local reading = lists:refresh(what)
   gListsReading = reading
-  reading:next(function()
+  reading:next(function(failed)
     if gListsReading ~= reading then
       return
     end
     gListsReading = nil
     readLists()
+    -- The next report reads a failed list again; reading it at once could loop.
+    for kind in pairs(failed or {}) do
+      gListsWanted[kind] = true
+    end
     -- Events wait for the names they read: never while a list read is under way.
     if not gListsReading then
       updateProgramming()
