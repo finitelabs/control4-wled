@@ -36,14 +36,15 @@ gen-mock-wled-data: ## Regenerate the mock's effect and palette data from WLED's
 check-mock-wled-data: ## Assert the mock's data matches WLED's source
 	python3 $(MOCK_DIR)/gen_data.py --check
 
-# The fixture script sits outside the mock's folder, so it names the mock's black settings.
+# Formatter settings stay here, not in a config file. The fixture script formats with the mock.
+MOCK_BLACK := $(MOCK_VENV)/bin/black --line-length 100
+MOCK_PY_FILES := $(MOCK_DIR)/mock_wled $(MOCK_DIR)/tests $(MOCK_DIR)/gen_data.py test/gen_wled_fixtures.py
+
 fmt-mock-wled: $(MOCK_STAMP) ## Format the mock's Python
-	$(MOCK_VENV)/bin/black $(MOCK_DIR)/mock_wled $(MOCK_DIR)/tests $(MOCK_DIR)/gen_data.py
-	$(MOCK_VENV)/bin/black --config $(MOCK_DIR)/pyproject.toml test/gen_wled_fixtures.py
+	$(MOCK_BLACK) $(MOCK_PY_FILES)
 
 check-mock-wled-fmt: $(MOCK_STAMP) ## Assert the mock's Python is formatted
-	$(MOCK_VENV)/bin/black --check $(MOCK_DIR)/mock_wled $(MOCK_DIR)/tests $(MOCK_DIR)/gen_data.py
-	$(MOCK_VENV)/bin/black --check --config $(MOCK_DIR)/pyproject.toml test/gen_wled_fixtures.py
+	$(MOCK_BLACK) --check $(MOCK_PY_FILES)
 
 # ─── WLED fixtures for the Lua suites (test/fixtures/wled) ────────────────────
 

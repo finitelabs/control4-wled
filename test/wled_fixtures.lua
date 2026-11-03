@@ -6,9 +6,10 @@
 --- bindings, the way the vendored module reaches a controller: NetConnect, SendToNetwork,
 --- OnConnectionStatusChanged and ReceivedFromNetwork. Tests script what the controller does
 --- next: push a state, answer busy, drop, close with a code, ignore pings, go unreachable.
+--- W.reload carries the driver across a reload, as a driver update or a Director restart makes one.
 ---
 --- Usage:
----   local W = require("wled_fake")
+---   local W = require("wled_fixtures")
 ---   local fake = W.Fake.new("esp32-rgbw-pwm-16")
 ---   W.run(100)
 
@@ -77,8 +78,10 @@ function M.run(ms)
     table.remove(queue, bi)
     now = best.at
     if best.every then
+      -- The same entry goes back, so a Cancel after this fire still stops it.
       order = order + 1
-      queue[#queue + 1] = { at = now + best.every, order = order, every = best.every, fn = best.fn }
+      best.at, best.order = now + best.every, order
+      queue[#queue + 1] = best
     end
     best.fn()
   end
@@ -812,5 +815,28 @@ end
 
 local ok, realSocket = pcall(require, "socket")
 package.loaded["socket"] = setmetatable({ udp = M.udp }, { __index = ok and realSocket or nil })
+
+-- ─── Driver reloads ────────────────────────────────────────────────────────
+
+--- Director's part of a driver reload, between the old instance's OnDriverDestroyed and the new
+--- load's dofile. The new load starts in a fresh Lua state, with every lib.* module and the driver's
+--- own unloaded (lib.http stays the fake's), and without the dynamic bindings, which it adds again.
+--- Then a driver update, where Director keeps the driver's variables, or a Director restart, where
+--- none survives; both land every persist write still waiting and start the variable ids over.
+--- @param how "update"|"restart"
+function M.reload(how)
+  if how ~= "update" and how ~= "restart" then
+    error("a reload is an update or a restart, not " .. tostring(how), 2)
+  end
+  local C4Local = require("c4_local")
+  C4Local.freshLuaState({ "^drivers%-common%-public%.module%.websocket$", "^wled%." })
+  package.loaded["lib.http"] = M.http
+  C4Local.dropDynamicBindings()
+  if how == "update" then
+    ShimUpdateDriver()
+  else
+    ShimRestartDirector()
+  end
+end
 
 return M

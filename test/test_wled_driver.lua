@@ -8,8 +8,8 @@
 ---   ./test/run_test.sh test_wled_driver.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
-require("color_math").install()
+local W = require("wled_fixtures")
+require("c4_local")
 
 DEBUG_WEBSOCKET = false
 
@@ -175,17 +175,20 @@ local function fresh(profile, unreachable)
   T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
   mark()
   dofile(DRIVER)
+  OnDriverInit()
   ShimLateInit()
   return fake
 end
 
---- Reload the driver over its stored state, as a driver update or controller restart does:
---- the old instance is destroyed and the Lua modules load fresh.
-local function restart()
+--- Reload the driver over what it stored: the old instance is destroyed and the new one loads in a
+--- fresh Lua state, as a driver update or a Director restart makes it.
+--- @param how "update"|"restart"
+local function restart(how)
   OnDriverDestroyed()
-  T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
+  W.reload(how)
   mark()
   dofile(DRIVER)
+  OnDriverInit()
   ShimLateInit()
 end
 
@@ -227,19 +230,23 @@ end
 --------------------------------------------------------------------------------
 T.section("A start tells the light its level and color once; a restart with nothing changed tells neither")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   fresh("esp32-rgbw-pwm-16")
   W.run(200)
   T.eq("capabilities told once", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 1)
   T.eq("the level told once", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
   T.eq("the color told once", toldCount("LIGHT_COLOR_CHANGED"), 1)
-  restart()
+  restart(how)
   W.run(200)
-  T.eq("no capabilities after a restart: the proxy shows them", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 0)
-  T.eq("no level after a restart", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
-  T.eq("no color after a restart", toldCount("LIGHT_COLOR_CHANGED"), 0)
-  T.eq("Connected event fires at a restart's connect", eventCount(1), 1)
-  T.eq("Connected again", Variables["Connected"], "1")
+  T.eq(
+    "no capabilities after a restart: the proxy shows them (" .. how .. ")",
+    toldCount("DYNAMIC_CAPABILITIES_CHANGED"),
+    0
+  )
+  T.eq("no level after a restart (" .. how .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
+  T.eq("no color after a restart (" .. how .. ")", toldCount("LIGHT_COLOR_CHANGED"), 0)
+  T.eq("Connected event fires at a restart's connect (" .. how .. ")", eventCount(1), 1)
+  T.eq("Connected again (" .. how .. ")", Variables["Connected"], "1")
 end
 
 --------------------------------------------------------------------------------
@@ -439,9 +446,16 @@ do
   T.eq("not connected", Variables["Connected"], "0")
 
   -- Restart with the controller still gone.
-  restart()
-  W.run(30000)
-  T.eq("after a restart", Properties["Driver Status"], "Not connected: No connection to the controller")
+  for _, how in ipairs({ "update", "restart" }) do
+    restart(how)
+    W.run(30000)
+    T.eq(
+      "after a restart (" .. how .. ")",
+      Properties["Driver Status"],
+      "Not connected: No connection to the controller"
+    )
+    T.eq("not connected after a restart (" .. how .. ")", Variables["Connected"], "0")
+  end
 
   -- Connected, then the IP Address moves to an address that does not answer.
   local fake = fresh("esp32-rgbw-pwm-16")

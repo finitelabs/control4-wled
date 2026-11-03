@@ -8,8 +8,8 @@
 ---   ./test/run_test.sh test_wled_cycle.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
-require("color_math").install()
+local W = require("wled_fixtures")
+require("c4_local")
 
 DEBUG_WEBSOCKET = false
 
@@ -152,14 +152,12 @@ local function fresh(profile, setup, props)
   return fake
 end
 
-local function restart()
+--- Reload the driver over what it stored: the old instance is destroyed and the new one loads in a
+--- fresh Lua state, as a driver update or a Director restart makes it.
+--- @param how "update"|"restart"
+local function restart(how)
   OnDriverDestroyed()
-  -- Director drops a driver's dynamic bindings at a reload; the connections wait for them.
-  local dynamic = ShimDynamicBindings()
-  for id in pairs(dynamic) do
-    dynamic[id] = nil
-  end
-  T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
+  W.reload(how)
   mark()
   dofile(DRIVER)
   OnDriverInit()
@@ -418,7 +416,7 @@ end
 --------------------------------------------------------------------------------
 T.section("Preset Is, a conditional with the controller's presets")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16", function(f)
     f:presetsFile()["5"] = { n = "Mock, Comma", on = true }
   end)
@@ -454,21 +452,27 @@ do
     TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "EQUAL" })
   )
 
-  restart()
+  restart(how)
   T.truthy(
-    "after a reload it answers before the presets are read again",
+    "after a reload it answers before the presets are read again (" .. how .. ")",
     TestCondition(conditional.name, { VALUE = "Mock Sunset (2)", LOGIC = "NOT_EQUAL" })
   )
   W.run(1500)
-  T.truthy("and from the report after", TestCondition(conditional.name, { VALUE = "Mock Sunset (2)", LOGIC = "EQUAL" }))
-  T.eq("the same conditional", GetConditionals()[tostring(conditional.conditionalId)].name, conditional.name)
-  local _ = fake
+  T.truthy(
+    "and from the report after (" .. how .. ")",
+    TestCondition(conditional.name, { VALUE = "Mock Sunset (2)", LOGIC = "EQUAL" })
+  )
+  T.eq(
+    "the same conditional (" .. how .. ")",
+    GetConditionals()[tostring(conditional.conditionalId)].name,
+    conditional.name
+  )
 end
 
 --------------------------------------------------------------------------------
 T.section("Preset Is answers after a reload with every preset deleted")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16")
   W.run(500)
   local conditional
@@ -481,19 +485,14 @@ do
   fake:change(nil, { fs = { pmt = 1762000900 } })
   W.run(2000)
   T.eq("every preset deleted: an empty list", GetConditionals()[tostring(conditional.conditionalId)].list_items, "")
-  -- A reload starts a fresh Lua state: no test function survives in memory.
-  for name in pairs(TC) do
-    TC[name] = nil
-  end
-  T.unload("^lib%.conditionals$")
-  restart()
+  restart(how)
   T.truthy(
-    "after a reload Is Not still answers",
+    "after a reload Is Not still answers (" .. how .. ")",
     TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "NOT_EQUAL" })
   )
   W.run(1500)
   T.truthy(
-    "and after the presets are read",
+    "and after the presets are read (" .. how .. ")",
     TestCondition(conditional.name, { VALUE = "Mock Rainbow (2)", LOGIC = "NOT_EQUAL" })
   )
 end
@@ -501,34 +500,38 @@ end
 --------------------------------------------------------------------------------
 T.section("A reload keeps the links and their connections; Reset Driver clears them")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16", nil, { ["Cycle Presets"] = "2" })
   W.run(500)
   local id = presetLinks()["2"].bindingId
-  restart()
+  restart(how)
   W.run(1)
   local n = #fake.commands
   press(303, "DO_CLICK")
   press(id, "DO_CLICK")
   W.run(100)
-  T.eq("its button and Next work before the presets are read again", #fake.commands, n + 2)
+  T.eq("its button and Next work before the presets are read again (" .. how .. ")", #fake.commands, n + 2)
   T.eq(
-    "restored at init under the same id",
+    "restored at init under the same id (" .. how .. ")",
     ShimDynamicBindings()[id] and ShimDynamicBindings()[id].name,
     "Mock Rainbow (2) Button Link"
   )
   W.run(1500)
   press(id, "DO_CLICK")
-  T.eq("and its button works", lastPreset(fake), 2)
+  T.eq("and its button works (" .. how .. ")", lastPreset(fake), 2)
 
   ExecuteCommand("Reset Driver", { ["Are You Sure?"] = "Yes" })
-  T.eq("Reset Driver removes the links", ShimDynamicBindings()[id], nil)
-  T.eq("and the conditional", next(GetConditionals()), nil)
-  T.eq("and empties Cycle Presets", Properties["Cycle Presets"], "")
+  T.eq("Reset Driver removes the links (" .. how .. ")", ShimDynamicBindings()[id], nil)
+  T.eq("and the conditional (" .. how .. ")", next(GetConditionals()), nil)
+  T.eq("and empties Cycle Presets (" .. how .. ")", Properties["Cycle Presets"], "")
   -- The fake answers no close frame, so the socket to the controller times out first.
   W.run(30000)
-  T.eq("then every preset cycles again", Properties["Presets in Cycle"], "Mock Warm Glow (1), Mock Rainbow (2)")
-  T.truthy("with its links", presetLinks()["1"] and presetLinks()["2"])
+  T.eq(
+    "then every preset cycles again (" .. how .. ")",
+    Properties["Presets in Cycle"],
+    "Mock Warm Glow (1), Mock Rainbow (2)"
+  )
+  T.truthy("with its links (" .. how .. ")", presetLinks()["1"] and presetLinks()["2"])
 end
 
 --------------------------------------------------------------------------------

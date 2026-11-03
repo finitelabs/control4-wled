@@ -9,8 +9,8 @@
 ---   ./test/run_test.sh test_wled_segments.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
-require("color_math").install()
+local W = require("wled_fixtures")
+require("c4_local")
 
 DEBUG_WEBSOCKET = false
 
@@ -178,14 +178,12 @@ local function fresh(profile, setup)
   return fake
 end
 
-local function restart()
+--- Reload the driver over what it stored: the old instance is destroyed and the new one loads in a
+--- fresh Lua state, as a driver update or a Director restart makes it.
+--- @param how "update"|"restart"
+local function restart(how)
   OnDriverDestroyed()
-  -- Director drops a driver's dynamic bindings at a reload; the connections wait for them.
-  local dynamic = ShimDynamicBindings()
-  for id in pairs(dynamic) do
-    dynamic[id] = nil
-  end
-  T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
+  W.reload(how)
   mark()
   dofile(DRIVER)
   OnDriverInit()
@@ -484,43 +482,51 @@ end
 --------------------------------------------------------------------------------
 T.section("A reload keeps the connections; Reset Driver removes them")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16")
   W.run(500)
   local accent = linkNamed("Accent").bindingId
-  restart()
+  connectLight(accent)
+  restart(how)
   T.eq(
-    "restored at init under the same id",
+    "restored at init under the same id (" .. how .. ")",
     ShimDynamicBindings()[accent] and ShimDynamicBindings()[accent].name,
     "Accent"
   )
+  T.eq("with its light still connected (" .. how .. ")", C4:GetBoundConsumerDevices(0, accent), {
+    [700 + accent] = "Device " .. (700 + accent),
+  })
   mark()
   ReceivedFromProxy(accent, "REFRESH_STATE", {})
   T.eq(
-    "a light that asks before the first report is told the controller is away",
+    "a light that asks before the first report is told the controller is away (" .. how .. ")",
     #toldOn(accent, "UPDATE_DISCONNECT"),
     1
   )
   W.run(1500)
-  T.eq("then its segment, by the record kept", lastPayload(accent) and lastPayload(accent).segment.id, 1)
+  T.eq(
+    "then its segment, by the record kept (" .. how .. ")",
+    lastPayload(accent) and lastPayload(accent).segment.id,
+    1
+  )
   local n = #fake.commands
   lightSends(accent, { seg = { { id = 1, bri = 9 } } }, 1)
-  T.eq("and its commands go through", #fake.commands, n + 1)
+  T.eq("and its commands go through (" .. how .. ")", #fake.commands, n + 1)
 
   mark()
   ExecuteCommand("Reset Driver", { ["Are You Sure?"] = "Yes" })
-  T.eq("Reset Driver tells the lights first", #toldOn(accent, "UPDATE_DISCONNECT"), 1)
+  T.eq("Reset Driver tells the lights first (" .. how .. ")", #toldOn(accent, "UPDATE_DISCONNECT"), 1)
   T.eq(
-    "as suspended, so they keep their level",
+    "as suspended, so they keep their level (" .. how .. ")",
     (toldOn(accent, "UPDATE_DISCONNECT")[1] or { params = {} }).params.suspended,
     true
   )
-  T.eq("then removes the connections", ShimDynamicBindings()[accent], nil)
+  T.eq("then removes the connections (" .. how .. ")", ShimDynamicBindings()[accent], nil)
   W.run(30000)
-  T.eq("and makes them again for the controller that answers", countLinks(), 2)
+  T.eq("and makes them again for the controller that answers (" .. how .. ")", countLinks(), 2)
 end
 
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16")
   W.run(500)
   local accent = linkNamed("Accent").bindingId
@@ -529,17 +535,17 @@ do
   fake.si.state.seg[1].id = 0
   fake:pushNow()
   W.run(1500)
-  restart()
+  restart(how)
   W.run(1500)
   local named = 0
   for _, b in pairs(links()) do
     named = named + (b.displayName == "Accent" and 1 or 0)
   end
-  T.eq("after a renumber and a reload, the segment keeps one connection", named, 1)
-  T.eq("its light's", linkNamed("Accent").bindingId, accent)
+  T.eq("after a renumber and a reload, the segment keeps one connection (" .. how .. ")", named, 1)
+  T.eq("its light's (" .. how .. ")", linkNamed("Accent").bindingId, accent)
   mark()
   ReceivedFromProxy(accent, "REFRESH_STATE", {})
-  T.eq("which is told its segment", lastPayload(accent) and lastPayload(accent).segment.id, 0)
+  T.eq("which is told its segment (" .. how .. ")", lastPayload(accent) and lastPayload(accent).segment.id, 0)
 end
 
 --------------------------------------------------------------------------------
@@ -684,7 +690,7 @@ do
   W.run(500)
   local accent = linkNamed("Accent").bindingId
   connectLight(accent)
-  restart()
+  restart("restart")
   -- Director may unbind and rebind at a controller start, before any report.
   OBC[accent](accent, "WLED_SEGMENT", false)
   T.truthy("the connection is kept", ShimDynamicBindings()[accent])

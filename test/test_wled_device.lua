@@ -7,7 +7,7 @@
 ---   ./test/run_test.sh test_wled_device.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
+local W = require("wled_fixtures")
 local Device = require("wled.device")
 
 local function load(profile)

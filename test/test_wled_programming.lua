@@ -9,8 +9,8 @@
 ---   ./test/run_test.sh test_wled_programming.lua
 
 local T = require("testlib")
-local W = require("wled_fake")
-require("color_math").install()
+local W = require("wled_fixtures")
+require("c4_local")
 
 DEBUG_WEBSOCKET = false
 
@@ -166,15 +166,24 @@ local function fresh(profile, setup)
   T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
   mark()
   dofile(DRIVER)
+  OnDriverInit()
   ShimLateInit()
   return fake
 end
 
-local function restart()
+--- Reload the driver over what it stored: the old instance is destroyed and the new one loads in a
+--- fresh Lua state, as a driver update or a Director restart makes it.
+--- @param how "update"|"restart"
+--- @param whileDown fun()|nil What happens after the old instance ends and before the new one loads.
+local function restart(how, whileDown)
   OnDriverDestroyed()
-  T.unload("^drivers%-common%-public%.module%.websocket$", "^wled%.")
+  if whileDown then
+    whileDown()
+  end
+  W.reload(how)
   mark()
   dofile(DRIVER)
+  OnDriverInit()
   ShimLateInit()
 end
 
@@ -511,7 +520,7 @@ end
 --------------------------------------------------------------------------------
 T.section("Nothing fires at a start or reconnect for a state that stayed the same")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16", function(f)
     f:applyPreset(3)
   end)
@@ -526,11 +535,15 @@ do
   T.eq("reconnected", Properties["Driver Status"], "Connected")
   T.eq("no events at the reconnect", programmingEvents(), 0)
 
-  mark()
-  restart()
+  restart(how)
+  T.eq("the variables shown before the controller answers (" .. how .. ")", {
+    Variables["Effect"],
+    Variables["Preset"],
+    Variables["Playlist"],
+  }, { "Solid", "Mock Warm Glow", "Mock Cycle" })
   W.run(500)
-  T.eq("no events at a reload", programmingEvents(), 0)
-  T.eq("variables kept", Variables["Playlist"], "Mock Cycle")
+  T.eq("no events at a reload (" .. how .. ")", programmingEvents(), 0)
+  T.eq("variables kept (" .. how .. ")", Variables["Playlist"], "Mock Cycle")
 
   mark()
   fake.reachable = false
@@ -561,23 +574,23 @@ end
 --------------------------------------------------------------------------------
 T.section("A change made while the driver reloads fires at the reload")
 --------------------------------------------------------------------------------
-do
+for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16", function(f)
     f:applyPreset(3)
   end)
   W.run(500)
   T.eq("a running playlist shows", Variables["Playlist"], "Mock Cycle")
-  OnDriverDestroyed()
-  fake:applyPreset(2)
-  restart()
+  restart(how, function()
+    fake:applyPreset(2)
+  end)
   W.run(1500)
-  T.eq("the preset it changed to fires", eventCount(PRESET_CHANGED), 1)
-  T.eq("and the playlist it ended", eventCount(PLAYLIST_ENDED), 1)
-  T.eq("named", Variables["Preset"], "Mock Rainbow")
+  T.eq("the preset it changed to fires (" .. how .. ")", eventCount(PRESET_CHANGED), 1)
+  T.eq("and the playlist it ended (" .. how .. ")", eventCount(PLAYLIST_ENDED), 1)
+  T.eq("named (" .. how .. ")", Variables["Preset"], "Mock Rainbow")
   mark()
-  restart()
+  restart(how)
   W.run(1500)
-  T.eq("a reload with nothing changed fires nothing", programmingEvents(), 0)
+  T.eq("a reload with nothing changed fires nothing (" .. how .. ")", programmingEvents(), 0)
 end
 
 --------------------------------------------------------------------------------
