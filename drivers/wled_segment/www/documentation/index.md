@@ -90,6 +90,7 @@ The light offers what its segment's LEDs can light, as the
 | RGB, tunable white | Color and color temperature             |
 | RGB, CCT           | Color and color temperature             |
 | Tunable white      | Color temperature                       |
+| CCT                | Color temperature                       |
 | White              | Level only                              |
 | On/off             | On and off only                         |
 

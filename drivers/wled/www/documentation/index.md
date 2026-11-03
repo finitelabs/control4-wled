@@ -133,6 +133,7 @@ Each segment reports what its LEDs can light, and the
 | RGB, tunable white | Color and two whites, for example RGB+CCT strips      |
 | RGB, CCT           | Color, with WLED's white balance correction turned on |
 | Tunable white      | Two whites (CCT)                                      |
+| CCT                | Color temperature, with no white channel reported     |
 | White              | One white channel                                     |
 | On/off             | A relay                                               |
 
