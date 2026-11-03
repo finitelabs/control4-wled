@@ -151,6 +151,7 @@ local function fresh(profile, setup)
     setup(fake)
   end
   require("lib.persist"):delete("WledControllerMac")
+  require("lib.persist"):delete("WledShown")
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end

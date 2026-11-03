@@ -162,10 +162,14 @@ local gListsWanted = {}
 --- @type Deferred|nil
 local gListsReading = nil
 
+--- Persist key for what programming last saw, so a change made while the driver reloads is
+--- still told.
+local SHOWN_KEY = "WledShown"
+
 --- What programming last saw: the main segment's effect and palette, the preset and the
---- playlist. Nil until the first report after a load, which seeds it without events.
+--- playlist. Nil until our controller first reports, which seeds it without events.
 --- @type {fx: integer|nil, pal: integer|nil, ps: integer, pl: integer}|nil
-local gShown = nil
+local gShown = persist:get(SHOWN_KEY)
 
 --- What the Extras menu last told the proxy: the setup's shape and the values sent since. Nil
 --- until the first setup after a load or reset.
@@ -336,6 +340,9 @@ local function updateProgramming()
   end
   local was = gShown
   gShown = now
+  if not was or now.fx ~= was.fx or now.pal ~= was.pal or now.ps ~= was.ps or now.pl ~= was.pl then
+    persist:set(SHOWN_KEY, now)
+  end
   if not was then
     return
   end
@@ -534,9 +541,10 @@ end
 
 --- Register the Preset Is conditional with the controller's presets, when its list changed.
 --- @param items string Comma-separated choices.
-local function registerPresetIs(items)
+--- @param saved boolean|nil Re-register the conditional saved with the project, as every load must.
+local function registerPresetIs(items, saved)
   -- A controller without presets gets no conditional, until it has some.
-  if items == gPresetIsItems or (items == "" and gPresetIsItems == nil) then
+  if not saved and (items == gPresetIsItems or (items == "" and gPresetIsItems == nil)) then
     return
   end
   gPresetIsItems = items
@@ -770,6 +778,12 @@ local function readLists()
       updateExtras()
       updateCycle()
     end
+  end, function(err)
+    -- A read that failed must not hold back every read after it.
+    if gListsReading == reading then
+      gListsReading = nil
+    end
+    log:warn("WLED lists not read: %s", tostring(err))
   end)
 end
 
@@ -1081,7 +1095,7 @@ function OnDriverLateInit()
   -- Test functions live in memory: Preset Is answers from its saved list until the presets are read.
   local saved = Select(conditionals:getConditionals(), PROGRAMMING, "preset_is", "list_items")
   if saved then
-    registerPresetIs(saved)
+    registerPresetIs(saved, true)
   end
   gInitialized = true
   light.lateInit()
@@ -1182,7 +1196,9 @@ function OPC.Cool_White_K(_v)
 end
 
 function OPC.Cycle_Presets(_v)
-  updateCycle()
+  if gInitialized then
+    updateCycle()
+  end
 end
 
 function OPC.Automatic_Updates(propertyValue)
@@ -1513,6 +1529,7 @@ function EC.Reset_Driver(params)
   lists.device = device
   lists:clear()
   gShown = nil
+  persist:delete(SHOWN_KEY)
   gExtrasShape, gExtrasSent = nil, {}
   -- A fresh install has no keypad wired to a button link; the light's own proxy stays bound.
   local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
