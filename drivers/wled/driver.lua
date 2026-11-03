@@ -672,14 +672,18 @@ local function registerSegmentLink(key, binding)
         pushSegment(key, idBinding, true)
         return
       end
+      -- The next report tells this light its segment even unchanged: a command the controller did
+      -- not take is put right.
+      gSegmentSent[idBinding] = nil
       send(Segment.forward(intent, device))
     end
   end
   OBC[binding.bindingId] = function(idBinding, _strClass, isBound)
     if isBound then
       pushSegment(key, idBinding, true)
-    elseif not gSegmentOf[key] then
-      -- Its segment is gone and nothing uses it any more.
+    elseif Select(gSegmentRecords, key, "live") == false then
+      -- A report found its segment gone, and nothing uses it any more. Before the first report
+      -- after a load nothing is known gone: Director may unbind and rebind at a controller start.
       bindings:deleteBinding(SEGMENTS, key)
       gSegmentRecords[key] = nil
       gSegmentSent[idBinding] = nil
