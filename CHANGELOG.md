@@ -23,16 +23,15 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 ### Added
 
 - Added the WLED driver: it connects to a WLED controller on the local network
-  over WLED's WebSocket, with HTTP while it reconnects, and shows the
-  controller's name, brand, product, firmware version, MAC address, LED count
-  and segments in Composer
+  and shows the controller's name, brand, product, firmware version, MAC
+  address, LED count and segments in Composer
 - Added a `Connected` variable and Connected and Disconnected events
 - Added a check that the controller at the address is the one the driver was set
-  up with; Reset Driver takes a replacement
+  up with, and Reset Driver to take a replacement
 - Added the controller's light: on, off, level, color and color temperature as
-  the controller's LEDs allow, fades of any length, Advanced Lighting Scenes,
-  Color On Mode and Dim-To-Warm, and On, Off and Toggle button links. A color
-  from Control4 shows as a solid color and ends a running WLED effect
+  the controller's LEDs allow (a color from Control4 shows as a solid color and
+  ends a running WLED effect), fades of any length, Advanced Lighting Scenes,
+  Color On Mode and Dim-To-Warm, and On, Off and Toggle button links
 - Added `Warm White (K)` and `Cool White (K)` properties, the ends of the
   light's color temperature range
 - Added the controller's WLED effects, palettes, presets and playlists to
@@ -51,11 +50,11 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added the WLED Segment driver: a Control4 light for one segment of a WLED
   controller, bound to the WLED driver's connection for that segment, which
   follows the segment when WLED renumbers or resizes it
+- Added segment-aware power to the WLED light: it reads on only while a segment
+  is lit, and turns every segment on when it turns on with none lit
 - Added finding WLED controllers on the network: a `Found Controllers` list to
   pick a controller from, a `Find Controllers` action, and IP Address and Port
   following the driver's controller by its MAC address when its address changes
-- Changed the WLED light to read on only while a segment is lit, and to turn
-  every segment on when it turns on with none lit
   <!-- #ifdef DRIVERCENTRAL -->
 - Added a `Support Code` property, a `Cloud Monitoring` property, Enabled by
   default, and a `Diagnostics Snapshot` action

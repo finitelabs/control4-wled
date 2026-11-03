@@ -13,7 +13,7 @@
 }
 </style>
 
-<img alt="WLED" src="./images/header.png" width="500"/>
+<img alt="WLED Segment" src="./images/header.png" width="500"/>
 
 ______________________________________________________________________
 
@@ -37,6 +37,7 @@ driver, which keeps the one connection to the controller.
 
 - [System Requirements](#system-requirements)
 - [Features](#features)
+- [Compatibility](#compatibility)
 - [How segment lights and the controller light work together](#how-segment-lights-and-the-controller-light-work-together)
 - [Installer Setup](#installer-setup)
   <!-- #ifdef DRIVERCENTRAL -->
@@ -47,6 +48,7 @@ driver, which keeps the one connection to the controller.
   <!-- #ifdef DRIVERCENTRAL -->
   - [Driver Actions](#driver-actions)
   <!-- #endif -->
+  - [Programming Variables](#programming-variables)
   - [Connections](#connections)
   <!-- #ifdef DRIVERCENTRAL -->
 - [Developer Information](#developer-information)
@@ -71,7 +73,35 @@ driver, which keeps the one connection to the controller.
   controller each get the light they need
 - Fades of any length, Advanced Lighting Scenes, Color On Mode and Dim-To-Warm
 - On, Off and Toggle button links, with keypad LEDs that show the light's state
+- A `Connected` variable for programming
 - A segment that WLED renumbers or resizes keeps its light
+
+# <span style="color:#0094FF">Compatibility</span>
+
+The light offers what its segment's LEDs can light, as the
+[`Segment`](#segment-read-only) property shows it:
+
+<div style="font-size: small">
+
+| Shown              | The light offers                        |
+| ------------------ | --------------------------------------- |
+| RGB                | Color                                   |
+| RGBW               | Color, with whites on the white channel |
+| RGB, tunable white | Color and color temperature             |
+| RGB, CCT           | Color and color temperature             |
+| Tunable white      | Color temperature                       |
+| CCT                | Color temperature                       |
+| White              | Level only                              |
+| On/off             | On and off only                         |
+
+</div>
+
+Color temperature runs between the light's `Warm White (K)` and
+`Cool White (K)`.
+
+> **Note:** WLED's own settings change what a segment reports. An RGBW strip
+> with WLED's white mode set to calculate the white from the color reports RGB.
+> The light follows such a change while it runs.
 
 # <span style="color:#0094FF">How segment lights and the controller light work together</span>
 
@@ -193,29 +223,26 @@ the error message and where in the driver it happened. Before a message is sent,
 anything in it that looks like a password, token, key, network address or email
 address is removed.
 
-The Diagnostics Snapshot action prints a report in the Lua output, and sends it
-only while Cloud Monitoring is Enabled.
-
 <!-- #endif -->
 
 ### Light Settings
 
-#### Warm White (K)
+#### Warm White (K) \[ 1900 - 10091, default: **_2700_** \]
 
-The color temperature of the segment's warmest white, 2700 K by default. WLED
-does not know its strip's white points, so the light's color temperature range
-runs between this and Cool White.
+Sets the color temperature of the segment's warmest white. WLED does not know
+its strip's white points, so the light's color temperature range runs between
+this and `Cool White (K)`.
 
-#### Cool White (K)
+#### Cool White (K) \[ 1900 - 10091, default: **_6500_** \]
 
-The color temperature of the segment's coolest white, 6500 K by default.
+Sets the color temperature of the segment's coolest white.
 
 ### Segment Info
 
 #### Segment (read-only)
 
-The segment this light controls: its name, its LEDs and what they light, for
-example `Left cabinet: LEDs 0-59, RGBW`.
+Displays the segment this light controls: its name, its LEDs and what they
+light, for example `Left cabinet: LEDs 0-59, RGBW`.
 
 <!-- #ifdef DRIVERCENTRAL -->
 
@@ -223,10 +250,16 @@ example `Left cabinet: LEDs 0-59, RGBW`.
 
 ### Diagnostics Snapshot
 
-Prints a diagnostics report in the Lua output, and sends it while Cloud
+Prints a report in the Lua output, and sends it to Finite Labs only while Cloud
 Monitoring is Enabled.
 
 <!-- #endif -->
+
+## Programming Variables
+
+| Variable  | Type | Description                                                                            |
+| --------- | ---- | -------------------------------------------------------------------------------------- |
+| Connected | BOOL | True while the segment is there and the **WLED** driver is connected to the controller |
 
 ## Connections
 

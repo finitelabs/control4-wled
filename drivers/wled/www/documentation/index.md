@@ -45,6 +45,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 - [System Requirements](#system-requirements)
 - [Features](#features)
 - [Compatibility](#compatibility)
+- [Using the light](#using-the-light)
   - [Colors and WLED effects](#colors-and-wled-effects)
   - [The Extras menu](#the-extras-menu)
   - [Segment lights](#segment-lights)
@@ -53,10 +54,17 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
   - [DriverCentral Cloud Setup](#drivercentral-cloud-setup)
   <!-- #endif -->
   - [Driver Installation](#driver-installation)
-  - [Driver Properties](#driver-properties)
-  - [Driver Actions](#driver-actions)
-  - [Programming Reference](#programming-reference)
-  - [Connections](#connections)
+  - [Driver Setup](#driver-setup)
+    - [Driver Properties](#driver-properties)
+      - [Cloud Settings](#cloud-settings)
+      - [Driver Settings](#driver-settings)
+      - [Controller Settings](#controller-settings)
+      - [Light Settings](#light-settings)
+      - [Preset Cycle](#preset-cycle)
+      - [Device Info](#device-info)
+    - [Driver Actions](#driver-actions)
+    - [Programming Reference](#programming-reference)
+    - [Connections](#connections)
   <!-- #ifdef DRIVERCENTRAL -->
 - [Developer Information](#developer-information)
 
@@ -113,8 +121,8 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 Any controller running WLED 0.15 or later: ESP32, ESP32-S3, ESP32-C3 and ESP8266
 boards, whether WLED came installed or was installed by hand.
 
-Each segment reports what its LEDs can light, and the **Segments** property
-shows it:
+Each segment reports what its LEDs can light, and the
+[`Segments`](#segments-read-only) property shows it:
 
 <div style="font-size: small">
 
@@ -125,6 +133,7 @@ shows it:
 | RGB, tunable white | Color and two whites, for example RGB+CCT strips      |
 | RGB, CCT           | Color, with WLED's white balance correction turned on |
 | Tunable white      | Two whites (CCT)                                      |
+| CCT                | Color temperature, with no white channel reported     |
 | White              | One white channel                                     |
 | On/off             | A relay                                               |
 
@@ -133,6 +142,20 @@ shows it:
 > **Note:** WLED's own settings change what a segment reports. An RGBW strip
 > with WLED's white mode set to calculate the white from the color reports RGB.
 > The light follows such a change while it runs.
+
+<!-- #ifdef DRIVERCENTRAL -->
+
+If you have a board or controller that does not work, please contact us at
+[driver-support@finitelabs.com](mailto:driver-support@finitelabs.com).
+
+<!-- #else -->
+
+If you have a board or controller that does not work, please
+[open an issue](https://github.com/finitelabs/control4-wled/issues/new).
+
+<!-- #endif -->
+
+# <span style="color:#0094FF">Using the light</span>
 
 ## Colors and WLED effects
 
@@ -173,7 +196,9 @@ or by a playlist step shows there too.
 For a strip split into parts in WLED, for example left and right cabinets, add a
 **WLED Segment** driver for each part and bind it to that segment's connection
 on this driver (see [Connections](#connections)). The segment light controls its
-segment only; this driver's light still controls the whole strip.
+segment only; this driver's light still controls the whole strip. The **WLED
+Segment** driver includes its own documentation, accessible from within Composer
+Pro.
 
 - A segment light's level is its segment's own level, and this light's level is
   the controller's master level, which WLED applies on top of every segment.
@@ -273,34 +298,37 @@ the same network, then set
 [`Log Mode`](#log-mode--off--print--log--print-and-log-) to `Print` and check
 the Lua output window.
 
-## Driver Properties
+## Driver Setup
 
-### Cloud Settings
+### Driver Properties
+
+#### Cloud Settings
 
 <!-- #ifdef DRIVERCENTRAL -->
 
-#### Cloud Status (read-only)
+##### Cloud Status (read-only)
 
 Displays the DriverCentral cloud license status.
 
 <!-- #endif -->
 
-#### Automatic Updates \[ Off | **_On_** \]
+##### Automatic Updates \[ Off | **_On_** \]
 
 Turns automatic driver updates on or off. Changing it on one WLED driver changes
 it on all of them.
 
 <!-- #ifndef DRIVERCENTRAL -->
 
-#### Update Channel \[ **_Production_** | Prerelease \]
+##### Update Channel \[ **_Production_** | Prerelease \]
 
-Production installs releases only; Prerelease also installs test builds.
+Selects which releases the driver installs: `Production` installs releases only,
+and `Prerelease` also installs test builds.
 
 <!-- #endif -->
 
-### Driver Settings
+#### Driver Settings
 
-#### Driver Status (read-only)
+##### Driver Status (read-only)
 
 Displays the state of the connection:
 
@@ -313,26 +341,26 @@ Displays the state of the connection:
 - `A different WLED controller ... answers at this address`: see
   [Reset Driver](#reset-driver).
 
-#### Driver Version (read-only)
+##### Driver Version (read-only)
 
 Displays the current version of the driver.
 
-#### Log Level \[ 0 - Fatal | 1 - Error | 2 - Warning | **_3 - Info_** | 4 - Debug | 5 - Trace | 6 - Ultra \]
+##### Log Level \[ 0 - Fatal | 1 - Error | 2 - Warning | **_3 - Info_** | 4 - Debug | 5 - Trace | 6 - Ultra \]
 
 Sets the logging level. Default is `3 - Info`.
 
-#### Log Mode \[ **_Off_** | Print | Log | Print and Log \]
+##### Log Mode \[ **_Off_** | Print | Log | Print and Log \]
 
 Sets the logging mode. Default is `Off`. It turns itself off after three hours.
 
 <!-- #ifdef DRIVERCENTRAL -->
 
-#### Support Code
+##### Support Code
 
 Leave it blank unless Finite Labs support gives you a code: it opens Composer's
 Lua tab to this driver for an hour.
 
-#### Cloud Monitoring \[ Disabled | **_Enabled_** \]
+##### Cloud Monitoring \[ Disabled | **_Enabled_** \]
 
 When Enabled, the driver sends Finite Labs a short report once an hour, and a
 report of each error it hits, at most 10 a minute. We use them to find and fix
@@ -345,90 +373,116 @@ the error message and where in the driver it happened. Before a message is sent,
 anything in it that looks like a password, token, key, network address or email
 address is removed.
 
-The Diagnostics Snapshot action prints a report in the Lua output, and sends it
-only while Cloud Monitoring is Enabled.
-
 <!-- #endif -->
 
-### Controller Settings
+#### Controller Settings
 
-#### IP Address
+##### IP Address
 
-The WLED controller's address on the network. Changing it connects to the new
-address at once. When the controller stops answering, or another controller
+Sets the WLED controller's address on the network. Changing it connects to the
+new address at once. When the controller stops answering, or another controller
 answers at its address, the driver looks for it on the network by its MAC
-address every 30 seconds and changes IP Address and Port to where it answers. It
-never moves away from an address you set before the controller has answered
-there, and it keeps a host name you typed.
+address every 30 seconds and changes `IP Address` and `Port` to where it
+answers. It never moves away from an address you set before the controller has
+answered there, and it keeps a host name you typed.
 
-#### Port
+##### Port \[ 1 - 65535, default: **_80_** \]
 
-WLED's web port. Leave it at `80` unless it was changed in WLED.
+Sets WLED's web port. Leave it at `80` unless it was changed in WLED.
 
-#### Found Controllers \[ **_(Select)_** | _found controllers..._ \]
+##### Found Controllers \[ **_(Select)_** | _found controllers..._ \]
 
-Lists the WLED controllers the driver finds on the network as `name (address)`,
-with the port after the address when it is not 80. Picking one sets IP Address
-and Port to it. Shown while the last search found one. The driver searches when
-it loads, when [Find Controllers](#find-controllers) runs, and while its
-controller cannot be reached. It finds controllers on the same network as the
-Control4 controller that have an mDNS address set in WLED's WiFi settings, as
-they do by default.
+Shown only while the last search found a controller. Lists the WLED controllers
+the driver finds on the network as `name (address)`, with the port after the
+address when it is not 80. Picking one sets `IP Address` and `Port` to it. The
+driver searches when it loads, when [Find Controllers](#find-controllers) runs,
+and while its controller cannot be reached. It finds controllers on the same
+network as the Control4 controller that have an mDNS address set in WLED's WiFi
+settings, as they do by default.
 
-### Light Settings
+#### Light Settings
 
-#### Warm White (K)
+##### Warm White (K) \[ 1900 - 10091, default: **_2700_** \]
 
-The color temperature of the strip's warmest white, 2700 K by default. WLED does
-not know its strip's white points, so the light's color temperature range runs
-between this and Cool White.
+Sets the color temperature of the strip's warmest white. WLED does not know its
+strip's white points, so the light's color temperature range runs between this
+and `Cool White (K)`.
 
-#### Cool White (K)
+##### Cool White (K) \[ 1900 - 10091, default: **_6500_** \]
 
-The color temperature of the strip's coolest white, 6500 K by default.
+Sets the color temperature of the strip's coolest white.
 
-### Preset Cycle
+#### Preset Cycle
 
-#### Cycle Presets
+##### Cycle Presets
 
-The presets the Next and Previous Preset buttons and commands step through, in
-order: WLED preset ids or names, separated by commas, for example `4, 1, 7` or
-`Movie Night, Warm Glow`. Empty, the default, cycles every preset on the
+Sets the presets the Next and Previous Preset buttons and commands step through,
+in order: WLED preset ids or names, separated by commas, for example `4, 1, 7`
+or `Movie Night, Warm Glow`. Empty, the default, cycles every preset on the
 controller in id order. Playlists do not cycle. A number is read as a preset id;
 use the id for a preset whose name is a number or has a comma in it. A preset
 named here keeps its place when it is renamed in WLED. An entry the controller
 has no preset for is left out and written to the log.
 
-#### Presets in Cycle (read-only)
+##### Presets in Cycle (read-only)
 
-The presets that cycle, in order, as `Name (id)`, or `None`.
+Displays the presets that cycle, in order, as `Name (id)`, or `None`.
 
-### Device Info
+#### Device Info
 
-Read-only details the controller reports, updated whenever they change:
-**Name**, **Brand**, **Product**, **Firmware Version**, **MAC Address**, **LED
-Count** and **Segments**. **Segments** lists each segment's id, name, LED range
-and what its LEDs light (see [Compatibility](#compatibility)).
+Details the controller reports, updated whenever they change.
 
-## Driver Actions
+##### Name (read-only)
+
+Displays the controller's name, as set in WLED.
+
+##### Brand (read-only)
+
+Displays the brand the controller's firmware reports.
+
+##### Product (read-only)
+
+Displays the product name the controller's firmware reports.
+
+##### Firmware Version (read-only)
+
+Displays the controller's WLED version.
+
+##### MAC Address (read-only)
+
+Displays the controller's MAC address, which the driver uses to tell its
+controller from another one (see [Reset Driver](#reset-driver)).
+
+##### LED Count (read-only)
+
+Displays the number of LEDs the controller drives.
+
+##### Segments (read-only)
+
+Displays each segment's id, name, LED range and what its LEDs light, for example
+`0: Left cabinet 0-59 RGBW; 1: Right cabinet 60-119 RGB`, or `None`.
+[Compatibility](#compatibility) lists what each LED type means.
+
+### Driver Actions
 
 <!-- #ifndef DRIVERCENTRAL -->
 
-### Update Drivers
+#### Update Drivers
 
-Checks GitHub for a newer release and installs it.
+Installs the latest release on the Update Channel from GitHub for every WLED
+driver, regardless of the current version.
 
 <!-- #endif -->
 
-### Find Controllers
+#### Find Controllers
 
 Looks for WLED controllers on the network again and lists them in
 [`Found Controllers`](#found-controllers--select--found-controllers-).
 
-### Reset Driver
+#### Reset Driver
 
-> ⚠️ This unbinds every **WLED Segment** light and every keypad button from this
-> driver's button links.
+> ⚠️ This unbinds every **WLED Segment** light from its segment connection, and
+> every keypad button from this driver's button links.
 
 The driver remembers the MAC address of the first controller it reaches. If a
 different controller answers at the address later, for example after the router
@@ -438,13 +492,13 @@ its own controller on the network and follows it (see
 Run Reset Driver with `Yes` when the controller was replaced on purpose: the
 driver forgets the old one and takes the controller at the address.
 
-Reset Driver returns the driver to a fresh install. It keeps the IP Address and
-Port, and the programming that uses the driver. It unwires every keypad button
-from the On, Toggle, Off, Next Preset and Previous Preset button links, removes
-every segment connection and preset link (making them again for the controller
-that answers), and returns the other properties to their defaults. Bind each
-**WLED Segment** light and each keypad button again afterwards. The light keeps
-the level it shows, so a reset fires no Light Off or Light On.
+Reset Driver returns the driver to a fresh install. It keeps the `IP Address`
+and `Port`, and the programming that uses the driver. It unwires every keypad
+button from the On, Toggle, Off, Next Preset and Previous Preset button links,
+removes every segment connection and preset link (making them again for the
+controller that answers), and returns the other properties to their defaults.
+Bind each **WLED Segment** light and each keypad button again afterwards. The
+light keeps the level it shows, so a reset fires no Light Off or Light On.
 
 **Parameters:**
 
@@ -452,30 +506,30 @@ the level it shows, so a reset fires no Light Off or Light On.
 
 <!-- #ifdef DRIVERCENTRAL -->
 
-### Diagnostics Snapshot
+#### Diagnostics Snapshot
 
-Prints a diagnostics report in the Lua output, and sends it while Cloud
+Prints a report in the Lua output, and sends it to Finite Labs only while Cloud
 Monitoring is Enabled.
 
 <!-- #endif -->
 
-## Programming Reference
+### Programming Reference
 
-### Commands
+#### Commands
 
-| Command                 | Does                                                                              |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| Set Effect              | Runs a WLED effect on every segment, from its own speed, intensity and options    |
-| Set Effect Speed        | Sets the effect speed on every segment, 0 to 255                                  |
-| Set Effect Intensity    | Sets the effect intensity on every segment, 0 to 255                              |
-| Set Effect Custom Value | Sets the effect's Custom 1, 2 or 3 on every segment, 0 to 255 (Custom 3: 0 to 31) |
-| Set Effect Option       | Turns the effect's Check 1, 2 or 3 on or off on every segment                     |
-| Set Palette             | Uses a WLED palette on every segment                                              |
-| Apply Preset            | Applies a WLED preset                                                             |
-| Start Playlist          | Starts a WLED playlist                                                            |
-| Stop Playlist           | Stops the running playlist; the light keeps the look the playlist last showed     |
-| Next Preset             | Applies the next preset in the cycle                                              |
-| Previous Preset         | Applies the previous preset in the cycle                                          |
+| Command                 | Parameters                                                  | Description                                                                    |
+| ----------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Set Effect              | Effect                                                      | Runs a WLED effect on every segment, from its own speed, intensity and options |
+| Set Effect Speed        | Speed (0 - 255)                                             | Sets the effect speed on every segment                                         |
+| Set Effect Intensity    | Intensity (0 - 255)                                         | Sets the effect intensity on every segment                                     |
+| Set Effect Custom Value | Control (Custom 1, 2, 3), Value (0 - 255; Custom 3: 0 - 31) | Sets one of the effect's Custom values on every segment                        |
+| Set Effect Option       | Option (Check 1, 2, 3), State (On, Off)                     | Turns one of the effect's options on or off on every segment                   |
+| Set Palette             | Palette                                                     | Uses a WLED palette on every segment                                           |
+| Apply Preset            | Preset                                                      | Applies a WLED preset                                                          |
+| Start Playlist          | Playlist                                                    | Starts a WLED playlist                                                         |
+| Stop Playlist           | (none)                                                      | Stops the running playlist; the light keeps the look the playlist last showed  |
+| Next Preset             | (none)                                                      | Applies the next preset in the cycle                                           |
+| Previous Preset         | (none)                                                      | Applies the previous preset in the cycle                                       |
 
 The choices are the controller's own, read when the driver connects and again
 when the controller reports a change: a preset or playlist saved or deleted, an
@@ -491,7 +545,7 @@ name.
 The controller applies a preset or starts a playlist on its next loop; the
 variables and events below follow once it reports the result.
 
-### Variables
+#### Variables
 
 | Variable  | Type   | Description                                                                      |
 | --------- | ------ | -------------------------------------------------------------------------------- |
@@ -501,16 +555,16 @@ variables and events below follow once it reports the result.
 | Preset    | STRING | The preset the controller last applied, or empty once its look has been changed  |
 | Playlist  | STRING | The playlist the controller runs, or empty when none runs or it was sent unnamed |
 
-### Events
+#### Events
 
-| Event            | When                                                                      |
-| ---------------- | ------------------------------------------------------------------------- |
-| Connected        | The driver connects to the controller, at start and after every reconnect |
-| Disconnected     | The driver loses the controller                                           |
-| Effect Changed   | The main segment's effect changes                                         |
-| Preset Changed   | The controller applies a different preset, including each playlist step   |
-| Playlist Started | A playlist starts, or another one replaces it                             |
-| Playlist Ended   | The running playlist stops or ends                                        |
+| Event            | Description                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| Connected        | Fires when the driver connects to the controller, at start and after every reconnect |
+| Disconnected     | Fires when the driver loses the controller                                           |
+| Effect Changed   | Fires when the main segment's effect changes                                         |
+| Preset Changed   | Fires when the controller applies a different preset, including each playlist step   |
+| Playlist Started | Fires when a playlist starts, or another one replaces it                             |
+| Playlist Ended   | Fires when the running playlist stops or ends                                        |
 
 A live connection that drops while the controller still answers over HTTP fires
 neither connection event. The effect, preset and playlist events fire only for a
@@ -518,7 +572,7 @@ change: a driver start, a reload or a reconnect that finds the controller as it
 was fires none of them, and applying the preset already shown fires nothing.
 Each variable is set before its event fires.
 
-### Conditionals
+#### Conditionals
 
 | Conditional                       | Tests                                                                          |
 | --------------------------------- | ------------------------------------------------------------------------------ |
@@ -531,21 +585,23 @@ Preset Is lists the controller's presets as programming shows them, for example
 deleted. It tests by the preset's id, so programming keeps working after a
 rename in WLED.
 
-## Connections
+### Connections
 
-### Light (provider)
+#### Light (provider)
 
 The Control4 Light proxy connection. The light is online while the driver is
 connected and offline while it is not.
 
-### Segments (provider)
+#### `{segment name}` (provider, dynamic)
 
-One connection for each segment the controller reports, named as the segment is
-named in WLED, or `Segment` and its id when it has no name. Bind a **WLED
-Segment** driver's **WLED Controller** connection to one (see
+One `WLED_SEGMENT` connection for each segment the controller reports. Bind a
+**WLED Segment** driver's **WLED Controller** connection to one (see
 [Segment lights](#segment-lights)).
 
-### Button Links
+> **Note:** `{segment name}` is the segment's name in WLED, or `Segment` and its
+> id when it has no name, for example `Segment 1`.
+
+#### Button Links
 
 | Connection         | Description                        |
 | ------------------ | ---------------------------------- |
@@ -558,22 +614,26 @@ it is on, or for the Off Button Link while it is off. It shows that button's
 colors, set in Composer under the light's **Button and Button Connection Status
 LED Colors** (Top for On, Bottom for Off, Toggle for Toggle).
 
-| Connection                  | Description                                                 |
-| --------------------------- | ----------------------------------------------------------- |
-| Next Preset Button Link     | Applies the next preset in the cycle when triggered         |
-| Previous Preset Button Link | Applies the previous preset in the cycle when triggered     |
-| _Name (id)_ Button Link     | One for each preset in the cycle: applies it when triggered |
+| Connection                         | Description                                                 |
+| ---------------------------------- | ----------------------------------------------------------- |
+| Next Preset Button Link            | Applies the next preset in the cycle when triggered         |
+| Previous Preset Button Link        | Applies the previous preset in the cycle when triggered     |
+| `{preset name} ({id})` Button Link | One for each preset in the cycle: applies it when triggered |
+
+> **Note:** `{preset name}` and `{id}` come from the controller's preset, for
+> example `Movie Night (4) Button Link`, and the link is renamed with the
+> preset.
 
 Next steps from the preset showing, or, once its look has been changed, from the
 preset the cycle last applied; with neither, Next starts at the first preset and
 Previous at the last. The cycle wraps at both ends. A preset applies whatever it
 was saved with in WLED, power and level included.
 
-A preset's own button link is named from the controller and renamed with the
-preset. A keypad button bound to it is lit while that preset is showing. A
-preset taken out of **Cycle Presets** loses its link. A preset deleted on the
-controller loses its link too, unless a keypad is still connected to it: then
-the link stays, and does nothing until a preset is saved again under that id.
+A keypad button bound to a preset's own button link is lit while that preset is
+showing. A preset taken out of `Cycle Presets` loses its link. A preset deleted
+on the controller loses its link too, unless a keypad is still connected to it:
+then the link stays, and does nothing until a preset is saved again under that
+id.
 
 <!-- #ifdef DRIVERCENTRAL -->
 
