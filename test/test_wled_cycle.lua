@@ -481,6 +481,11 @@ do
   fake:change(nil, { fs = { pmt = 1762000900 } })
   W.run(2000)
   T.eq("every preset deleted: an empty list", GetConditionals()[tostring(conditional.conditionalId)].list_items, "")
+  -- A reload starts a fresh Lua state: no test function survives in memory.
+  for name in pairs(TC) do
+    TC[name] = nil
+  end
+  T.unload("^lib%.conditionals$")
   restart()
   T.truthy(
     "after a reload Is Not still answers",

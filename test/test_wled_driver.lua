@@ -346,6 +346,7 @@ do
   mark()
   EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
   T.eq("the white this light picked is forgotten", persist:get("white_point"), nil)
+  T.eq("and what programming last saw", persist:get("WledShown"), nil)
   W.run(5000)
   T.eq("the proxy hears offline, then online", toldCount("ONLINE_CHANGED") >= 2 and lastOnline(), true)
   T.eq("no level told for a light that did not change", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
