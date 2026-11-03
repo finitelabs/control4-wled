@@ -145,8 +145,13 @@ local CAPABILITY_KEYS = {
   "hide_proxy_events",
   "hide_proxy_conditionals_loops",
 }
--- The proxy handles told capabilities in this order and holds them all, but
--- rewrites 6661 from them only as one marked true changes (dev, 2026-11-03).
+-- The proxy holds the capabilities it is told and rewrites 6661 from them only
+-- as one marked true changes (dev, 2026-11-03). Measured in two-key tells:
+-- dimmer, supports_target, the two color flags, has_extras and cold_start come
+-- before the stop flags, the brightness rates after supports_target, and the
+-- color rates and color temperature range after the stop flags. The rest of
+-- this order is inferred: where dimmer and the color flags fall beside the
+-- brightness rates, has_extras and cold_start was not measured.
 local HANDLED = {
   { "dimmer", true },
   { "supports_target", true },
@@ -9259,16 +9264,28 @@ do
       T.eq(name .. ": and lists the ones it did", capabilitiesShown(), shown)
     end
   end
-  light({ RGBCT })
-  local shown = capabilitiesShown()
-  showCapabilities({ color_correlated_temperature_max = 6000 }) -- as another light or build told it
-  restart(nil)
-  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
-    entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGBCT } }),
-    state = SerializeSafe({ state = true, brightness = 1.0 }),
-  })
-  T.eq("a proxy that lists other capabilities is told the light's once", capabilities(), 1)
-  T.eq("and lists them", capabilitiesShown(), shown)
+  -- Every capability that rewrites 6661 is compared: a proxy that lists another
+  -- value for any one of them, as another light or build told it, is told.
+  for _, handled in ipairs(HANDLED) do
+    local key = handled[1]
+    if handled[2] then
+      light({ RGBCT })
+      local shown, held, other = capabilitiesShown(), proxyHeld[key], nil
+      if held == "True" or held == "False" then
+        other = held == "False"
+      else
+        other = tonumber(held) + 1
+      end
+      showCapabilities({ [key] = other })
+      restart(nil)
+      RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+        entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGBCT } }),
+        state = SerializeSafe({ state = true, brightness = 1.0 }),
+      })
+      T.eq(("a proxy that lists another %s is told the light's capabilities once"):format(key), capabilities(), 1)
+      T.eq(("a proxy that lists another %s: and then lists them"):format(key), capabilitiesShown(), shown)
+    end
+  end
   -- An on/off light that comes to dim: the proxy rewrites 6661 at dimmer,
   -- before it handles supports_brightness_stop.
   local dims = { ColorMode.COLOR_MODE_BRIGHTNESS }
