@@ -368,6 +368,25 @@ do
 
   ReceivedFromProxy(5002, "EXTRA_SET", { id = "fx", value = "9" })
   T.eq("another binding is not the menu", #fake.commands, n)
+
+  -- Programming sets the same controls by the menu's names.
+  mark()
+  ExecuteCommand("Set Effect Custom Value", { Control = "Custom 2", Value = "100" })
+  T.eq("Custom 2 from programming, on both segments", {
+    lastCommand(fake).seg[1].c2,
+    lastCommand(fake).seg[2].c2,
+  }, { 100, 100 })
+  T.eq("the menu shows it", object((toldOf("EXTRAS_STATE_CHANGED")[1] or {}).xml, "c2").value, "100")
+  ExecuteCommand("Set Effect Custom Value", { Control = "Custom 3", Value = "200" })
+  T.eq("Custom 3 from programming kept to 31", lastCommand(fake).seg[1].c3, 31)
+  ExecuteCommand("Set Effect Option", { Option = "Check 1", State = "On" })
+  T.eq("Check 1 on from programming", lastCommand(fake).seg[1].o1, true)
+  ExecuteCommand("Set Effect Option", { Option = "Check 1", State = "Off" })
+  T.eq("and off", lastCommand(fake).seg[1].o1, false)
+  n = #fake.commands
+  ExecuteCommand("Set Effect Custom Value", { Control = "Custom 9", Value = "1" })
+  ExecuteCommand("Set Effect Option", { Option = "Check 9", State = "On" })
+  T.eq("a control the menu does not have sends nothing", #fake.commands, n)
 end
 
 --------------------------------------------------------------------------------
@@ -414,6 +433,8 @@ do
   pick("fx", "9")
   pick("sx", "10")
   ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  ExecuteCommand("Set Effect Custom Value", { Control = "Custom 1", Value = "50" })
+  ExecuteCommand("Set Effect Option", { Option = "Check 2", State = "On" })
   T.eq("no pick or command reaches it", #fake.commands, n)
   T.eq("and the menu shows no pick", #toldOf("EXTRAS_STATE_CHANGED"), 0)
 end

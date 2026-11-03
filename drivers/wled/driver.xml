@@ -345,6 +345,50 @@
         </params>
       </command>
       <command>
+        <name>Set Effect Custom Value</name>
+        <description>Set NAME effect PARAM1 to PARAM2</description>
+        <params>
+          <param>
+            <name>Control</name>
+            <type>LIST</type>
+            <items>
+              <item>Custom 1</item>
+              <item>Custom 2</item>
+              <item>Custom 3</item>
+            </items>
+          </param>
+          <param>
+            <name>Value</name>
+            <type>RANGED_INTEGER</type>
+            <minimum>0</minimum>
+            <maximum>255</maximum>
+          </param>
+        </params>
+      </command>
+      <command>
+        <name>Set Effect Option</name>
+        <description>Set NAME effect PARAM1 to PARAM2</description>
+        <params>
+          <param>
+            <name>Option</name>
+            <type>LIST</type>
+            <items>
+              <item>Check 1</item>
+              <item>Check 2</item>
+              <item>Check 3</item>
+            </items>
+          </param>
+          <param>
+            <name>State</name>
+            <type>LIST</type>
+            <items>
+              <item>On</item>
+              <item>Off</item>
+            </items>
+          </param>
+        </params>
+      </command>
+      <command>
         <name>Set Palette</name>
         <description>Set NAME palette to PARAM1</description>
         <params>

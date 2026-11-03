@@ -348,17 +348,19 @@ the level it shows, so a reset fires no Light Off or Light On.
 
 ### Commands
 
-| Command              | Does                                                                           |
-| -------------------- | ------------------------------------------------------------------------------ |
-| Set Effect           | Runs a WLED effect on every segment, from its own speed, intensity and options |
-| Set Effect Speed     | Sets the effect speed on every segment, 0 to 255                               |
-| Set Effect Intensity | Sets the effect intensity on every segment, 0 to 255                           |
-| Set Palette          | Uses a WLED palette on every segment                                           |
-| Apply Preset         | Applies a WLED preset                                                          |
-| Start Playlist       | Starts a WLED playlist                                                         |
-| Stop Playlist        | Stops the running playlist; the light keeps the look the playlist last showed  |
-| Next Preset          | Applies the next preset in the cycle                                           |
-| Previous Preset      | Applies the previous preset in the cycle                                       |
+| Command                 | Does                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| Set Effect              | Runs a WLED effect on every segment, from its own speed, intensity and options    |
+| Set Effect Speed        | Sets the effect speed on every segment, 0 to 255                                  |
+| Set Effect Intensity    | Sets the effect intensity on every segment, 0 to 255                              |
+| Set Effect Custom Value | Sets the effect's Custom 1, 2 or 3 on every segment, 0 to 255 (Custom 3: 0 to 31) |
+| Set Effect Option       | Turns the effect's Check 1, 2 or 3 on or off on every segment                     |
+| Set Palette             | Uses a WLED palette on every segment                                              |
+| Apply Preset            | Applies a WLED preset                                                             |
+| Start Playlist          | Starts a WLED playlist                                                            |
+| Stop Playlist           | Stops the running playlist; the light keeps the look the playlist last showed     |
+| Next Preset             | Applies the next preset in the cycle                                              |
+| Previous Preset         | Applies the previous preset in the cycle                                          |
 
 The choices are the controller's own, read when the driver connects and again
 when the controller reports a change: a preset or playlist saved or deleted, an
@@ -505,10 +507,11 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added `Warm White (K)` and `Cool White (K)` properties, the ends of the
   light's color temperature range
 - Added the controller's WLED effects, palettes, presets and playlists to
-  programming: Set Effect, Set Effect Speed, Set Effect Intensity, Set Palette,
-  Apply Preset, Start Playlist and Stop Playlist, with `Effect`, `Palette`,
-  `Preset` and `Playlist` variables, Effect Changed, Preset Changed, Playlist
-  Started and Playlist Ended events, and a WLED playlist status conditional
+  programming: Set Effect, Set Effect Speed, Set Effect Intensity, Set Effect
+  Custom Value, Set Effect Option, Set Palette, Apply Preset, Start Playlist and
+  Stop Playlist, with `Effect`, `Palette`, `Preset` and `Playlist` variables,
+  Effect Changed, Preset Changed, Playlist Started and Playlist Ended events,
+  and a WLED playlist status conditional
 - Added the light's Extras menu: the controller's effects, with the sliders and
   options the running effect uses under WLED's names for them, its palettes,
   presets and playlists
