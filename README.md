@@ -321,6 +321,9 @@ Looks for WLED controllers on the network again and lists them in
 
 ### Reset Driver
 
+> ⚠️ This unbinds every **WLED Segment** light and every keypad button from this
+> driver's button links.
+
 The driver remembers the MAC address of the first controller it reaches. If a
 different controller answers at the address later, for example after the router
 gives the address to another device, the driver does not drive it. It looks for
@@ -334,7 +337,12 @@ Port, and the programming that uses the driver. It unwires every keypad button
 from the On, Toggle, Off, Next Preset and Previous Preset button links, removes
 every segment connection and preset link (making them again for the controller
 that answers), and returns the other properties to their defaults. Bind each
-**WLED Segment** light and each keypad button again afterwards.
+**WLED Segment** light and each keypad button again afterwards. The light keeps
+the level it shows, so a reset fires no Light Off or Light On.
+
+**Parameters:**
+
+- **Are You Sure?** \[ **_No_** | Yes \] - Confirmation to reset the driver.
 
 ## Programming Reference
 

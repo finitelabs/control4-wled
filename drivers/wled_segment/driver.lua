@@ -122,7 +122,8 @@ function RFP.UPDATE_DISCONNECT(idBinding, _strCommand, tParams)
   wledLight.device = Segment.view(nil)
   setStatus(Select(tParams, "status") or "Not connected to the WLED controller", false)
   if light.isOnline() then
-    light.disconnect(false)
+    -- Suspended: the WLED driver dropped the connection itself, and the segment keeps its level.
+    light.disconnect(toboolean(Select(tParams, "suspended")))
   end
 end
 

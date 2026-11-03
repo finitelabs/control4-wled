@@ -510,6 +510,11 @@ do
   mark()
   ExecuteCommand("Reset Driver", { ["Are You Sure?"] = "Yes" })
   T.eq("Reset Driver tells the lights first", #toldOn(accent, "UPDATE_DISCONNECT"), 1)
+  T.eq(
+    "as suspended, so they keep their level",
+    (toldOn(accent, "UPDATE_DISCONNECT")[1] or { params = {} }).params.suspended,
+    true
+  )
   T.eq("then removes the connections", ShimDynamicBindings()[accent], nil)
   W.run(30000)
   T.eq("and makes them again for the controller that answers", countLinks(), 2)
