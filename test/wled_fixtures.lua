@@ -16,18 +16,11 @@
 require("c4_shim")
 require("drivers-common-public.global.handlers")
 
+local C4Local = require("c4_local")
 local deferred = require("deferred")
 local JSON = require("JSON")
 
 local M = {}
-
--- A Control4 global the WebSocket module uses for frames over 125 bytes: hex string to bytes.
-tohex = tohex
-  or function(s)
-    return (tostring(s):gsub("%x%x", function(cc)
-      return string.char(tonumber(cc, 16))
-    end))
-  end
 
 local HERE = debug.getinfo(1, "S").source:match("^@(.*)/") or "."
 M.FIXTURES = HERE .. "/fixtures/wled"
@@ -828,7 +821,6 @@ function M.reload(how)
   if how ~= "update" and how ~= "restart" then
     error("a reload is an update or a restart, not " .. tostring(how), 2)
   end
-  local C4Local = require("c4_local")
   C4Local.freshLuaState({ "^drivers%-common%-public%.module%.websocket$", "^wled%." })
   package.loaded["lib.http"] = M.http
   C4Local.dropDynamicBindings()

@@ -553,7 +553,7 @@ do
     preset = c.name
   end
   T.truthy(
-    "Preset Is answers from our controller, not the one at the address",
+    "Preset Is answers from the driver's controller, not the one at the address",
     TestCondition(preset, { VALUE = "Mock Rainbow (2)", LOGIC = "EQUAL" })
   )
   T.eq("which lights no link", ledOf(warm), nil)

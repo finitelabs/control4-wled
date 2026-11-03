@@ -5,6 +5,7 @@
 --- WLED's placeholders without renumbering, and a preset or playlist is offered as "Name (id)"
 --- so programming finds it by id after a rename.
 
+require("lib.utils")
 local log = require("lib.logging")
 local deferred = require("deferred")
 local Device = require("wled.device")
@@ -110,7 +111,7 @@ function Lists.paletteList(names, info, v16)
     end
   end
   info = type(info) == "table" and info or {}
-  local custom = math.floor(tonumber(info.cpalcount) or 0)
+  local custom = tointeger(info.cpalcount) or 0
   -- Custom palettes count down from 200 on 16.x and from 255 on 0.15.
   local top = v16 and 200 or 255
   for k = 0, custom - 1 do
