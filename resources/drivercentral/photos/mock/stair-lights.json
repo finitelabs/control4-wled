@@ -1,0 +1,46 @@
+{
+  "name": "Stair Lights",
+  "firmware": "0.15.4",
+  "chip": "esp8266",
+  "mac": "02a1b2c3d4e3",
+  "buses": [
+    {
+      "type": 22,
+      "start": 0,
+      "len": 60
+    }
+  ],
+  "presets": {
+    "1": {
+      "n": "Night Path",
+      "on": true,
+      "bri": 30,
+      "seg": [
+        {
+          "id": 0,
+          "fx": 0,
+          "col": [
+            [
+              255,
+              120,
+              40,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              0
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}
