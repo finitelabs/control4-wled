@@ -198,7 +198,11 @@ do
   T.eq("its level is its segment's", lastLevel(), 100)
 
   fresh("esp32-rgbw-pwm-16", 1, nil, true)
-  T.eq("unbound at start: says what to do", Properties["Driver Status"], "Bind this light to a WLED driver's segment connection")
+  T.eq(
+    "unbound at start: says what to do",
+    Properties["Driver Status"],
+    "Bind this light to a WLED driver's segment connection"
+  )
   T.eq("and asks nothing", #toldOf(CONTROLLER, "REFRESH_STATE"), 0)
   mark()
   OBC[CONTROLLER](CONTROLLER, "WLED_SEGMENT", true)
