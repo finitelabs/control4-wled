@@ -29,15 +29,16 @@ local PLACEHOLDER = { [""] = true, ["-"] = true, ["RSVD"] = true }
 local Lists = {}
 Lists.__index = Lists
 
---- @param opts {get: fun(path: string): Deferred, device: WledDevice}
---- @return WledLists
-function Lists.new(opts)
-  local self = setmetatable({}, Lists)
-  self.get = opts.get
-  self.device = opts.device
-  self.gen = 0
-  self.version = 0
-  return self
+--- Creates the lists with nothing read yet.
+--- @param opts {get: fun(path: string): Deferred, device: WledDevice} The client's get and the controller's model.
+--- @return WledLists lists Lists that refresh fills.
+function Lists:new(opts)
+  local instance = setmetatable({}, self)
+  instance.get = opts.get
+  instance.device = opts.device
+  instance.gen = 0
+  instance.version = 0
+  return instance
 end
 
 --- Drop a read under way, as at a reconnect; the lists read so far stay.
@@ -80,7 +81,7 @@ end
 --- @param names any The controller's /json/eff, indexed by effect id.
 --- @param fxdata any The controller's /json/fxdata, or nil when it could not be read.
 --- @param matrix boolean Whether the controller has a 2D matrix.
---- @return WledListEntry[]
+--- @return WledListEntry[] effects The effects to offer, in id order.
 function Lists.effectList(names, fxdata, matrix)
   local out = {}
   for i, name in ipairs(type(names) == "table" and names or {}) do
@@ -100,7 +101,7 @@ end
 --- @param names any The controller's /json/pal (built-in palettes only), indexed by id.
 --- @param info table|nil The controller's info, for the custom palette count and usermod names.
 --- @param v16 boolean Whether the controller runs 16.x, which moved custom palette ids.
---- @return WledListEntry[]
+--- @return WledListEntry[] palettes The palettes to offer, built-in first.
 function Lists.paletteList(names, info, v16)
   local out = {}
   for i, name in ipairs(type(names) == "table" and names or {}) do
@@ -127,7 +128,8 @@ end
 
 --- Presets and playlists from /presets.json, by id: an entry with a playlist object is a playlist.
 --- @param file any The controller's /presets.json.
---- @return WledListEntry[] presets, WledListEntry[] playlists
+--- @return WledListEntry[] presets Presets that are not playlists, by id.
+--- @return WledListEntry[] playlists Playlists, by id.
 function Lists.presetLists(file)
   local presets, playlists = {}, {}
   for key, entry in pairs(type(file) == "table" and file or {}) do
@@ -172,8 +174,8 @@ local function same(a, b)
 end
 
 --- Read the lists the change table names from the controller, one request at a time.
---- @param what {effects: boolean|nil, palettes: boolean|nil, presets: boolean|nil}
---- @return Deferred Resolves once every requested list is read or has failed.
+--- @param what {effects: boolean|nil, palettes: boolean|nil, presets: boolean|nil} The lists to read.
+--- @return Deferred done Resolves once every requested list is read or has failed.
 function Lists:refresh(what)
   local gen = self.gen
   local chain = deferred.new():resolve(nil)
@@ -302,7 +304,7 @@ end
 
 --- @param list WledListEntry[]|nil
 --- @return string[]
-local function labelled(list)
+local function labeled(list)
   local out = {}
   for _, e in ipairs(list or {}) do
     out[#out + 1] = string.format("%s (%d)", e.name, e.id)
@@ -310,28 +312,31 @@ local function labelled(list)
   return out
 end
 
---- @return string[]
+--- The effect names, as programming offers them.
+--- @return string[] names Effect names in id order.
 function Lists:effectNames()
   return names(self.effects)
 end
 
---- @param id any
---- @return string|nil
+--- An effect's name by id.
+--- @param id any The effect id, as a number or a string.
+--- @return string|nil name Nil when the list has no such effect.
 function Lists:effectName(id)
   return nameOf(self.effects, id)
 end
 
+--- An effect's id by name, else by id.
 --- @param value any An effect name, or its id.
---- @return integer|nil
+--- @return integer|nil id Nil when the list has no such effect.
 function Lists:effectId(value)
   return idOf(self.effects, value)
 end
 
 --- An entry's id when the list has it, from an id given as a number or a string. Unlike the
 --- lookups by name, a preset named "2" never stands for preset 2.
---- @param list WledListEntry[]|nil
---- @param value any
---- @return integer|nil
+--- @param list WledListEntry[]|nil The list to look in; nil before it is read.
+--- @param value any An id, as a number or a string.
+--- @return integer|nil id Nil when the list has no such id.
 function Lists.byId(list, value)
   local id = tonumber(value)
   if id and nameOf(list, id) then
@@ -341,65 +346,70 @@ function Lists.byId(list, value)
 end
 
 --- An effect's metadata, the string WLED's page reads its controls from.
---- @param id any
---- @return string|nil
+--- @param id any The effect id, as a number or a string.
+--- @return string|nil meta Nil when the metadata was not read or has no entry for the id.
 function Lists:effectMeta(id)
   id = tonumber(id)
   local meta = id and self.fxdata and self.fxdata[id + 1]
   return type(meta) == "string" and meta or nil
 end
 
---- @return string[]
+--- The palette names, as programming offers them.
+--- @return string[] names Palette names, built-in first.
 function Lists:paletteNames()
   return names(self.palettes)
 end
 
---- @param id any
---- @return string|nil
+--- A palette's name by id.
+--- @param id any The palette id, as a number or a string.
+--- @return string|nil name Nil when the list has no such palette.
 function Lists:paletteName(id)
   return nameOf(self.palettes, id)
 end
 
+--- A palette's id by name, else by id.
 --- @param value any A palette name, or its id.
---- @return integer|nil
+--- @return integer|nil id Nil when the list has no such palette.
 function Lists:paletteId(value)
   return idOf(self.palettes, value)
 end
 
 --- Presets as programming offers them, "Name (id)".
---- @return string[]
+--- @return string[] choices One per preset, by id.
 function Lists:presetChoices()
-  return labelled(self.presets)
+  return labeled(self.presets)
 end
 
---- @param id any
---- @return string|nil
+--- A preset's or playlist's name by id.
+--- @param id any The preset id, as a number or a string.
+--- @return string|nil name Nil when neither list has the id.
 function Lists:presetName(id)
   return nameOf(self.presets, id) or nameOf(self.playlists, id)
 end
 
 --- A preset by name, else by the id "Name (id)" carries, so a rename keeps programming working.
---- @param value any
---- @return integer|nil
+--- @param value any A preset name, "Name (id)", or an id.
+--- @return integer|nil id Nil when the list has no such preset.
 function Lists:presetId(value)
   return idOf(self.presets, value)
 end
 
 --- Playlists as programming offers them, "Name (id)".
---- @return string[]
+--- @return string[] choices One per playlist, by id.
 function Lists:playlistChoices()
-  return labelled(self.playlists)
+  return labeled(self.playlists)
 end
 
---- @param id any
---- @return string|nil
+--- A playlist's name by id.
+--- @param id any The playlist id, as a number or a string.
+--- @return string|nil name Nil when the list has no such playlist.
 function Lists:playlistName(id)
   return nameOf(self.playlists, id)
 end
 
 --- A playlist by name, else by the id "Name (id)" carries, so a rename keeps programming working.
---- @param value any
---- @return integer|nil
+--- @param value any A playlist name, "Name (id)", or an id.
+--- @return integer|nil id Nil when the list has no such playlist.
 function Lists:playlistId(value)
   return idOf(self.playlists, value)
 end

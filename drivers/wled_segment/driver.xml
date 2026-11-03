@@ -15,8 +15,8 @@
   <composer_categories>
     <category>Lighting</category>
   </composer_categories>
-  <events/>
   <conditionals/>
+  <events/>
   <config>
     <script file="driver.lua" jit="1"/>
     <documentation file="www/documentation/index.html"/>
@@ -204,6 +204,9 @@
     <color_rate_max>65535</color_rate_max>
     <color_rate_default>0</color_rate_default>
   </capabilities>
+  <proxies>
+    <proxy proxybindingid="5001" primary="True" name="WLED Segment">light_v2</proxy>
+  </proxies>
   <connections>
     <connection>
       <id>300</id>
@@ -281,7 +284,4 @@
       </classes>
     </connection>
   </connections>
-  <proxies>
-    <proxy proxybindingid="5001" primary="True" name="WLED Segment">light_v2</proxy>
-  </proxies>
 </devicedata>

@@ -60,7 +60,7 @@ end
 --- The question for every instance of a service.
 --- @param service string e.g. "_wled._tcp.local".
 --- @param id integer|nil The message id; a one-shot answer repeats it.
---- @return string
+--- @return string query The DNS message to send.
 function Mdns.query(service, id)
   return u16(id or 0)
     .. u16(0)
@@ -75,24 +75,29 @@ end
 
 --- Reads one message's bytes; every read fails on a short message instead of reading past it.
 --- @class MdnsReader
---- @field data string
+--- @field data string The message, as received.
 local Reader = {}
 Reader.__index = Reader
 
---- @param data string
---- @return MdnsReader
-local function reader(data)
-  return setmetatable({ data = data }, Reader)
+--- Creates a reader over one message.
+--- @param data string The message, as received.
+--- @return MdnsReader reader A reader over the message.
+function Reader:new(data)
+  local instance = setmetatable({}, self)
+  instance.data = data
+  return instance
 end
 
---- @param pos integer
---- @return integer|nil
+--- A byte.
+--- @param pos integer The position, from 1.
+--- @return integer|nil value Nil past the end.
 function Reader:u8(pos)
   return self.data:byte(pos)
 end
 
---- @param pos integer
---- @return integer|nil
+--- A big-endian 16-bit value.
+--- @param pos integer The position, from 1.
+--- @return integer|nil value Nil past the end.
 function Reader:u16(pos)
   local hi, lo = self.data:byte(pos, pos + 1)
   if not lo then
@@ -101,8 +106,9 @@ function Reader:u16(pos)
   return hi * 256 + lo
 end
 
---- @param pos integer
---- @return integer|nil
+--- A big-endian 32-bit value.
+--- @param pos integer The position, from 1.
+--- @return integer|nil value Nil past the end.
 function Reader:u32(pos)
   local hi, lo = self:u16(pos), self:u16(pos + 2)
   if not lo then
@@ -111,8 +117,9 @@ function Reader:u32(pos)
   return hi * 65536 + lo
 end
 
---- @param pos integer
---- @return MdnsName|nil name
+--- A name, following compression pointers.
+--- @param pos integer The position, from 1.
+--- @return MdnsName|nil name Nil for a name cut short, too long or malformed.
 --- @return integer|nil after The position after the name where it starts.
 function Reader:name(pos)
   local labels, after, jumps, size = {}, nil, 0, 1
@@ -147,9 +154,10 @@ function Reader:name(pos)
   return { labels = labels, key = table.concat(labels, "."):lower() }, after
 end
 
---- @param pos integer
---- @param len integer
---- @return table<string, string>
+--- A TXT record's key=value strings.
+--- @param pos integer The position of the record's data, from 1.
+--- @param len integer The data's length.
+--- @return table<string, string> txt Values by lowercase key.
 function Reader:txt(pos, len)
   local txt, stop = {}, pos + len
   while pos < stop do
@@ -164,9 +172,10 @@ function Reader:txt(pos, len)
   return txt
 end
 
---- @param pos integer
---- @return MdnsRecord|nil record
---- @return integer|nil after
+--- A resource record.
+--- @param pos integer The position, from 1.
+--- @return MdnsRecord|nil record Nil for a record cut short.
+--- @return integer|nil after The position after the record.
 function Reader:record(pos)
   local name, at = self:name(pos)
   if not name or not at then
@@ -193,10 +202,10 @@ end
 
 --- Every resource record in an answer, from all its sections. A question or a message cut
 --- short gives nothing.
---- @param data string
---- @return MdnsRecord[]
+--- @param data string One message, as received.
+--- @return MdnsRecord[] records The records, in message order.
 function Mdns.records(data)
-  local r = reader(data)
+  local r = Reader:new(data)
   local flags = r:u16(3)
   if not flags or flags < 32768 then
     return {}
@@ -239,9 +248,9 @@ end
 --- The instances of a service in a set of answers. Each sender's records are read together,
 --- so two controllers given the same name are both found: the address from the host's A
 --- record, else the sender's.
---- @param answers { data: string, ip: string }[]
+--- @param answers { data: string, ip: string }[] Each message and the address it came from.
 --- @param service string e.g. "_wled._tcp.local".
---- @return MdnsService[]
+--- @return MdnsService[] services One per instance and sender, in the order heard.
 function Mdns.services(answers, service)
   service = service:lower()
   local suffix = "." .. service

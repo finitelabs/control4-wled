@@ -24,7 +24,7 @@ local function newClient(profile, opts)
   opts.ip = opts.ip or ("192.0.2." .. nextHost)
   local fake = W.Fake.new(profile or "esp32-rgbw-pwm-16", opts)
   local log = { states = {}, online = 0, offline = {} }
-  local client = Client.new({
+  local client = Client:new({
     http = W.http,
     onState = function(state, info)
       log.states[#log.states + 1] = { state = state, info = info, at = W.now() }
@@ -446,7 +446,7 @@ do
     return ws
   end
   W.reset()
-  local client = Client.new({
+  local client = Client:new({
     http = W.http,
     WebSocket = {
       new = function(_, url)
@@ -467,7 +467,7 @@ do
   client:stop()
 
   local tries = 0
-  local broken = Client.new({
+  local broken = Client:new({
     http = W.http,
     WebSocket = {
       new = function()
@@ -494,7 +494,7 @@ do
   diagnostics.captureError = function(_, _message, _traceback, source)
     sources[#sources + 1] = source
   end
-  local client = Client.new({
+  local client = Client:new({
     http = W.http,
     onState = function()
       error("broken handler")

@@ -108,7 +108,7 @@ local gConnected = false
 --- @type string|nil
 local gWrongMac = nil
 
-local device = Device.new()
+local device = Device:new()
 
 --- @type WledClient
 local client
@@ -135,7 +135,7 @@ local function send(json)
   Segment.note(json, device)
 end
 
-local wledLight = LightAdapter.new({
+local wledLight = LightAdapter:new({
   device = device,
   send = send,
   warm = function()
@@ -147,7 +147,7 @@ local wledLight = LightAdapter.new({
 })
 light.attach(wledLight:adapter())
 
-local lists = Lists.new({
+local lists = Lists:new({
   device = device,
   get = function(path)
     return client:get(path)
@@ -171,7 +171,7 @@ local gListsReading = nil
 local SHOWN_KEY = "WledShown"
 
 --- What programming last saw: the main segment's effect and palette, the preset and the
---- playlist. Nil until our controller first reports, which seeds it without events.
+--- playlist. Nil until the driver's controller first reports, which seeds it without events.
 --- @type {fx: integer|nil, pal: integer|nil, ps: integer, pl: integer}|nil
 local gShown = persist:get(SHOWN_KEY)
 
@@ -318,8 +318,8 @@ local function playlistRunning(pl)
 end
 
 --- Show what the controller shows in the variables, then fire the events for what changed. The
---- first report after a load only seeds, so a start or reconnect fires nothing for a state that
---- stayed the same.
+--- first report after an install or a Reset only seeds, so a start or reconnect fires nothing for
+--- a state that stayed the same.
 local function updateProgramming()
   local state = device.state
   if type(state) ~= "table" then
@@ -413,7 +413,7 @@ local gCycleLast = nil
 --- @type integer|nil
 local gCycleSentFrom = nil
 
---- The preset our controller shows, from its last report; nil before the first.
+--- The preset the driver's controller shows, from its last report; nil before the first.
 --- @type integer|nil
 local gPresetShowing = nil
 
@@ -690,7 +690,8 @@ local function registerSegmentLink(key, binding)
       send(Segment.forward(intent, device))
     end
   end
-  OBC[binding.bindingId] = function(idBinding, _strClass, isBound)
+  OBC[binding.bindingId] = function(idBinding, strClass, isBound)
+    log:trace("OBC[%s](%s, %s)", idBinding, strClass, isBound)
     if isBound then
       pushSegment(key, idBinding, true)
     elseif Select(gSegmentRecords, key, "live") == false then
@@ -833,7 +834,7 @@ local FOUND_CONTROLLERS = "Found Controllers"
 --- The idle item of Found Controllers, so the same controller can be picked again.
 local SELECT_OPTION = "(Select)"
 
---- While our controller cannot be reached, how often to look for it at another address.
+--- While the driver's controller cannot be reached, how often to look for it at another address.
 local FOLLOW_MS = 30 * ONE_SECOND
 local FOLLOW_TIMER = "WledFollow"
 
@@ -841,12 +842,12 @@ local FOLLOW_TIMER = "WledFollow"
 --- @type table<string, MdnsService>
 local gFound = {}
 
---- Whether IP Address and Port may follow our controller to a new address. Not after the
---- installer names an address, until our controller answers there.
+--- Whether IP Address and Port may follow the driver's controller to a new address. Not after
+--- the installer names an address, until the driver's controller answers there.
 local gFollow = false
 
---- Whether our controller was lost: it stopped answering, or another answers at its address.
---- Until then, even while a first connection is under way, there is nothing to follow.
+--- Whether the driver's controller was lost: it stopped answering, or another answers at its
+--- address. Until then, even while a first connection is under way, there is nothing to follow.
 local gLost = false
 
 --- Whether the follow timer runs.
@@ -880,8 +881,8 @@ local function showFound(found)
   C4:SetPropertyAttribs(FOUND_CONTROLLERS, #items > 1 and constants.SHOW_PROPERTY or constants.HIDE_PROPERTY)
 end
 
---- Point IP Address and Port at where our controller answered, once it was lost where it
---- was. A host name in IP Address is the installer's, and is kept.
+--- Point IP Address and Port at where the driver's controller answered, once it was lost where
+--- it was. A host name in IP Address is the installer's, and is kept.
 --- @param found MdnsService[]
 local function follow(found)
   local mac = persist:get(MAC_KEY)
@@ -907,7 +908,7 @@ local function follow(found)
   end
 end
 
---- Look for WLED controllers, show them in Found Controllers, and follow ours.
+--- Look for WLED controllers, show them in Found Controllers, and follow the driver's controller.
 --- @return Deferred
 local function search()
   return Discovery.search():next(function(found)
@@ -925,7 +926,7 @@ local function stopFollowing()
   CancelTimer(FOLLOW_TIMER)
 end
 
---- Look for our controller now and every FOLLOW_MS while it cannot be reached.
+--- Look for the driver's controller now and every FOLLOW_MS while it cannot be reached.
 local function startFollowing()
   if gFollowing or not gFollow or IsEmpty(persist:get(MAC_KEY)) then
     return
@@ -951,7 +952,7 @@ local function onState(state, info)
           device:macDisplay() or "unknown"
         )
       )
-      -- Ours may have moved, and this one taken its address.
+      -- The driver's controller may have moved, and this one taken its address.
       gLost = true
       startFollowing()
       return
@@ -1008,7 +1009,7 @@ local function onOffline(reason)
   startFollowing()
 end
 
-client = Client.new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
+client = Client:new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
 
 -- ─── Updates ───────────────────────────────────────────────────────────────
 
@@ -1103,7 +1104,7 @@ function OnDriverLateInit()
   end
   gInitialized = true
   light.lateInit()
-  -- The address saved with the project was our controller's, so it may follow it.
+  -- The address saved with the project is where the driver's controller was, so it may follow it.
   gFollow = true
   connect()
   showFound({})
@@ -1124,23 +1125,27 @@ end
 
 -- ─── Property handlers (OPC dispatch) ──────────────────────────────────────
 
-function OPC.Driver_Status(_v)
+function OPC.Driver_Status(propertyValue)
+  log:trace("OPC.Driver_Status(%s)", propertyValue)
   if not gInitialized then
     UpdateProperty("Driver Status", "Initializing", false)
   end
 end
 
-function OPC.Driver_Version(_v)
+function OPC.Driver_Version(propertyValue)
+  log:trace("OPC.Driver_Version(%s)", propertyValue)
   C4:UpdateProperty("Driver Version", C4:GetDriverConfigInfo("version"))
 end
 
 function OPC.Log_Level(propertyValue)
+  log:trace("OPC.Log_Level(%s)", propertyValue)
   log:setLogLevel(propertyValue)
   local ultra = log:getLogLevel() >= 6 and log:isPrintEnabled()
   DEBUGPRINT, DEBUG_TIMER, DEBUG_RFN, DEBUG_URL, DEBUG_WEBSOCKET = ultra, ultra, ultra, ultra, ultra
 end
 
 function OPC.Log_Mode(propertyValue)
+  log:trace("OPC.Log_Mode(%s)", propertyValue)
   log:setLogMode(propertyValue)
   CancelTimer("LogMode")
   if not log:isEnabled() then
@@ -1151,7 +1156,7 @@ function OPC.Log_Mode(propertyValue)
   end)
 end
 
---- An address the installer names is kept, until our controller answers there.
+--- An address the installer names is kept, until the driver's controller answers there.
 local function addressChanged()
   if gInitialized then
     gFollow = false
@@ -1160,16 +1165,19 @@ local function addressChanged()
   end
 end
 
-function OPC.IP_Address(_v)
+function OPC.IP_Address(propertyValue)
+  log:trace("OPC.IP_Address(%s)", propertyValue)
   addressChanged()
 end
 
-function OPC.Port(_v)
+function OPC.Port(propertyValue)
+  log:trace("OPC.Port(%s)", propertyValue)
   addressChanged()
 end
 
 --- Picking a found controller sets IP Address and Port to its address.
 function OPC.Found_Controllers(propertyValue)
+  log:trace("OPC.Found_Controllers(%s)", propertyValue)
   if not gInitialized or IsEmpty(propertyValue) or propertyValue == SELECT_OPTION then
     return
   end
@@ -1191,21 +1199,25 @@ local function whitePointChanged()
   end
 end
 
-function OPC.Warm_White_K(_v)
+function OPC.Warm_White_K(propertyValue)
+  log:trace("OPC.Warm_White_K(%s)", propertyValue)
   whitePointChanged()
 end
 
-function OPC.Cool_White_K(_v)
+function OPC.Cool_White_K(propertyValue)
+  log:trace("OPC.Cool_White_K(%s)", propertyValue)
   whitePointChanged()
 end
 
-function OPC.Cycle_Presets(_v)
+function OPC.Cycle_Presets(propertyValue)
+  log:trace("OPC.Cycle_Presets(%s)", propertyValue)
   if gInitialized then
     updateCycle()
   end
 end
 
 function OPC.Automatic_Updates(propertyValue)
+  log:trace("OPC.Automatic_Updates(%s)", propertyValue)
   if gInitialized then
     updateSettings:share("Automatic Updates", propertyValue)
   end
@@ -1213,6 +1225,7 @@ end
 
 --#ifndef DRIVERCENTRAL
 function OPC.Update_Channel(propertyValue)
+  log:trace("OPC.Update_Channel(%s)", propertyValue)
   if gInitialized then
     updateSettings:share("Update Channel", propertyValue)
   end
@@ -1221,6 +1234,7 @@ end
 
 --- An update setting changed on another item.
 function EC.SET_UPDATE_SETTING(params)
+  log:trace("EC.SET_UPDATE_SETTING(%s)", params)
   updateSettings:take(params)
 end
 
@@ -1233,11 +1247,13 @@ end
 --- Turns Cloud Monitoring on or off.
 --- @param propertyValue string
 function OPC.Cloud_Monitoring(propertyValue)
+  log:trace("OPC.Cloud_Monitoring(%s)", propertyValue)
   diagnostics:setEnabled(propertyValue == "Enabled")
 end
 
 --- Prints a diagnostics report, and sends it while Cloud Monitoring is on.
 function EC.DiagnosticsSnapshot()
+  log:trace("EC.DiagnosticsSnapshot()")
   diagnostics:dumpSnapshot()
 end
 --#endif
@@ -1296,8 +1312,7 @@ end
 --- @param value any
 --- @return integer|nil
 local function byte(value)
-  local n = tonumber(value)
-  return n and math.max(0, math.min(255, math.floor(n + 0.5))) or nil
+  return InRange(tointeger(value), 0, 255)
 end
 
 --- Set the effect speed on every segment, 0 to 255.
@@ -1460,7 +1475,7 @@ local function setExtra(id, picked)
     sendToSegments({ [id] = on })
     value = on and "true" or "false"
   elseif type(kind) == "table" and tonumber(picked) then
-    value = math.max(kind.min, math.min(kind.max, math.floor(tonumber(picked) + 0.5)))
+    value = InRange(round(tonumber(picked)), kind.min, kind.max)
     sendToSegments({ [id] = value })
   end
   if value == nil then
@@ -1522,6 +1537,7 @@ end
 
 --#ifndef DRIVERCENTRAL
 function EC.Update_Drivers()
+  log:trace("EC.Update_Drivers()")
   log:print("Updating drivers")
   UpdateDrivers(true)
 end
@@ -1546,6 +1562,7 @@ local RESET_PROPERTY_VALUES = {
 
 --- Look for WLED controllers and list them in Found Controllers.
 function EC.Find_Controllers()
+  log:trace("EC.Find_Controllers()")
   search():next(function(found)
     log:print("Found %d WLED controller(s)", #found)
   end)
@@ -1566,7 +1583,7 @@ function EC.Reset_Driver(params)
   values:reset()
   -- As an unbind does: a fresh install has no white of its own remembered.
   light.reset(false)
-  device = Device.new()
+  device = Device:new()
   wledLight.device = device
   lists.device = device
   lists:clear()

@@ -41,10 +41,10 @@ end
 
 --- The presets in the cycle, from the installer's list: ids or names separated by commas, in the
 --- order given, each once; empty for every preset, by id.
---- @param text string|nil
---- @param presets WledListEntry[]
+--- @param text string|nil The Cycle Presets property.
+--- @param presets WledListEntry[] The controller's presets.
 --- @param remembered table<string, integer>|nil The id each name last stood for, from `named`.
---- @return WledListEntry[] cycle
+--- @return WledListEntry[] cycle The presets to step through, in order.
 --- @return string[] unknown Entries the controller has no preset for.
 --- @return table<string, integer> named The id each name in the list stands for now.
 function Cycle.parse(text, presets, remembered)
@@ -79,11 +79,11 @@ end
 --- The preset a step lands on: the one after (or before) the preset showing when it is in the
 --- cycle, else after (or before) the one the cycle last applied, else the first (or last). The
 --- cycle wraps at both ends.
---- @param cycle WledListEntry[]
+--- @param cycle WledListEntry[] The presets to step through, from Cycle.parse.
 --- @param showing integer|nil The preset the controller shows.
 --- @param last integer|nil The preset the cycle last applied.
 --- @param dir integer 1 for next, -1 for previous.
---- @return integer|nil id Nil for an empty cycle.
+--- @return integer|nil id The preset to apply; nil for an empty cycle.
 function Cycle.step(cycle, showing, last, dir)
   local n = #cycle
   if n == 0 then

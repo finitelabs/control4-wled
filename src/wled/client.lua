@@ -69,10 +69,34 @@ local function guarded(fn, source)
 end
 
 --- @class WledClient
---- @field host string|nil
---- @field port integer|nil
+--- @field host string|nil The controller's address. Nil until started.
+--- @field port integer|nil The controller's web port.
 --- @field arch string|nil Chip the controller reported, for the frame limit.
 --- @field mode "ws"|"http"|"offline"|"starting" How the controller is reached now; "starting" until the first answer or failure after a (re)start.
+--- @field onState fun(state: table|nil, info: table|nil) Told every state the controller reports.
+--- @field onOnline fun() Told when the controller can be reached again.
+--- @field onOffline fun(reason: string) Told when it cannot.
+--- @field http table The HTTP object requests go through.
+--- @field WebSocket table The WebSocket class sockets are made from.
+--- @field gen integer Bumped at every start and stop; callbacks from an older one do nothing.
+--- @field queue table[] HTTP requests waiting for the one in flight.
+--- @field inFlight table|nil The HTTP request under way.
+--- @field ws table|nil The open socket.
+--- @field socketUp boolean Whether the socket finished its upgrade and is in use.
+--- @field socketGen integer|nil Bumped at every socket change, so a ping loop ends with its socket.
+--- @field backoff integer|nil The wait before the next socket try, in ms.
+--- @field missedPings integer|nil Pings sent since the last pong.
+--- @field downReason string|nil Why the socket last went down, for the offline report.
+--- @field polling boolean|nil Whether the HTTP poll loop runs.
+--- @field pollToken integer|nil The poll loop allowed to run; an older one stops.
+--- @field closing Deferred Resolves once the last socket closed.
+--- @field closingUrl string|nil The URL of a socket still closing.
+--- @field timerPrefix string This client's timer names start with it, so stop() cancels its own.
+--- @field timers table<string, boolean> The client's timers still pending, by name.
+--- @field timerCount integer Timers set so far, for unique names.
+--- @field writes integer Writes sent so far; an HTTP answer asked for before the latest is stale.
+--- @field recent table[] WebSocket commands sent within the busy window, oldest first.
+--- @field replaying boolean|nil Whether a busy resend waits to go out.
 local Client = {}
 Client.__index = Client
 
@@ -83,28 +107,27 @@ Client.__index = Client
 --- @field http table|nil An object with get(url, headers, options) and post(url, data, headers, options); lib.http by default.
 --- @field WebSocket table|nil The WebSocket class; the vendored module by default.
 
+--- Creates the transport to one controller; start() connects it.
 --- @param opts WledClientOptions|nil
---- @return WledClient
-function Client.new(opts)
+--- @return WledClient client A client not yet connected.
+function Client:new(opts)
   opts = opts or {}
-  local self = setmetatable({}, Client)
-  self.onState = opts.onState or function() end
-  self.onOnline = opts.onOnline or function() end
-  self.onOffline = opts.onOffline or function() end
-  self.http = opts.http or require("lib.http")
-  self.WebSocket = opts.WebSocket or require("drivers-common-public.module.websocket")
-  self.gen = 0
-  self.mode = "offline"
-  self.queue = {}
+  local instance = setmetatable({}, self)
+  instance.onState = opts.onState or function() end
+  instance.onOnline = opts.onOnline or function() end
+  instance.onOffline = opts.onOffline or function() end
+  instance.http = opts.http or require("lib.http")
+  instance.WebSocket = opts.WebSocket or require("drivers-common-public.module.websocket")
+  instance.gen = 0
+  instance.mode = "offline"
+  instance.queue = {}
   gClients = gClients + 1
-  self.timerPrefix = "WledClient" .. gClients .. "_"
-  self.timers, self.timerCount = {}, 0
-  -- Writes sent so far: an HTTP answer asked for before the latest write is stale.
-  self.writes = 0
-  -- WebSocket commands sent within the busy window, oldest first.
-  self.recent = {}
-  self.closing = deferred.new():resolve(nil)
-  return self
+  instance.timerPrefix = "WledClient" .. gClients .. "_"
+  instance.timers, instance.timerCount = {}, 0
+  instance.writes = 0
+  instance.recent = {}
+  instance.closing = deferred.new():resolve(nil)
+  return instance
 end
 
 local function now()
@@ -131,9 +154,9 @@ end
 
 --- Run fn after ms unless the client was stopped or restarted meanwhile. The timer is the
 --- client's own, so stop() cancels it.
---- @param gen integer
---- @param ms integer
---- @param fn fun()
+--- @param gen integer The start the timer belongs to.
+--- @param ms integer The wait.
+--- @param fn fun() What to run.
 function Client:after(gen, ms, fn)
   self.timerCount = self.timerCount + 1
   local id = self.timerPrefix .. self.timerCount
@@ -165,8 +188,8 @@ function Client:setMode(mode, reason)
 end
 
 --- Connect to a controller, closing any connection already open.
---- @param host string
---- @param port integer|nil
+--- @param host string The controller's address.
+--- @param port integer|nil Its web port, 80 when nil.
 function Client:start(host, port)
   self:stop()
   self.host, self.port = host, tonumber(port) or 80
@@ -187,7 +210,7 @@ function Client:start(host, port)
 end
 
 --- Close the socket; resolves once the module has released it.
---- @return Deferred
+--- @return Deferred closed Resolves once the module has released the socket.
 function Client:closeSocket()
   local d = deferred.new()
   local ws = self.ws
@@ -213,7 +236,8 @@ function Client:closeSocket()
   return d
 end
 
---- @return string
+--- The WebSocket URL of the controller.
+--- @return string url ws://host:port/ws
 function Client:socketUrl()
   return string.format("ws://%s:%d/ws", tostring(self.host), self.port or 80)
 end
@@ -244,7 +268,8 @@ end
 
 -- ─── WebSocket ─────────────────────────────────────────────────────────────
 
---- @param gen integer
+--- Open the live socket, with a timeout for an upgrade that never comes.
+--- @param gen integer The start it belongs to.
 function Client:openSocket(gen)
   local url = self:socketUrl()
   local made, ws, err = pcall(self.WebSocket.new, self.WebSocket, url)
@@ -295,8 +320,9 @@ function Client:openSocket(gen)
   end
 end
 
---- @param gen integer
---- @param socketGen integer
+--- Send WLED's text ping every PING_MS while the socket stays up; two unanswered close it.
+--- @param gen integer The start it belongs to.
+--- @param socketGen integer The socket it belongs to.
 function Client:pingLoop(gen, socketGen)
   self:after(gen, PING_MS, function()
     if not self.socketUp or self.socketGen ~= socketGen then
@@ -313,8 +339,8 @@ function Client:pingLoop(gen, socketGen)
 end
 
 --- The socket closed or stopped answering: reconnect after a wait, and use HTTP meanwhile.
---- @param gen integer
---- @param reason string
+--- @param gen integer The start it belongs to.
+--- @param reason string Why, for the offline report.
 function Client:socketDown(gen, reason)
   local wasUp = self.socketUp
   self.socketUp = false
@@ -336,7 +362,8 @@ function Client:socketDown(gen, reason)
   end
 end
 
---- @param data string
+--- A text frame from the controller: a pong, an error, or its state and info.
+--- @param data string The frame's text.
 function Client:onMessage(data)
   if data == "pong" then
     self.missedPings = 0
@@ -359,7 +386,7 @@ function Client:onMessage(data)
 end
 
 --- The WebSocket commands sent within the busy window, oldest first.
---- @return table[]
+--- @return table[] frames The commands still within the window, oldest first.
 function Client:recentFrames()
   local kept = {}
   for _, frame in ipairs(self.recent) do
@@ -374,7 +401,7 @@ end
 --- A WebSocket command came back busy (3) or too big for a frame (9). The answer does not say
 --- which command, so a busy answer sends every recent one again, in order: each carries whole
 --- values, so a second copy changes nothing. A frame too big goes over HTTP.
---- @param code any
+--- @param code any The error number WLED sent.
 function Client:onSocketError(code)
   local frames = self:recentFrames()
   if #frames == 0 then
@@ -424,7 +451,8 @@ function Client:onSocketError(code)
   end)
 end
 
---- @param frame table
+--- Send a command over the socket, kept for a busy resend.
+--- @param frame table {body = the JSON text, cmd = the command, tries = resends so far}
 --- @return boolean sent Whether the socket took the frame.
 function Client:sendFrame(frame)
   if self.socketUp and self.ws then
@@ -454,7 +482,7 @@ end
 -- ─── HTTP ──────────────────────────────────────────────────────────────────
 
 --- Start polling now, replacing any poll loop already waiting.
---- @param gen integer
+--- @param gen integer The start it belongs to.
 function Client:startPolling(gen)
   self.pollToken = (self.pollToken or 0) + 1
   self:poll(gen, self.pollToken)
@@ -462,8 +490,8 @@ end
 
 --- Poll /json/si while the socket is down; it keeps the state current and tells whether the
 --- controller can be reached at all.
---- @param gen integer
---- @param token integer|nil
+--- @param gen integer The start it belongs to.
+--- @param token integer|nil The poll loop it belongs to; the current one when nil.
 function Client:poll(gen, token)
   token = token or self.pollToken
   if self.socketUp or self.gen ~= gen or token ~= self.pollToken then
@@ -512,9 +540,9 @@ end
 
 --- Queue an HTTP request; one is in flight at a time.
 --- @param method "GET"|"POST"
---- @param path string
---- @param body table|nil
---- @return Deferred
+--- @param path string The path on the controller, e.g. /json/si.
+--- @param body table|nil The JSON body of a POST.
+--- @return Deferred answer Resolves with the decoded answer, or rejects.
 function Client:enqueue(method, path, body)
   local d = deferred.new()
   if not self.host then
@@ -525,6 +553,7 @@ function Client:enqueue(method, path, body)
   return d
 end
 
+--- Send the next queued HTTP request when none is in flight.
 function Client:pump()
   if self.inFlight or #self.queue == 0 then
     return
@@ -534,7 +563,8 @@ function Client:pump()
   self:request(job)
 end
 
---- @param job table
+--- Send one HTTP request and settle its job; a busy answer is retried in the slot.
+--- @param job table {method, path, body, d = its deferred, tries}
 function Client:request(job)
   local gen = self.gen
   local url = string.format("http://%s:%d%s", self.host, self.port, job.path)
@@ -576,7 +606,7 @@ function Client:request(job)
 end
 
 --- Keep the slot while waiting, so queued requests do not reach a busy controller first.
---- @param job table
+--- @param job table The request answered busy.
 function Client:retryBusy(job)
   if job.tries >= BUSY_RETRIES then
     self.inFlight = nil
@@ -596,8 +626,8 @@ end
 --- Send a state command: over the socket when it is open and the command fits one frame,
 --- otherwise POST /json/state. Resolves once sent (socket) or answered (HTTP); the new state
 --- arrives through onState.
---- @param cmd table
---- @return Deferred
+--- @param cmd table The state command, e.g. { on = true, bri = 128 }.
+--- @return Deferred sent Resolves once sent or answered.
 function Client:send(cmd)
   self.writes = self.writes + 1
   local body = JSON:encode(cmd)
@@ -609,8 +639,8 @@ function Client:send(cmd)
 end
 
 --- GET a path from the controller (for example /json/eff or /presets.json).
---- @param path string
---- @return Deferred
+--- @param path string The path on the controller.
+--- @return Deferred answer Resolves with the decoded answer, or rejects.
 function Client:get(path)
   return self:enqueue("GET", path)
 end

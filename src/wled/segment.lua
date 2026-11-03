@@ -110,8 +110,8 @@ function Segment.match(records, segments)
 end
 
 --- The name a segment's connection shows: its WLED name, else its id.
---- @param seg WledSegment
---- @return string
+--- @param seg WledSegment The segment.
+--- @return string name The connection's name.
 function Segment.name(seg)
   return seg.name or ("Segment " .. seg.id)
 end
@@ -169,7 +169,7 @@ end
 --- master does when it sends it on (Segment.forward).
 --- @param json table The adapter's JSON.
 --- @param id integer The segment's WLED id.
---- @return table intent
+--- @return table intent The command for the segment alone, with the fade time.
 function Segment.intent(json, id)
   local own = {}
   if type(json.seg) == "table" then
@@ -196,7 +196,7 @@ end
 --- light's On brings it back.
 --- @param intent table From Segment.intent.
 --- @param device WledDevice The WLED driver's model, as Segment.note keeps it.
---- @return table json
+--- @return table json The JSON state command to send.
 function Segment.forward(intent, device)
   local own = {}
   for key, value in pairs(type(intent.seg) == "table" and intent.seg[1] or {}) do
@@ -231,8 +231,8 @@ end
 --- Take a command the WLED driver sent into its model of the controller at once: the master's
 --- power and each segment's, so the next command before the controller reports sees them. The
 --- controller's next report replaces them.
---- @param json table
---- @param device WledDevice
+--- @param json table The JSON state command sent.
+--- @param device WledDevice The WLED driver's model, changed in place.
 function Segment.note(json, device)
   if type(json.on) == "boolean" then
     device.on = json.on

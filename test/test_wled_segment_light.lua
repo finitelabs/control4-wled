@@ -156,7 +156,7 @@ local function fresh(profile, id, setup, unbound)
     setup(fake)
   end
   segmentId = id
-  model = Device.new()
+  model = Device:new()
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end

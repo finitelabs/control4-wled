@@ -16,6 +16,26 @@
   <composer_categories>
     <category>Lighting</category>
   </composer_categories>
+  <conditionals>
+    <conditional>
+      <id>1</id>
+      <name>CONTROLLER_CONNECTED</name>
+      <type>BOOL</type>
+      <condition_statement>WLED controller connection status</condition_statement>
+      <description>NAME is STRING</description>
+      <true_text>Connected</true_text>
+      <false_text>Disconnected</false_text>
+    </conditional>
+    <conditional>
+      <id>2</id>
+      <name>PLAYLIST_RUNNING</name>
+      <type>BOOL</type>
+      <condition_statement>WLED playlist status</condition_statement>
+      <description>NAME playlist is STRING</description>
+      <true_text>Running</true_text>
+      <false_text>Not Running</false_text>
+    </conditional>
+  </conditionals>
   <events>
     <event>
       <id>1</id>
@@ -48,26 +68,6 @@
       <description>When NAME's WLED playlist stops or ends</description>
     </event>
   </events>
-  <conditionals>
-    <conditional>
-      <id>1</id>
-      <name>CONTROLLER_CONNECTED</name>
-      <type>BOOL</type>
-      <condition_statement>WLED controller connection status</condition_statement>
-      <description>NAME is STRING</description>
-      <true_text>Connected</true_text>
-      <false_text>Disconnected</false_text>
-    </conditional>
-    <conditional>
-      <id>2</id>
-      <name>PLAYLIST_RUNNING</name>
-      <type>BOOL</type>
-      <condition_statement>WLED playlist status</condition_statement>
-      <description>NAME playlist is STRING</description>
-      <true_text>Running</true_text>
-      <false_text>Not Running</false_text>
-    </conditional>
-  </conditionals>
   <config>
     <script file="driver.lua" jit="1"/>
     <documentation file="www/documentation/index.html"/>

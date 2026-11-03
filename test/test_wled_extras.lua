@@ -504,6 +504,8 @@ end
 T.section("The light offers Extras, and Reset Driver empties them")
 --------------------------------------------------------------------------------
 do
+  -- Every WLED controller has effects, so Extras are a fixed capability: a static False would make
+  -- every controller start tell a dimmer's capabilities again, firing the proxy's color events.
   T.contains("driver.xml seeds it", readXml(), "<has_extras>True</has_extras>")
   fresh("esp32-rgbw-pwm-16")
   W.run(500)

@@ -74,7 +74,7 @@ end
 --- @param id integer The effect id.
 --- @param meta any The effect's /json/fxdata entry; nil when it was not read.
 --- @param rgb boolean Whether the strip has color LEDs, which a palette needs.
---- @return table<string, string> The name of each control shown, by id ("sx" to "c3", "o1" to "o3", "pal").
+--- @return table<string, string> controls The name of each control shown, by id ("sx" to "c3", "o1" to "o3", "pal").
 function Extras.controls(id, meta, rgb)
   if id == 0 then
     -- WLED's page gives Solid its colors and nothing else.
@@ -159,7 +159,7 @@ end
 --- @param seg table|nil The main segment of the controller's state.
 --- @param ps integer The preset showing, -1 for none.
 --- @param pl integer The running playlist, -1 for none.
---- @return table<string, string>
+--- @return table<string, string> values Each control's value, by id.
 function Extras.values(seg, ps, pl)
   seg = type(seg) == "table" and seg or {}
   local v = {
@@ -179,8 +179,8 @@ end
 
 --- The setup the proxy keeps: effects with their controls, then presets and playlists when the
 --- controller has any. A control the effect does not use is sent hidden, so a state can show it.
---- @param view WledExtrasView
---- @return string
+--- @param view WledExtrasView The lists, controls and values to show.
+--- @return string xml The extras_setup document.
 function Extras.setup(view)
   local c, v = view.controls, view.values
   local out = { "<extras_setup><extra>", '<section label="Effect">' }
@@ -225,9 +225,9 @@ function Extras.setup(view)
 end
 
 --- What the setup's shape depends on, apart from values: a change in it needs a new setup.
---- @param view WledExtrasView
+--- @param view WledExtrasView The lists, controls and values to show.
 --- @param listsVersion integer Bumped each time a list is read.
---- @return string
+--- @return string shape Equal for two views that need the same setup.
 function Extras.shape(view, listsVersion)
   local parts = { tostring(listsVersion) }
   for _, id in ipairs(HIDEABLE_IDS) do
@@ -239,10 +239,10 @@ end
 --- A state with the values that differ from those last sent, or nil when none do. Given the
 --- controls, it also shows or hides every control an effect can hide, the way a state is known
 --- to change an open menu.
---- @param values table<string, string>
---- @param sent table<string, string>
+--- @param values table<string, string> Each control's value now, from Extras.values.
+--- @param sent table<string, string> The values last sent.
 --- @param controls table<string, string>|nil From Extras.controls.
---- @return string|nil
+--- @return string|nil xml The extras_state document, or nil when there is nothing to send.
 function Extras.state(values, sent, controls)
   local out = {}
   local ids = {}
