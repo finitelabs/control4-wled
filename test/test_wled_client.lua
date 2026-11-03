@@ -271,6 +271,246 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A busy answer sends every recent command again, in order")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local bri = fake.si.state.bri
+  fake.wsBusy = 1
+  client:send({ bri = 40 })
+  client:send({ on = true })
+  W.run(20)
+  T.eq("the first refused, the second taken", { #fake.commands, fake.si.state.bri }, { 1, bri })
+  W.run(Client.BUSY_FIRST_MS + 20)
+  T.eq("the refused one sent again and taken", fake.si.state.bri, 40)
+  T.eq("then the one after it, so the latest still stands", fake.commands[#fake.commands], { on = true })
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A command sent while a busy resend waits is kept, and still comes last")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 1
+  client:send({ bri = 40 })
+  W.run(50)
+  client:send({ bri = 80 })
+  W.run(Client.BUSY_FIRST_MS + 100)
+  T.eq("one taken during the wait stays the latest", fake.si.state.bri, 80)
+  client:stop()
+
+  client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 1
+  client:send({ bri = 40 })
+  W.run(50)
+  fake.wsBusy = 1
+  client:send({ bri = 80 })
+  W.run(Client.BUSY_FIRST_MS + 100)
+  T.eq("one refused during the wait is sent again too, last", fake.si.state.bri, 80)
+  client:stop()
+
+  -- The last busy wait (4 s) is longer than the window: a command refused early in it is still sent.
+  client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 5
+  client:send({ bri = 40 })
+  W.run(3900)
+  fake.wsBusy = 1
+  client:send({ nl = { on = true } })
+  W.run(2400)
+  client:send({ bri = 90 })
+  W.run(3000)
+  local wire = {}
+  for _, payload in ipairs(fake.wire) do
+    wire[#wire + 1] = payload:match('"nl"') and "nl" or payload:match('"bri":(%d+)')
+  end
+  T.eq(
+    "all three on the wire, in order, at the end",
+    { wire[#wire - 2], wire[#wire - 1], wire[#wire] },
+    { "40", "nl", "90" }
+  )
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("Commands dropped by a busy controller: its state is asked for")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local bri = fake.si.state.bri
+  local before = #log.states
+  fake.wsBusy = 100
+  client:send({ bri = 40 })
+  W.run(20000)
+  T.eq("never taken", fake.si.state.bri, bri)
+  T.eq(
+    "the state asked for",
+    count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end),
+    1
+  )
+  T.eq("and reported as the controller shows it", log.states[#log.states].state.bri, bri)
+  T.eq("once", #log.states, before + 1)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A poll answer asked for before a write is not reported")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  fake.socketOpen = false
+  client:start(fake.ip, fake.port)
+  W.run(Client.OPEN_GRACE_MS + 100)
+  T.eq("over HTTP", client.mode, "http")
+  local before = #log.states
+  -- A poll goes out, then a write queues behind it.
+  client:startPolling(client.gen)
+  client:send({ bri = 40 })
+  W.run(100)
+  local told = {}
+  for i = before + 1, #log.states do
+    told[#told + 1] = log.states[i].state.bri
+  end
+  T.eq("only the state after the write is reported", told, { 40 })
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A socket that never finishes its upgrade is tried again")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  fake.noUpgrade = true
+  client:start(fake.ip, fake.port)
+  W.run(Client.CONNECT_TIMEOUT_MS - 100)
+  T.eq("one try while it waits", fake.connects, 1)
+  W.run(Client.RECONNECT_MAX_MS)
+  T.eq("then tried again", fake.connects > 1, true)
+  fake.noUpgrade = false
+  W.run(Client.RECONNECT_MAX_MS + Client.CONNECT_TIMEOUT_MS)
+  T.eq("and on the socket once it answers", client.mode, "ws")
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("Stop cancels every timer the client set")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local function mine()
+    local n = 0
+    for name in pairs(Timer) do
+      if tostring(name):match("^WledClient") then
+        n = n + 1
+      end
+    end
+    return n
+  end
+  T.eq("its timers are named as its own", mine() > 0, true)
+  client:stop()
+  T.eq("none left after stop", mine(), 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("A socket that cannot be made or closed does not stop the client")
+--------------------------------------------------------------------------------
+do
+  local function socket(url)
+    local ws = { url = url }
+    for _, name in ipairs({
+      "SetEstablishedFunction",
+      "SetProcessMessageFunction",
+      "SetClosedByRemoteFunction",
+      "SetOfflineFunction",
+      "Start",
+    }) do
+      ws[name] = function() end
+    end
+    function ws:delete()
+      error("socket gone")
+    end
+    return ws
+  end
+  W.reset()
+  local client = Client.new({
+    http = W.http,
+    WebSocket = {
+      new = function(_, url)
+        return socket(url)
+      end,
+    },
+  })
+  client:start("192.0.2.200", 80)
+  W.run(10)
+  local closed
+  local ok = pcall(function()
+    client:closeSocket():next(function()
+      closed = true
+    end)
+  end)
+  T.truthy("a close that throws does not raise", ok)
+  T.truthy("and still finishes", closed)
+  client:stop()
+
+  local tries = 0
+  local broken = Client.new({
+    http = W.http,
+    WebSocket = {
+      new = function()
+        tries = tries + 1
+        error("no sockets")
+      end,
+    },
+  })
+  T.truthy("a socket that cannot be made does not raise", pcall(broken.start, broken, "192.0.2.201", 80))
+  W.run(Client.RECONNECT_MAX_MS)
+  T.eq("and is tried again later", tries > 1, true)
+  broken:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("An error in a pushed state reaches Cloud Monitoring")
+--------------------------------------------------------------------------------
+do
+  W.reset()
+  local fake = W.Fake.new("esp32-rgbw-pwm-16", { ip = "192.0.2.202" })
+  local diagnostics = require("lib.diagnostics")
+  local capture = diagnostics.captureError
+  local sources = {}
+  diagnostics.captureError = function(_, _message, _traceback, source)
+    sources[#sources + 1] = source
+  end
+  local client = Client.new({
+    http = W.http,
+    onState = function()
+      error("broken handler")
+    end,
+  })
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  T.eq("reported with its source", sources[1], "WLED.WsMessage")
+  client:refresh()
+  W.run(100)
+  diagnostics.captureError = capture
+  T.eq("and one in a state it asked for", sources[#sources], "WLED.Refresh")
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
 T.section("A 1013 close reconnects after a wait, without going offline")
 --------------------------------------------------------------------------------
 do
@@ -362,7 +602,7 @@ do
   T.eq("queued requests rejected", rejected, 3)
   T.eq("no offline after stop", #log.offline, 0)
   T.eq("waiting for a start", client.mode, "starting")
-  T.eq("not online", client:isOnline(), false)
+  T.eq("not online", client.mode ~= "ws" and client.mode ~= "http", true)
   T.eq("no reconnect", fake.connects, 1)
 end
 

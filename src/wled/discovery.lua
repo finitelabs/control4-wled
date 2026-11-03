@@ -7,6 +7,9 @@
 local deferred = require("deferred")
 
 local log = require("lib.logging")
+--#ifdef DRIVERCENTRAL
+local diagnostics = require("lib.diagnostics")
+--#endif
 local Mdns = require("wled.mdns")
 
 require("lib.utils")
@@ -91,10 +94,14 @@ function Discovery.search()
       return
     end
     close(search)
-    local read, found = pcall(function()
+    local ok, found = pcall(function()
       return sorted(Mdns.services(answers, SERVICE))
     end)
-    if not read then
+    if not ok then
+      -- The reader never raises on what it reads, so this is a driver bug.
+      --#ifdef DRIVERCENTRAL
+      diagnostics:captureError(tostring(found), nil, "WLED.Discovery")
+      --#endif
       done:reject(tostring(found))
       return
     end

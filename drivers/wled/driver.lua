@@ -126,6 +126,10 @@ local function send(json)
   end
   client:send(json):next(nil, function(err)
     log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
+    -- The light shows what was asked; the controller's state puts it right.
+    if Select(err, "error") ~= "stopped" then
+      client:refresh()
+    end
   end)
   -- The next command before the controller reports, from this light or a segment light, sees it.
   Segment.note(json, device)

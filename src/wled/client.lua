@@ -15,35 +15,58 @@ local deferred = require("deferred")
 local JSON = require("JSON")
 
 local log = require("lib.logging")
+--#ifdef DRIVERCENTRAL
+local diagnostics = require("lib.diagnostics")
+--#endif
 
 require("lib.utils")
 require("drivers-common-public.global.handlers")
 require("drivers-common-public.global.timer")
 
 --- Text ping cadence and how many unanswered pings close the socket.
-local PING_MS = 30000
+local PING_MS = 30 * ONE_SECOND
 local PINGS_MISSED_LIMIT = 2
 
 --- Reconnect waits: doubled after each failure, capped, reset once the socket opens.
-local RECONNECT_FIRST_MS = 1000
-local RECONNECT_MAX_MS = 30000
+local RECONNECT_FIRST_MS = ONE_SECOND
+local RECONNECT_MAX_MS = 30 * ONE_SECOND
 
 --- How long a new socket has to open before the first HTTP poll, and the poll cadence after.
-local OPEN_GRACE_MS = 5000
-local POLL_MS = 10000
+local OPEN_GRACE_MS = 5 * ONE_SECOND
+local POLL_MS = 10 * ONE_SECOND
+
+--- A socket that connects but never finishes its upgrade is given up after this long.
+local CONNECT_TIMEOUT_MS = 10 * ONE_SECOND
 
 --- A busy controller is retried this many times, waiting 250 ms, 500 ms, 1 s and so on.
 local BUSY_RETRIES = 5
-local BUSY_FIRST_MS = 250
+local BUSY_FIRST_MS = ONE_SECOND / 4
 
---- A busy answer this soon after a WebSocket command is taken as that command's.
-local WS_BUSY_WINDOW_MS = 2000
+--- A busy answer this soon after WebSocket commands is taken as theirs.
+local WS_BUSY_WINDOW_MS = 2 * ONE_SECOND
 
 --- Largest command the controller takes in one WebSocket frame (ws.cpp); bigger ones go over HTTP.
 local FRAME_LIMIT = { esp8266 = 528 }
 local FRAME_LIMIT_DEFAULT = 1428
 
+--- An HTTP request is given up after this long. One request is in flight at a time, so a
+--- controller that has gone away holds the queue this long before the next request runs.
 local HTTP_TIMEOUT_S = 10
+
+--- Each client's timers are named apart, so stop() cancels its own.
+local gClients = 0
+
+--- A callback the WebSocket module runs in its own pcall, which only prints an error: Cloud
+--- Monitoring hears of it this way.
+--- @param fn function
+--- @param source string
+--- @return function
+local function guarded(fn, source)
+  --#ifdef DRIVERCENTRAL
+  fn = diagnostics:wrap(fn, source)
+  --#endif
+  return fn
+end
 
 --- @class WledClient
 --- @field host string|nil
@@ -73,6 +96,13 @@ function Client.new(opts)
   self.gen = 0
   self.mode = "offline"
   self.queue = {}
+  gClients = gClients + 1
+  self.timerPrefix = "WledClient" .. gClients .. "_"
+  self.timers, self.timerCount = {}, 0
+  -- Writes sent so far: an HTTP answer asked for before the latest write is stale.
+  self.writes = 0
+  -- WebSocket commands sent within the busy window, oldest first.
+  self.recent = {}
   self.closing = deferred.new():resolve(nil)
   return self
 end
@@ -99,12 +129,17 @@ local function isBusy(body)
   return type(body) == "table" and body.error == 3
 end
 
---- Run fn after ms unless the client was stopped or restarted meanwhile.
+--- Run fn after ms unless the client was stopped or restarted meanwhile. The timer is the
+--- client's own, so stop() cancels it.
 --- @param gen integer
 --- @param ms integer
 --- @param fn fun()
 function Client:after(gen, ms, fn)
-  delay(ms):next(function()
+  self.timerCount = self.timerCount + 1
+  local id = self.timerPrefix .. self.timerCount
+  self.timers[id] = true
+  SetTimer(id, ms, function()
+    self.timers[id] = nil
     if self.gen == gen then
       fn()
     end
@@ -127,12 +162,6 @@ function Client:setMode(mode, reason)
   elseif was ~= "offline" and mode == "offline" then
     self.onOffline(reason or "Not connected")
   end
-end
-
---- Whether the controller can be reached, over the socket or HTTP.
---- @return boolean
-function Client:isOnline()
-  return reachable(self.mode)
 end
 
 --- Connect to a controller, closing any connection already open.
@@ -168,12 +197,19 @@ function Client:closeSocket()
     return self.closing
   end
   self.closing, self.closingUrl = d, ws.url
-  ws:delete(function()
+  local ok, err = pcall(ws.delete, ws, function()
     if self.closing == d then
       self.closingUrl = nil
     end
     d:resolve(nil)
   end)
+  if not ok then
+    log:warn("WLED WebSocket not closed cleanly: %s", tostring(err))
+    if self.closing == d then
+      self.closingUrl = nil
+    end
+    d:resolve(nil)
+  end
   return d
 end
 
@@ -186,6 +222,11 @@ end
 --- start, the first answer or failure is reported.
 function Client:stop()
   self.gen = self.gen + 1
+  for id in pairs(self.timers) do
+    CancelTimer(id)
+  end
+  self.timers = {}
+  self.recent, self.replaying = {}, false
   self.socketUp = false
   self.pollToken = (self.pollToken or 0) + 1
   self:closeSocket()
@@ -206,16 +247,22 @@ end
 --- @param gen integer
 function Client:openSocket(gen)
   local url = self:socketUrl()
-  local ws, err = self.WebSocket:new(url)
-  if not ws then
-    log:error("WLED WebSocket %s: %s", url, tostring(err))
+  local made, ws, err = pcall(self.WebSocket.new, self.WebSocket, url)
+  if not made or not ws then
+    self:socketDown(gen, "No connection to the controller: " .. tostring(made and err or ws))
     return
   end
   self.ws = ws
   -- The module's own control-frame ping is replaced by WLED's text ping below.
   ws.ping_interval = 24 * 3600
+  -- A controller that takes the connection but never finishes the upgrade is tried again.
+  self:after(gen, CONNECT_TIMEOUT_MS, function()
+    if self.ws == ws and not self.socketUp then
+      self:socketDown(gen, "No answer from the controller")
+    end
+  end)
 
-  ws:SetEstablishedFunction(function(socket)
+  ws:SetEstablishedFunction(guarded(function(socket)
     if self.gen ~= gen or self.ws ~= socket then
       return
     end
@@ -226,23 +273,26 @@ function Client:openSocket(gen)
     self.socketGen = (self.socketGen or 0) + 1
     self:pingLoop(gen, self.socketGen)
     self:setMode("ws")
-  end)
-  ws:SetProcessMessageFunction(function(socket, data)
+  end, "WLED.WsEstablished"))
+  ws:SetProcessMessageFunction(guarded(function(socket, data)
     if self.gen == gen and self.ws == socket then
       self:onMessage(data)
     end
-  end)
-  ws:SetClosedByRemoteFunction(function(socket)
+  end, "WLED.WsMessage"))
+  ws:SetClosedByRemoteFunction(guarded(function(socket)
     if self.gen == gen and self.ws == socket then
       self:socketDown(gen, "The controller closed the connection")
     end
-  end)
-  ws:SetOfflineFunction(function(socket)
+  end, "WLED.WsClosedByRemote"))
+  ws:SetOfflineFunction(guarded(function(socket)
     if self.gen == gen and self.ws == socket then
       self:socketDown(gen, "No connection to the controller")
     end
-  end)
-  ws:Start()
+  end, "WLED.WsOffline"))
+  local started, startErr = pcall(ws.Start, ws)
+  if not started then
+    self:socketDown(gen, "No connection to the controller: " .. tostring(startErr))
+  end
 end
 
 --- @param gen integer
@@ -308,44 +358,97 @@ function Client:onMessage(data)
   end
 end
 
---- A WebSocket command came back busy (3) or too big for a frame (9): retry, over HTTP for 9.
+--- The WebSocket commands sent within the busy window, oldest first.
+--- @return table[]
+function Client:recentFrames()
+  local kept = {}
+  for _, frame in ipairs(self.recent) do
+    if now() - frame.at <= WS_BUSY_WINDOW_MS then
+      kept[#kept + 1] = frame
+    end
+  end
+  self.recent = kept
+  return kept
+end
+
+--- A WebSocket command came back busy (3) or too big for a frame (9). The answer does not say
+--- which command, so a busy answer sends every recent one again, in order: each carries whole
+--- values, so a second copy changes nothing. A frame too big goes over HTTP.
 --- @param code any
 function Client:onSocketError(code)
-  local last = self.lastSocketCommand
-  if not last or now() - last.at > WS_BUSY_WINDOW_MS then
+  local frames = self:recentFrames()
+  if #frames == 0 then
     return
   end
   if code == 9 then
-    self.lastSocketCommand = nil
+    local last = table.remove(self.recent)
     self:enqueue("POST", "/json/state", last.cmd)
     return
   end
-  if code ~= 3 then
+  if code ~= 3 or self.replaying then
     return
   end
-  if last.tries >= BUSY_RETRIES then
-    log:warn("WLED controller stayed busy; a command was dropped")
-    self.lastSocketCommand = nil
+  local tries = 0
+  for _, frame in ipairs(frames) do
+    tries = math.max(tries, frame.tries)
+  end
+  if tries >= BUSY_RETRIES then
+    log:warn("WLED controller stayed busy; %d command(s) dropped", #frames)
+    self.recent = {}
+    self:refresh()
     return
   end
-  local wait = BUSY_FIRST_MS * 2 ^ last.tries
-  last.tries = last.tries + 1
-  self:after(self.gen, wait, function()
-    if self.lastSocketCommand == last then
-      self:sendFrame(last)
+  self.replaying = true
+  self:after(self.gen, BUSY_FIRST_MS * 2 ^ tries, function()
+    self.replaying = false
+    if not (self.socketUp and self.ws) then
+      return
+    end
+    -- Then every command sent during the wait, so the latest still comes last; one refused
+    -- while this waited is sent again here too.
+    local replay, seen = {}, {}
+    for _, list in ipairs({ frames, self.recent }) do
+      for _, frame in ipairs(list) do
+        if not seen[frame] then
+          seen[frame] = true
+          replay[#replay + 1] = frame
+        end
+      end
+    end
+    self.recent = replay
+    for _, frame in ipairs(replay) do
+      frame.tries = frame.tries + 1
+      frame.at = now()
+      self.ws:Send(frame.body)
     end
   end)
 end
 
---- @param cmd table
-function Client:sendFrame(cmd)
+--- @param frame table
+--- @return boolean sent Whether the socket took the frame.
+function Client:sendFrame(frame)
   if self.socketUp and self.ws then
-    cmd.at = now()
-    self.lastSocketCommand = cmd
-    self.ws:Send(cmd.body)
+    frame.at = now()
+    -- A resend that waits still owes every frame it holds, however long it waits.
+    if not self.replaying then
+      self:recentFrames()
+    end
+    self.recent[#self.recent + 1] = frame
+    self.ws:Send(frame.body)
     return true
   end
   return false
+end
+
+--- Ask the controller for its state and report it, for a command it may not have taken. An
+--- answer asked for before a later write is dropped; that write's report tells the state.
+function Client:refresh()
+  local gen, writes = self.gen, self.writes
+  self:enqueue("GET", "/json/si"):next(function(si)
+    if self.gen == gen and self.writes == writes and type(si) == "table" then
+      guarded(self.onState, "WLED.Refresh")(si.state, si.info)
+    end
+  end, function() end)
 end
 
 -- ─── HTTP ──────────────────────────────────────────────────────────────────
@@ -368,8 +471,15 @@ function Client:poll(gen, token)
     return
   end
   self.polling = true
+  -- A write sent after this poll was asked for makes its answer stale: ask again at once, behind
+  -- the write.
+  local writes, stale = self.writes, false
   -- The next poll waits for this one to settle, so polls never pile up behind timeouts.
   local function again()
+    if stale then
+      self:poll(gen, token)
+      return
+    end
     self:after(gen, POLL_MS, function()
       self:poll(gen, token)
     end)
@@ -385,7 +495,11 @@ function Client:poll(gen, token)
           self.arch = si.info.arch
         end
         self:setMode("http")
-        self.onState(si.state, si.info)
+        if self.writes ~= writes then
+          stale = true
+          return
+        end
+        guarded(self.onState, "WLED.PollState")(si.state, si.info)
       end
     end, function(err)
       if self.gen ~= gen or self.socketUp or (type(err) == "table" and err.error == "stopped") then
@@ -485,6 +599,7 @@ end
 --- @param cmd table
 --- @return Deferred
 function Client:send(cmd)
+  self.writes = self.writes + 1
   local body = JSON:encode(cmd)
   local limit = FRAME_LIMIT[self.arch or ""] or FRAME_LIMIT_DEFAULT
   if #body <= limit and self:sendFrame({ body = body, cmd = cmd, tries = 0 }) then
@@ -503,7 +618,7 @@ end
 Client.PING_MS = PING_MS
 Client.POLL_MS = POLL_MS
 Client.OPEN_GRACE_MS = OPEN_GRACE_MS
-Client.RECONNECT_FIRST_MS = RECONNECT_FIRST_MS
+Client.CONNECT_TIMEOUT_MS = CONNECT_TIMEOUT_MS
 Client.RECONNECT_MAX_MS = RECONNECT_MAX_MS
 Client.BUSY_FIRST_MS = BUSY_FIRST_MS
 Client.BUSY_RETRIES = BUSY_RETRIES
