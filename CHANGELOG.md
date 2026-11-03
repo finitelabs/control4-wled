@@ -25,7 +25,8 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added the WLED driver: it connects to a WLED controller on the local network
   and shows the controller's name, brand, product, firmware version, MAC
   address, LED count and segments in Composer
-- Added a `Connected` variable and Connected and Disconnected events
+- Added a `Connected` variable, Connected and Disconnected events, and a WLED
+  controller connection status conditional
 - Added a check that the controller at the address is the one the driver was set
   up with, and Reset Driver to take a replacement
 - Added the controller's light: on, off, level, color and color temperature as
