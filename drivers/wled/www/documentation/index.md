@@ -172,6 +172,8 @@ Extras menu. It shows what the controller's main segment shows:
   applies it, picking a playlist starts it, and `None` stops the running
   playlist.
 
+Entries in a list that share a name show their WLED id after it.
+
 An effect, palette, slider or checkbox runs on every segment and leaves the
 light's power and level as they are, as the programming commands do. A new
 effect starts from its own speed, intensity and options, as in the WLED app. A
