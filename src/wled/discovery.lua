@@ -17,9 +17,9 @@ local SERVICE = "_wled._tcp.local"
 --- How long answers are read, how often the socket is read, and when the question is asked again.
 local WINDOW_MS, READ_MS, REPEAT_MS = 2 * ONE_SECOND, ONE_SECOND / 5, ONE_SECOND
 
---- Answers kept from one search. A controller answers each question once, so a few from each
---- sender hold all it says, and a site's controllers fit well within the total.
-local MAX_PER_SENDER, MAX_ANSWERS = 4, 256
+--- Answers kept from one search. A controller answers each of its two questions once, and an
+--- mDNS reflector sends the answers of every controller behind it, so only the total is capped.
+local MAX_ANSWERS = 256
 
 local TIMER = "WledDiscovery"
 
@@ -72,16 +72,14 @@ function Discovery.search()
   end
   local search = { udp = udp, done = done }
   gSearch = search
-  local answers, perSender, elapsed = {}, {}, 0
+  local answers, elapsed = {}, 0
   SetTimer(TIMER, READ_MS, function()
     while true do
       local data, ip, port = udp:receivefrom()
       if not data then
         break
       end
-      local from = perSender[ip] or 0
-      if tonumber(port) == Mdns.PORT and from < MAX_PER_SENDER and #answers < MAX_ANSWERS then
-        perSender[ip] = from + 1
+      if tonumber(port) == Mdns.PORT and #answers < MAX_ANSWERS then
         answers[#answers + 1] = { data = data, ip = ip }
       end
     end

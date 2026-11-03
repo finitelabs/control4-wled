@@ -356,7 +356,8 @@ do
   W.run(2100)
   T.eq("a search with a nameless answer still answers", settled and #settled, 2)
 
-  --- A search fed answers as they arrive: { name, sender } pairs, each sent `times` times.
+  --- A search fed answers as they arrive: { name, address, sender } with the sender the address
+  --- unless given, each sent `times` times.
   local function searchWith(list, times)
     local result
     Discovery.search():next(function(f)
@@ -367,30 +368,40 @@ do
       for _, a in ipairs(list) do
         inbox[#inbox + 1] = {
           W.mdnsAnswer({ instance = a[1], host = a[1], port = 80, mac = "02a1b2c3d4aa", ip = a[2] }),
-          a[2],
+          a[3] or a[2],
           5353,
         }
       end
     end
     W.run(2100)
-    return result and #result
+    return result
   end
   local site = {}
   for i = 1, 40 do
     site[i] = { "wled-" .. i, "198.51.100." .. i }
   end
   -- The section's two fakes answer as well.
-  T.eq("40 controllers answering both questions are all found", searchWith(site, 2), 42)
-  local one = {}
-  for i = 1, 40 do
-    one[i] = { "flood-" .. i, "198.51.100.200" }
+  T.eq("40 controllers answering both questions are all found", #searchWith(site, 2), 42)
+
+  -- A reflector on another network sends every controller's answer from its own address.
+  local reflected = {}
+  for i = 1, 10 do
+    reflected[i] = { "vlan-" .. i, "198.51.100." .. (100 + i), "192.0.2.250" }
   end
-  T.eq("one sender's flood is cut at 4 answers", searchWith(one, 1), 4 + 2)
+  local behind = {}
+  for _, c in ipairs(searchWith(reflected, 2)) do
+    if c.name:match("^vlan%-") then
+      behind[#behind + 1] = c
+    end
+  end
+  T.eq("10 controllers behind a reflector, all found", #behind, 10)
+  T.eq("each at its own address", behind[1] and behind[1].ip:match("^198%.51%.100%.1%d%d$") ~= nil, true)
+
   local many = {}
   for i = 1, 300 do
     many[i] = { "wled-" .. i, "10." .. math.floor(i / 256) .. "." .. (i % 256) .. ".1" }
   end
-  T.eq("and every search at 256", searchWith(many, 1), 256)
+  T.eq("and every search at 256 answers", #searchWith(many, 1), 256)
 
   W.sendFails = "permission denied"
   local refused
