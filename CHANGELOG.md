@@ -36,10 +36,11 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added `Warm White (K)` and `Cool White (K)` properties, the ends of the
   light's color temperature range
 - Added the controller's WLED effects, palettes, presets and playlists to
-  programming: Set Effect, Set Effect Speed, Set Effect Intensity, Set Palette,
-  Apply Preset, Start Playlist and Stop Playlist, with `Effect`, `Palette`,
-  `Preset` and `Playlist` variables, Effect Changed, Preset Changed, Playlist
-  Started and Playlist Ended events, and a WLED playlist status conditional
+  programming: Set Effect, Set Effect Speed, Set Effect Intensity, Set Effect
+  Custom Value, Set Effect Option, Set Palette, Apply Preset, Start Playlist and
+  Stop Playlist, with `Effect`, `Palette`, `Preset` and `Playlist` variables,
+  Effect Changed, Preset Changed, Playlist Started and Playlist Ended events,
+  and a WLED playlist status conditional
 - Added the light's Extras menu: the controller's effects, with the sliders and
   options the running effect uses under WLED's names for them, its palettes,
   presets and playlists
