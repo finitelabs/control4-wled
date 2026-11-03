@@ -64,8 +64,8 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
       - [Preset Cycle](#preset-cycle)
       - [Device Info](#device-info)
     - [Driver Actions](#driver-actions)
-    - [Programming Reference](#programming-reference)
-    - [Connections](#connections)
+  - [Programming Reference](#programming-reference)
+  - [Connections](#connections)
   <!-- #ifdef DRIVERCENTRAL -->
 - [Developer Information](#developer-information)
 
@@ -501,9 +501,9 @@ Monitoring is Enabled.
 
 <!-- #endif -->
 
-### Programming Reference
+## Programming Reference
 
-#### Commands
+### Commands
 
 | Command                 | Parameters                                                  | Description                                                                    |
 | ----------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -533,7 +533,7 @@ name.
 The controller applies a preset or starts a playlist on its next loop; the
 variables and events below follow once it reports the result.
 
-#### Variables
+### Variables
 
 | Variable  | Type   | Description                                                                      |
 | --------- | ------ | -------------------------------------------------------------------------------- |
@@ -543,7 +543,7 @@ variables and events below follow once it reports the result.
 | Preset    | STRING | The preset the controller last applied, or empty once its look has been changed  |
 | Playlist  | STRING | The playlist the controller runs, or empty when none runs or it was sent unnamed |
 
-#### Events
+### Events
 
 | Event            | Description                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------ |
@@ -560,7 +560,7 @@ change: a driver start, a reload or a reconnect that finds the controller as it
 was fires none of them, and applying the preset already shown fires nothing.
 Each variable is set before its event fires.
 
-#### Conditionals
+### Conditionals
 
 | Conditional                       | Tests                                                                          |
 | --------------------------------- | ------------------------------------------------------------------------------ |
@@ -573,14 +573,14 @@ Preset Is lists the controller's presets as programming shows them, for example
 deleted. It tests by the preset's id, so programming keeps working after a
 rename in WLED.
 
-### Connections
+## Connections
 
-#### Light (provider)
+### Light (provider)
 
 The Control4 Light proxy connection. The light is online while the driver is
 connected and offline while it is not.
 
-#### `{segment name}` (provider, dynamic)
+### `{segment name}` (provider, dynamic)
 
 One `WLED_SEGMENT` connection for each segment the controller reports. Bind a
 **WLED Segment** driver's **WLED Controller** connection to one (see
@@ -589,7 +589,7 @@ One `WLED_SEGMENT` connection for each segment the controller reports. Bind a
 > **Note:** `{segment name}` is the segment's name in WLED, or `Segment` and its
 > id when it has no name, for example `Segment 1`.
 
-#### Button Links
+### Button Links
 
 | Connection         | Description                        |
 | ------------------ | ---------------------------------- |
