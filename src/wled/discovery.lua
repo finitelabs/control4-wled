@@ -54,7 +54,7 @@ local function close(search)
 end
 
 --- Look for WLED controllers.
---- @return Deferred<MdnsService[], string> The controllers that answered, by name then address.
+--- @return Deferred<MdnsService[], string> found The controllers that answered, by name then address.
 function Discovery.search()
   if gSearch then
     return gSearch.done

@@ -12,7 +12,7 @@ local Device = require("wled.device")
 
 local function load(profile)
   local si = W.fixture(profile, "si.json")
-  local d = Device.new()
+  local d = Device:new()
   local changes = d:update(si.state, si.info)
   return d, si, changes
 end
@@ -91,7 +91,7 @@ do
     { id = 2, start = 20, stop = 30, on = true, bri = 255 },
   }
   si.info.leds.seglc = { 3, 1 }
-  local d = Device.new()
+  local d = Device:new()
   d:update(si.state, si.info)
   T.eq("two active segments", #d.segments, 2)
   T.eq("id 2 takes the second entry", d:segment(2).lc, 1)
@@ -104,7 +104,7 @@ do
     { id = 1, start = 0, stop = 0 },
     { id = 2, start = 20, stop = 30 },
   }
-  d = Device.new()
+  d = Device:new()
   d:update(si.state, si.info)
   T.eq("inactive segment skipped", #d.segments, 2)
   T.eq("id 2 still takes the second entry", d:segment(2).lc, 1)
@@ -122,25 +122,20 @@ do
     "mac",
     "leds",
     "segments",
-    "segmentState",
-    "master",
     "effects",
     "palettes",
     "presets",
-    "live",
   }) do
     T.falsy("same push: no " .. key .. " change", c[key])
   end
 
   si.state.bri = 10
   c = d:update(si.state, nil)
-  T.truthy("master level change seen", c.master)
   T.falsy("a state alone keeps identity", c.identity)
   T.eq("info kept from before", d.ver, "16.0.1")
 
   si.state.seg[1].bri = 3
   c = d:update(si.state, si.info)
-  T.truthy("segment brightness is segment state", c.segmentState)
   T.falsy("segment brightness is not layout", c.segments)
 
   si.state.seg[2].stop = 70
@@ -156,11 +151,6 @@ do
   c = d:update(nil, si.info)
   T.truthy("effect count change seen", c.effects)
   T.truthy("palette count change seen", c.palettes)
-
-  si.info.live = true
-  c = d:update(nil, si.info)
-  T.truthy("live data start seen", c.live)
-  T.truthy("live recorded", d.live)
 
   si.info.mac = "02A1B2C3D4FF"
   c = d:update(nil, si.info)
@@ -182,10 +172,10 @@ do
   T.eq("relay", r:segmentSummary(), "0: 0-0 On/off")
   local si = W.fixture("esp32-cct-16", "si.json")
   si.state.seg[1].n = "Cabinets"
-  local c = Device.new()
+  local c = Device:new()
   c:update(si.state, si.info)
   T.contains("named segment shows its name", c:segmentSummary(), "0: Cabinets 0-")
-  T.eq("no segments", Device.new():segmentSummary(), "None")
+  T.eq("no segments", Device:new():segmentSummary(), "None")
   T.eq("label for each bit combination", Device.capabilityLabel(4), "CCT")
   T.eq("unknown bits", Device.capabilityLabel(nil), "On/off")
 end

@@ -55,7 +55,7 @@ local function setStatus(status, connected)
   values:update("Connected", connected, "BOOL")
 end
 
-local wledLight = LightAdapter.new({
+local wledLight = LightAdapter:new({
   device = Segment.view(nil),
   extras = false,
   send = function(json)
@@ -98,7 +98,8 @@ end
 
 -- ─── From the WLED driver (RFP dispatch) ───────────────────────────────────
 
-function RFP.UPDATE_STATE(idBinding, _strCommand, tParams)
+function RFP.UPDATE_STATE(idBinding, strCommand, tParams)
+  log:trace("RFP.UPDATE_STATE(%s, %s, %s)", idBinding, strCommand, tParams)
   if idBinding ~= CONTROLLER_BINDING then
     return
   end
@@ -114,7 +115,8 @@ function RFP.UPDATE_STATE(idBinding, _strCommand, tParams)
   light.state(wledLight:entity(), wledLight:state())
 end
 
-function RFP.UPDATE_DISCONNECT(idBinding, _strCommand, tParams)
+function RFP.UPDATE_DISCONNECT(idBinding, strCommand, tParams)
+  log:trace("RFP.UPDATE_DISCONNECT(%s, %s, %s)", idBinding, strCommand, tParams)
   if idBinding ~= CONTROLLER_BINDING then
     return
   end
@@ -127,7 +129,8 @@ function RFP.UPDATE_DISCONNECT(idBinding, _strCommand, tParams)
   end
 end
 
-OBC[CONTROLLER_BINDING] = function(_idBinding, _strClass, isBound)
+OBC[CONTROLLER_BINDING] = function(idBinding, strClass, isBound)
+  log:trace("OBC[%s](%s, %s)", idBinding, strClass, isBound)
   gPayload = nil
   wledLight.device = Segment.view(nil)
   light.reset(isBound)
@@ -196,23 +199,27 @@ end
 
 -- ─── Property handlers (OPC dispatch) ──────────────────────────────────────
 
-function OPC.Driver_Status(_v)
+function OPC.Driver_Status(propertyValue)
+  log:trace("OPC.Driver_Status(%s)", propertyValue)
   if not gInitialized then
     UpdateProperty("Driver Status", "Initializing", false)
   end
 end
 
-function OPC.Driver_Version(_v)
+function OPC.Driver_Version(propertyValue)
+  log:trace("OPC.Driver_Version(%s)", propertyValue)
   C4:UpdateProperty("Driver Version", C4:GetDriverConfigInfo("version"))
 end
 
 function OPC.Log_Level(propertyValue)
+  log:trace("OPC.Log_Level(%s)", propertyValue)
   log:setLogLevel(propertyValue)
   local ultra = log:getLogLevel() >= 6 and log:isPrintEnabled()
-  DEBUGPRINT, DEBUG_TIMER, DEBUG_RFN = ultra, ultra, ultra
+  DEBUGPRINT, DEBUG_TIMER, DEBUG_RFN, DEBUG_URL, DEBUG_WEBSOCKET = ultra, ultra, ultra, ultra, ultra
 end
 
 function OPC.Log_Mode(propertyValue)
+  log:trace("OPC.Log_Mode(%s)", propertyValue)
   log:setLogMode(propertyValue)
   CancelTimer("LogMode")
   if not log:isEnabled() then
@@ -230,21 +237,25 @@ local function whitePointChanged()
   end
 end
 
-function OPC.Warm_White_K(_v)
+function OPC.Warm_White_K(propertyValue)
+  log:trace("OPC.Warm_White_K(%s)", propertyValue)
   whitePointChanged()
 end
 
-function OPC.Cool_White_K(_v)
+function OPC.Cool_White_K(propertyValue)
+  log:trace("OPC.Cool_White_K(%s)", propertyValue)
   whitePointChanged()
 end
 
 --#ifdef DRIVERCENTRAL
 --- An update setting changed on another item; this light keeps only those it has.
 function EC.SET_UPDATE_SETTING(params)
+  log:trace("EC.SET_UPDATE_SETTING(%s)", params)
   updateSettings:take(params)
 end
 
 function OPC.Automatic_Updates(propertyValue)
+  log:trace("OPC.Automatic_Updates(%s)", propertyValue)
   if gInitialized then
     updateSettings:share("Automatic Updates", propertyValue)
   end
@@ -258,11 +269,13 @@ end
 --- Turns Cloud Monitoring on or off.
 --- @param propertyValue string
 function OPC.Cloud_Monitoring(propertyValue)
+  log:trace("OPC.Cloud_Monitoring(%s)", propertyValue)
   diagnostics:setEnabled(propertyValue == "Enabled")
 end
 
 --- Prints a diagnostics report, and sends it while Cloud Monitoring is on.
 function EC.DiagnosticsSnapshot()
+  log:trace("EC.DiagnosticsSnapshot()")
   diagnostics:dumpSnapshot()
 end
 --#endif

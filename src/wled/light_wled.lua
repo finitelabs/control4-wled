@@ -15,6 +15,8 @@
 ---     installer's Warm White and Cool White.
 ---   - `{"on":true,"bri":N,"tt":T}` from off fades up from nothing by itself.
 
+require("lib.utils")
+
 local light = require("wled.light")
 local Device = require("wled.device")
 
@@ -22,7 +24,10 @@ local CM = light.ColorMode
 
 local TT_MAX = 655
 local LEG_MS = TT_MAX * 100
+--- How long a level or color sent waits for the controller's report of it before the light
+--- model takes the report it has; WLED pushes at most once a second.
 local ECHO_WAIT_MS = 2500
+--- The longest ramp rate offered, in ms over the full range; legs carry a fade past 65.5 s.
 local RATE_MAX = 86400000
 
 local COLOR_FIELDS = { "rgb", "color_brightness", "white", "color_temperature", "color_mode" }
@@ -50,34 +55,27 @@ Adapter.__index = Adapter
 --- @field cool fun(): number Cool White, in Kelvin.
 --- @field extras boolean|nil False for a light without an Extras menu.
 
-local function round(v)
-  return math.floor(v + 0.5)
-end
-
-local function clamp(v, lo, hi)
-  return math.max(lo, math.min(hi, v))
-end
-
 local function byte(v)
-  return clamp(round((tonumber(v) or 0) * 255), 0, 255)
+  return InRange(round((tonumber(v) or 0) * 255), 0, 255)
 end
 
---- @param opts WledLightOptions
---- @return WledLight
-function Adapter.new(opts)
-  local self = setmetatable({}, Adapter)
-  self.sendJson = opts.send
-  self.device = opts.device
-  self.warm = opts.warm
-  self.cool = opts.cool
-  self.extras = opts.extras ~= false
-  self.legGen = 0
-  self.rgb = { 1, 1, 1 }
-  return self
+--- Creates the adapter for one light.
+--- @param opts WledLightOptions The controller's model, its send, and the white points.
+--- @return WledLight wledLight An adapter at full white, nothing sent yet.
+function Adapter:new(opts)
+  local instance = setmetatable({}, self)
+  instance.sendJson = opts.send
+  instance.device = opts.device
+  instance.warm = opts.warm
+  instance.cool = opts.cool
+  instance.extras = opts.extras ~= false
+  instance.legGen = 0
+  instance.rgb = { 1, 1, 1 }
+  return instance
 end
 
 --- The light model's adapter table for this light.
---- @return table
+--- @return table adapter What light.attach takes: send, normalize, curve, echo wait and capabilities.
 function Adapter:adapter()
   return {
     send = function(cmd)
@@ -100,8 +98,8 @@ function Adapter:adapter()
 end
 
 --- The light model's color mode for capability bits.
---- @param lc integer|nil
---- @return integer
+--- @param lc integer|nil Capability bits; nil has none.
+--- @return integer mode A light.ColorMode value.
 function Adapter.modeFor(lc)
   local rgb, white, cct =
     Device.has(lc, Device.CAP_RGB), Device.has(lc, Device.CAP_WHITE), Device.has(lc, Device.CAP_CCT)
@@ -117,19 +115,21 @@ function Adapter.modeFor(lc)
   return white and CM.COLOR_MODE_BRIGHTNESS or CM.COLOR_MODE_ON_OFF
 end
 
---- @return integer
+--- The light model's color mode for the controller's own capability bits.
+--- @return integer mode A light.ColorMode value.
 function Adapter:mode()
   return Adapter.modeFor(self.device.lc or 0)
 end
 
 --- Whether the strip has white LEDs of its own.
---- @return boolean
+--- @return boolean white True when the controller's bits include white.
 function Adapter:whiteLeds()
   return Device.has(self.device.lc, Device.CAP_WHITE)
 end
 
 --- The installer's white points, warm below cool.
---- @return number warm, number cool
+--- @return number warm Warm White, in Kelvin.
+--- @return number cool Cool White, in Kelvin, above warm.
 function Adapter:range()
   local warm, cool = tonumber(self.warm()) or 2700, tonumber(self.cool()) or 6500
   if cool <= warm then
@@ -138,23 +138,25 @@ function Adapter:range()
   return warm, cool
 end
 
---- @param cct number 0 (warm) to 255 (cool)
---- @return number kelvin
+--- The color temperature a WLED CCT stands for, between the white points.
+--- @param cct number 0 (warm) to 255 (cool).
+--- @return number kelvin The color temperature, in Kelvin.
 function Adapter:kelvinFromCct(cct)
   local warm, cool = self:range()
-  return warm + (cool - warm) * clamp(tonumber(cct) or 0, 0, 255) / 255
+  return warm + (cool - warm) * InRange(tonumber(cct) or 0, 0, 255) / 255
 end
 
---- @param kelvin number
---- @return integer cct
+--- The WLED CCT for a color temperature, held to the white points.
+--- @param kelvin number The color temperature, in Kelvin.
+--- @return integer cct 0 (warm) to 255 (cool).
 function Adapter:cctFromKelvin(kelvin)
   local warm, cool = self:range()
-  return clamp(round((kelvin - warm) / (cool - warm) * 255), 0, 255)
+  return InRange(round((kelvin - warm) / (cool - warm) * 255), 0, 255)
 end
 
 --- The light as the light model reads it: one color mode and the mireds the
 --- installer's white points give.
---- @return table
+--- @return table entity The supported color modes and mired range.
 function Adapter:entity()
   local warm, cool = self:range()
   return { supported_color_modes = { self:mode() }, min_mireds = 1e6 / cool, max_mireds = 1e6 / warm }
@@ -192,7 +194,7 @@ local function primary(seg)
     return 0, 0, 0, 0
   end
   local function at(i)
-    return clamp(round(tonumber(col[i]) or 0), 0, 255)
+    return InRange(round(tonumber(col[i]) or 0), 0, 255)
   end
   return at(1), at(2), at(3), at(4)
 end
@@ -200,7 +202,12 @@ end
 --- Channel fields for 0-255 channels and a CCT, as the controller reports them.
 --- RGB that reads all off keeps the last color sent, as the white side of a
 --- combined mode keeps it.
---- @return table fields
+--- @param r integer Red, 0-255.
+--- @param g integer Green, 0-255.
+--- @param b integer Blue, 0-255.
+--- @param w integer White, 0-255.
+--- @param cct number 0 (warm) to 255 (cool).
+--- @return table fields The light model's channel fields.
 function Adapter:fieldsFrom(r, g, b, w, cct)
   local mode = self:mode()
   local f = {
@@ -286,7 +293,12 @@ local function setsColor(cmd)
 end
 
 --- The 0-255 channels and CCT a command lights, its channels over the light's.
---- @return integer r, integer g, integer b, integer w, integer cct
+--- @param cmd table A command in channel fields.
+--- @return integer r Red, 0-255.
+--- @return integer g Green, 0-255.
+--- @return integer b Blue, 0-255.
+--- @return integer w White, 0-255.
+--- @return integer cct 0 (warm) to 255 (cool).
 function Adapter:render(cmd)
   local cur = self.fields or {}
   local function take(field, default)
@@ -324,7 +336,7 @@ end
 
 --- Round a command to what the controller will report back, so the light
 --- model takes its report as the command's own.
---- @param cmd table
+--- @param cmd table A command in channel fields, changed in place.
 function Adapter:normalize(cmd)
   if cmd.has_brightness and (tonumber(cmd.brightness) or 0) > 0 then
     cmd.brightness = math.max(1, byte(cmd.brightness)) / 255
@@ -348,7 +360,13 @@ function Adapter:normalize(cmd)
 end
 
 --- The JSON for a command's color: every segment, its effect stopped.
---- @return table seg, integer r, integer g, integer b, integer w, integer cct
+--- @param cmd table A command in channel fields.
+--- @return table seg The seg value: an entry per segment, or one object when none are listed.
+--- @return integer r Red, 0-255.
+--- @return integer g Green, 0-255.
+--- @return integer b Blue, 0-255.
+--- @return integer w White, 0-255.
+--- @return integer cct 0 (warm) to 255 (cool).
 function Adapter:colorJson(cmd)
   local r, g, b, w, cct = self:render(cmd)
   local col = self:whiteLeds() and { r, g, b, w } or { r, g, b }
@@ -365,6 +383,7 @@ function Adapter:colorJson(cmd)
 end
 
 --- Remember what a command sets, for the next one's channels.
+--- @param cmd table A command in channel fields.
 function Adapter:apply(cmd)
   local cur = self.fields or {}
   for _, field in ipairs({ "color_brightness", "white", "color_temperature" }) do
@@ -377,18 +396,19 @@ end
 
 --- Master brightness (0-255) the output is at now, on the straight line of the
 --- last fade sent.
---- @return number
+--- @param now number The time, from C4:GetTime().
+--- @return number bri The master brightness, 0-255.
 function Adapter:outputBri(now)
   local out = self.out
   if not out then
     return self.device.on and (self.device.bri or 0) or 0
   end
-  local p = out.ms > 0 and clamp((now - out.t0) / out.ms, 0, 1) or 1
+  local p = out.ms > 0 and InRange((now - out.t0) / out.ms, 0, 1) or 1
   return out.from + (out.to - out.from) * p
 end
 
 --- Send a command in channel fields to the controller.
---- @param cmd table
+--- @param cmd table A command in channel fields.
 function Adapter:send(cmd)
   self.legGen = self.legGen + 1
   self.legs = nil
@@ -439,6 +459,13 @@ function Adapter:send(cmd)
 end
 
 --- A fade longer than one command carries, as legs along one straight line.
+--- @param json table The whole command, which the last leg sends.
+--- @param ms number The fade's length.
+--- @param fromBri number Master brightness (0-255) the fade starts from.
+--- @param toBri number Master brightness (0-255) the fade ends at.
+--- @param toCol integer[]|nil The color (0-255 channels) the fade ends at; nil when it sets none.
+--- @param now number The fade's start, from C4:GetTime().
+--- @param lightAll boolean Whether the first leg turns every segment on.
 function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now, lightAll)
   local n = math.ceil(ms / LEG_MS)
   local legMs = ms / n
@@ -503,7 +530,7 @@ end
 
 --- The light's state in channel fields, from the controller's model. A report
 --- of a leg of a long fade reads as the fade's end, as a single command's does.
---- @return table
+--- @return table state Channel fields with state and brightness.
 function Adapter:state()
   local device = self.device
   local state = device.state or {}
