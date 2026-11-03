@@ -29,9 +29,10 @@ local log = require("lib.logging")
 local persist = require("lib.persist")
 local constants = require("constants")
 
-local M = {}
+local Light = {}
 
 --- Color modes as channel sets.
+--- @enum ColorMode
 local ColorMode = {
   COLOR_MODE_UNKNOWN = 0,
   COLOR_MODE_ON_OFF = 1,
@@ -45,13 +46,13 @@ local ColorMode = {
   COLOR_MODE_RGB_COLOR_TEMPERATURE = 47,
   COLOR_MODE_RGB_COLD_WARM_WHITE = 51,
 }
-M.ColorMode = ColorMode
+Light.ColorMode = ColorMode
 
 --- @type table
 local adapter = { send = function() end }
 
 -- Set once the driver's late init has run: the proxy is read only after it.
-M.initialized = false
+Light.initialized = false
 
 ---------------------------------------------------------------------------
 -- Bindings
@@ -66,7 +67,7 @@ local PROXY_BINDING = 5001
 -- Color modes that include brightness control
 ---------------------------------------------------------------------------
 
---- @type table<ProtoColorMode, boolean>
+--- @type table<ColorMode, boolean>
 local COLOR_MODES_SUPPORTING_BRIGHTNESS = {
   [ColorMode.COLOR_MODE_UNKNOWN] = false,
   [ColorMode.COLOR_MODE_ON_OFF] = false,
@@ -81,7 +82,7 @@ local COLOR_MODES_SUPPORTING_BRIGHTNESS = {
   [ColorMode.COLOR_MODE_RGB_COLD_WARM_WHITE] = true,
 }
 
---- @type table<ProtoColorMode, boolean>
+--- @type table<ColorMode, boolean>
 local COLOR_MODES_SUPPORTING_RGB = {
   [ColorMode.COLOR_MODE_RGB] = true,
   [ColorMode.COLOR_MODE_RGB_WHITE] = true,
@@ -89,7 +90,7 @@ local COLOR_MODES_SUPPORTING_RGB = {
   [ColorMode.COLOR_MODE_RGB_COLD_WARM_WHITE] = true,
 }
 
---- @type table<ProtoColorMode, boolean>
+--- @type table<ColorMode, boolean>
 local COLOR_MODES_SUPPORTING_CCT = {
   [ColorMode.COLOR_MODE_COLOR_TEMPERATURE] = true,
   [ColorMode.COLOR_MODE_COLD_WARM_WHITE] = true,
@@ -97,7 +98,7 @@ local COLOR_MODES_SUPPORTING_CCT = {
   [ColorMode.COLOR_MODE_RGB_COLD_WARM_WHITE] = true,
 }
 
---- @type table<ProtoColorMode, boolean>
+--- @type table<ColorMode, boolean>
 local COLOR_MODES_SUPPORTING_WHITE = {
   [ColorMode.COLOR_MODE_WHITE] = true,
   [ColorMode.COLOR_MODE_RGB_WHITE] = true,
@@ -434,12 +435,9 @@ local function updateDynamicCapabilities(entity)
   -- without CCT, and for a light that does not dim supports_brightness_stop
   -- True and brightness_rate_max 0. Before late init the proxy is not read.
   local ok, xml = pcall(function()
-    return M.initialized and C4:GetDeviceVariable(C4:GetProxyDevices(), 6661)
+    return Light.initialized and ParseXml(C4:GetDeviceVariable(C4:GetProxyDevices(), 6661))
   end)
-  local shown, same = {}, nil
-  for key, value in string.gmatch(ok and tostring(xml or "") or "", "<([%w_]+)>([^<]*)</%1>") do
-    shown[key] = value
-  end
+  local shown, same = ok and Select(xml, "DynamicCapabilities") or {}, nil
   local proxyOwn = {
     supports_color_stop = true,
     supports_brightness_stop = not supportsDimming,
@@ -3383,7 +3381,7 @@ local function tellShownColor(fields, force, first)
   local newX, newY, newColorMode = shownColor(fields)
   if first and newX and newY and newColorMode and not force then
     local ok, value, target = pcall(function()
-      if M.initialized then
+      if Light.initialized then
         local proxy = C4:GetProxyDevices()
         return C4:GetDeviceVariable(proxy, 1200), C4:GetDeviceVariable(proxy, 1210)
       end
@@ -3421,7 +3419,7 @@ end
 
 --- The device went away. A suspended one keeps its level until its next report.
 --- @param isSuspended boolean|nil The driver dropped the connection itself.
-function M.disconnect(isSuspended)
+function Light.disconnect(isSuspended)
   log:trace("light.disconnect(%s)", isSuspended)
   -- The light runs a fade it was sent to its end, so a suspend keeps the level a ramp in flight is heading to.
   local kept = rampingBrightness and brightnessRamp and brightnessRamp.targetLevel or currentBrightness
@@ -3467,7 +3465,7 @@ end
 --- max_mireds) and its state in channel fields.
 --- @param entity table
 --- @param state table
-function M.state(entity, state)
+function Light.state(entity, state)
   if IsEmpty(entity) or IsEmpty(state) then
     log:error("light.state called with invalid parameters: %s, %s", entity, state)
     return
@@ -3560,7 +3558,7 @@ function M.state(entity, state)
   local fading = rampingColor or (rampingBrightness and brightnessRamp and brightnessRamp.mergedColor)
   local taken = not (ownLevel and ownColor)
   if taken then
-    -- Its transition time is unknown, so stop modelling the fade.
+    -- Its transition time is unknown, so stop modeling the fade.
     lightFade = nil
   end
 
@@ -3572,7 +3570,7 @@ function M.state(entity, state)
   local shownLevel
   if isFirstUpdate then
     local ok, level, target = pcall(function()
-      if M.initialized then
+      if Light.initialized then
         local proxy = C4:GetProxyDevices()
         return C4:GetDeviceVariable(proxy, 1001), C4:GetDeviceVariable(proxy, 1110)
       end
@@ -3635,7 +3633,7 @@ end
 --- The device binding changed: forget the device's state. An unbind also
 --- tells the proxy the light is offline.
 --- @param isBound boolean
-function M.reset(isBound)
+function Light.reset(isBound)
   ENTITY = nil
   STATE = nil
   suspended = false
@@ -3680,23 +3678,23 @@ end
 
 --- Attach the device adapter.
 --- @param a table See the module header.
-function M.attach(a)
+function Light.attach(a)
   adapter = a
   SENT_WAIT = a.echoWaitMs or SENT_WAIT
 end
 
 --- The driver's late init: the light is offline until its device reports, and
 --- the proxy's setup is read for the on modes and rates it keeps.
-function M.lateInit()
-  M.initialized = true
+function Light.lateInit()
+  Light.initialized = true
   SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = false }, "NOTIFY")
   readProxySetup()
 end
 
 --- Whether the device has reported since it last went away.
 --- @return boolean
-function M.isOnline()
+function Light.isOnline()
   return STATE ~= nil
 end
 
-return M
+return Light
