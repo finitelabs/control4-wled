@@ -1,6 +1,6 @@
 1-lighting-extras|img=app-lighting-extras.png&fit=1&t=Effects%20from%20the%20light&s=WLED%27s%20effects%2C%20palettes%2C%20presets%20and%20playlists%20in%20the%20light%27s%20Extras%2C%20with%20each%20effect%27s%20own%20controls.
 2-effect-list|img=app-effect-list.png&crop=8&end=700&tail=110&bg=%232e3036&t=WLED%27s%20own%20effects&s=Every%20effect%20the%20controller%20has%2C%20by%20the%20name%20WLED%20gives%20it.
 3-segment-lights|img=composer-segment-connections.png&fit=1&t=A%20light%20for%20each%20segment&s=Each%20WLED%20segment%20gets%20its%20own%20Control4%20light%2C%20and%20each%20preset%20a%20keypad%20link.
-4-programming|img=composer-programming-commands.png&fit=1&t=Programming&s=Set%20effects%2C%20palettes%20and%20presets%2C%20run%20playlists%20and%20step%20through%20presets%20in%20Control4%20scripts.
+4-programming|img=composer-programming-commands.png&fit=1&t=Programming&s=Set%20effects%2C%20palettes%20and%20presets%2C%20run%20playlists%20and%20step%20through%20presets%20in%20Control4%20programming.
 5-presets-and-device-info|img=composer-presets-device-info.png&fit=1&t=Presets%20and%20controller%20details&s=Pick%20the%20presets%20keypads%20step%20through%2C%20and%20see%20the%20firmware%2C%20LED%20count%20and%20segments.
 6-setup|img=composer-setup.png&fit=1&t=Setup&s=Pick%20a%20controller%20the%20driver%20found%20on%20the%20network%2C%20or%20enter%20its%20IP%20address.
