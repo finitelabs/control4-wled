@@ -109,25 +109,28 @@ local COLOR_MODES_SUPPORTING_WHITE = {
 -- Persist keys and defaults
 ---------------------------------------------------------------------------
 
-local P_PRESET_LEVEL = "preset_level"
-local P_CLICK_RATE_UP = "click_rate_up"
-local P_CLICK_RATE_DOWN = "click_rate_down"
-local P_HOLD_RATE_UP = "hold_rate_up"
-local P_HOLD_RATE_DOWN = "hold_rate_down"
-local P_RATE_DEFAULT = "brightness_rate_default"
-local P_COLOR_RATE_DEFAULT = "color_rate_default"
-local P_ON_MODE = "brightness_on_mode"
-local P_BUTTON_COLORS = "button_colors"
-local P_SCENES = "scenes"
-local P_MAX_ON_LEVEL = "max_on_level"
-local P_MIN_ON_LEVEL = "min_on_level"
-local P_BRIGHTNESS_PRESETS = "brightness_presets"
-local P_COLOR_ON_MODE = "color_on_mode"
-local P_PREVIOUS_COLOR = "previous_color"
-local P_BRIGHTNESS_ON_MODE_PRESET = "brightness_on_mode_preset"
--- xy of the last white sent, and the color it was picked as (or the
--- out-of-range color temperature asked for); no report carries either.
-local P_WHITE_POINT = "white_point"
+-- The light's store keys, one table so the chunk stays under LuaJIT's 200 locals.
+local PersistKey = {
+  PRESET_LEVEL = "preset_level",
+  CLICK_RATE_UP = "click_rate_up",
+  CLICK_RATE_DOWN = "click_rate_down",
+  HOLD_RATE_UP = "hold_rate_up",
+  HOLD_RATE_DOWN = "hold_rate_down",
+  RATE_DEFAULT = "brightness_rate_default",
+  COLOR_RATE_DEFAULT = "color_rate_default",
+  ON_MODE = "brightness_on_mode",
+  BUTTON_COLORS = "button_colors",
+  SCENES = "scenes",
+  MAX_ON_LEVEL = "max_on_level",
+  MIN_ON_LEVEL = "min_on_level",
+  BRIGHTNESS_PRESETS = "brightness_presets",
+  COLOR_ON_MODE = "color_on_mode",
+  PREVIOUS_COLOR = "previous_color",
+  BRIGHTNESS_ON_MODE_PRESET = "brightness_on_mode_preset",
+  -- xy of the last white sent, and the color it was picked as (or the
+  -- out-of-range color temperature asked for); no report carries either.
+  WHITE_POINT = "white_point",
+}
 
 -- Color on-mode kinds. The proxy assigns presets with these origins/IDs to
 -- distinguish dim-to-warm pairs from previous-color tracking.
@@ -486,7 +489,7 @@ local function updateDynamicCapabilities(entity)
     [constants.ButtonIds.TOGGLE] = "Toggle",
   }
   for buttonId, name in pairs(buttonNames) do
-    local colors = persist:get(P_BUTTON_COLORS) or {}
+    local colors = persist:get(PersistKey.BUTTON_COLORS) or {}
     local saved = colors[tostring(buttonId)] or {}
     SendToProxy(PROXY_BINDING, "BUTTON_INFO", {
       BUTTON_ID = buttonId,
@@ -497,7 +500,7 @@ local function updateDynamicCapabilities(entity)
   end
 
   -- Re-emit the persisted preset level so the proxy is seeded after a reload.
-  local presetLevel = tointeger(persist:get(P_PRESET_LEVEL))
+  local presetLevel = tointeger(persist:get(PersistKey.PRESET_LEVEL))
   if presetLevel and presetLevel > 0 then
     SendToProxy(PROXY_BINDING, "PRESET_LEVEL", tostring(presetLevel), "NOTIFY")
   end
@@ -581,7 +584,7 @@ end
 -- SET_PRESET_LEVEL during testing; treat anything < 1 as "use the default" so
 -- a tap of On/Toggle doesn't end up turning the light off.
 local function getPresetLevel()
-  local v = tointeger(persist:get(P_PRESET_LEVEL))
+  local v = tointeger(persist:get(PersistKey.PRESET_LEVEL))
   if not v or v < 1 then
     return DEFAULT_PRESET_LEVEL
   end
@@ -589,7 +592,7 @@ local function getPresetLevel()
 end
 
 local function getOnBrightness()
-  local onMode = persist:get(P_ON_MODE)
+  local onMode = persist:get(PersistKey.ON_MODE)
   local level = onMode and tointeger(onMode.level)
   if level and level >= 1 then
     return math.min(level, 100)
@@ -598,7 +601,7 @@ local function getOnBrightness()
 end
 
 local function getDefaultRate()
-  return persist:get(P_RATE_DEFAULT, DEFAULT_RATE)
+  return persist:get(PersistKey.RATE_DEFAULT, DEFAULT_RATE)
 end
 
 -- One transition applies to all aspects of a command
@@ -610,27 +613,27 @@ end
 -- default rather than the hard-coded constant so the two can never drift.
 -- Read as a number: a key never stored reads as an empty table, not nil.
 local function getDefaultColorRate()
-  return tointeger(persist:get(P_COLOR_RATE_DEFAULT)) or getDefaultRate()
+  return tointeger(persist:get(PersistKey.COLOR_RATE_DEFAULT)) or getDefaultRate()
 end
 
 local function getClickRateUp()
-  return persist:get(P_CLICK_RATE_UP, DEFAULT_CLICK_RATE)
+  return persist:get(PersistKey.CLICK_RATE_UP, DEFAULT_CLICK_RATE)
 end
 
 local function getClickRateDown()
-  return persist:get(P_CLICK_RATE_DOWN, DEFAULT_CLICK_RATE)
+  return persist:get(PersistKey.CLICK_RATE_DOWN, DEFAULT_CLICK_RATE)
 end
 
 local function getHoldRateUp()
-  return persist:get(P_HOLD_RATE_UP, DEFAULT_HOLD_RATE)
+  return persist:get(PersistKey.HOLD_RATE_UP, DEFAULT_HOLD_RATE)
 end
 
 local function getHoldRateDown()
-  return persist:get(P_HOLD_RATE_DOWN, DEFAULT_HOLD_RATE)
+  return persist:get(PersistKey.HOLD_RATE_DOWN, DEFAULT_HOLD_RATE)
 end
 
 local function getButtonColors(buttonId)
-  local colors = persist:get(P_BUTTON_COLORS, {})
+  local colors = persist:get(PersistKey.BUTTON_COLORS, {})
   local key = tostring(buttonId)
   if colors[key] then
     return colors[key].on_color or "0000ff", colors[key].off_color or "000000"
@@ -639,14 +642,14 @@ local function getButtonColors(buttonId)
 end
 
 local function setButtonColors(buttonId, onColor, offColor)
-  local colors = persist:get(P_BUTTON_COLORS, {})
+  local colors = persist:get(PersistKey.BUTTON_COLORS, {})
   local key = tostring(buttonId)
   local existing = colors[key] or {}
   colors[key] = {
     on_color = onColor or existing.on_color or "0000ff",
     off_color = offColor or existing.off_color or "000000",
   }
-  persist:set(P_BUTTON_COLORS, colors)
+  persist:set(PersistKey.BUTTON_COLORS, colors)
 end
 
 ---------------------------------------------------------------------------
@@ -656,8 +659,8 @@ end
 -- Device brightness (percent) that levels 1-100 map onto: Min and Max On
 -- Level remap the range, as a Control4 dimmer does.
 local function onRange()
-  local lo = math.max(1, tonumber(persist:get(P_MIN_ON_LEVEL, 1)) or 1)
-  return lo, math.max(lo, tonumber(persist:get(P_MAX_ON_LEVEL, 100)) or 100)
+  local lo = math.max(1, tonumber(persist:get(PersistKey.MIN_ON_LEVEL, 1)) or 1)
+  return lo, math.max(lo, tonumber(persist:get(PersistKey.MAX_ON_LEVEL, 100)) or 100)
 end
 
 --- Device brightness (0-1) at level `at` on the line through (1, lo) and
@@ -768,7 +771,7 @@ local function sendLightCommand(opts)
   local point = opts.point
   if point then
     opts.point = nil
-    local stored = persist:get(P_WHITE_POINT, {})
+    local stored = persist:get(PersistKey.WHITE_POINT, {})
     local picked, was = point.picked or {}, stored.picked or {}
     -- Skip a plain white unless it clears an old pick or the light's reports
     -- carry no point (ownWhiteMode).
@@ -776,7 +779,7 @@ local function sendLightCommand(opts)
       (point.picked or stored.picked or ownWhiteMode())
       and not (point.x == stored.x and point.y == stored.y and picked.x == was.x and picked.y == was.y)
     then
-      persist:set(P_WHITE_POINT, point)
+      persist:set(PersistKey.WHITE_POINT, point)
     end
   end
   -- Recorded as the device will report it back, so its echo is recognized.
@@ -868,7 +871,7 @@ local takenColor, heldColor -- defined with the white points below
 -- The color to report for a white at xy: the pick stored with the last
 -- white sent, if this is that white, else the white itself.
 local function shownWhite(x, y)
-  local point = persist:get(P_WHITE_POINT)
+  local point = persist:get(PersistKey.WHITE_POINT)
   local picked = point and point.picked
   if
     picked
@@ -907,7 +910,7 @@ local function shownColor(fields)
     return x, y, LIGHT_COLOR_MODE_FULL
   end
   if mode and mode == ownWhiteMode() then
-    local point = persist:get(P_WHITE_POINT)
+    local point = persist:get(PersistKey.WHITE_POINT)
     if point and point.x and point.y then
       return shownWhite(point.x, point.y)
     end
@@ -1172,7 +1175,7 @@ end
 -- both via UPDATE_COLOR_ON_MODE (onPreset = on color, fadePreset = dim
 -- color). Returns nil if either color is missing or fade mode isn't active.
 local function computeFadeColor(brightness)
-  local mode = persist:get(P_COLOR_ON_MODE)
+  local mode = persist:get(PersistKey.COLOR_ON_MODE)
   if not mode then
     return nil
   end
@@ -1209,7 +1212,7 @@ local function getColorOnModeKind()
   if not (supportsColor or supportsCCT) then
     return COLOR_ON_MODE_NONE
   end
-  local mode = persist:get(P_COLOR_ON_MODE)
+  local mode = persist:get(PersistKey.COLOR_ON_MODE)
   if not mode or not mode.fadePreset then
     return COLOR_ON_MODE_NONE
   end
@@ -1247,12 +1250,12 @@ local function resolveOnColor(brightnessLevel)
   if kind == COLOR_ON_MODE_FADE then
     return computeFadeColor(brightnessLevel)
   end
-  local mode = persist:get(P_COLOR_ON_MODE)
+  local mode = persist:get(PersistKey.COLOR_ON_MODE)
   local onPreset = mode and mode.onPreset
   -- The preset the color is, which the proxy names it by.
   local preset = onPreset and onPreset.id and onPreset.origin and { id = onPreset.id, origin = onPreset.origin } or nil
   if kind == COLOR_ON_MODE_PREVIOUS then
-    local prev = persist:get(P_PREVIOUS_COLOR)
+    local prev = persist:get(PersistKey.PREVIOUS_COLOR)
     if prev and prev.x and prev.y then
       -- Normalize as the proxy's follow-up SET_COLOR_TARGET is, so it dedupes.
       local x, y, colorMode = takenColor(prev.x, prev.y, prev.mode or LIGHT_COLOR_MODE_FULL)
@@ -1288,7 +1291,7 @@ local function endOnCycle()
   -- next on. Spec _7.4: "the proxy tracks the last color reported by a driver
   -- before a BRIGHTNESS_CHANGED notification occurs with a level of 0." We
   -- mirror that locally for non-proxy paths.
-  persist:set(P_PREVIOUS_COLOR, {
+  persist:set(PersistKey.PREVIOUS_COLOR, {
     x = currentColorX,
     y = currentColorY,
     mode = currentColorMode,
@@ -1316,7 +1319,7 @@ end
 local preOnTold = false
 
 local function previousOnLevel()
-  local preset = (persist:get(P_BRIGHTNESS_PRESETS) or {})[tostring(PREVIOUS_ON_PRESET_ID)]
+  local preset = (persist:get(PersistKey.BRIGHTNESS_PRESETS) or {})[tostring(PREVIOUS_ON_PRESET_ID)]
   return preset and tonumber(preset.level)
 end
 
@@ -2408,7 +2411,7 @@ function RFP.SET_MAX_ON_LEVEL(idBinding, strCommand, tParams, args)
     return
   end
   local level = math.max(0, math.min(100, tointeger(Select(tParams, "LEVEL")) or 100))
-  persist:set(P_MAX_ON_LEVEL, level)
+  persist:set(PersistKey.MAX_ON_LEVEL, level)
   SendToProxy(PROXY_BINDING, "MAX_ON", tostring(level), "NOTIFY")
   remapLevel()
 end
@@ -2419,7 +2422,7 @@ function RFP.SET_MIN_ON_LEVEL(idBinding, strCommand, tParams, args)
     return
   end
   local level = math.max(0, math.min(100, tointeger(Select(tParams, "LEVEL")) or 0))
-  persist:set(P_MIN_ON_LEVEL, level)
+  persist:set(PersistKey.MIN_ON_LEVEL, level)
   SendToProxy(PROXY_BINDING, "MIN_ON", tostring(level), "NOTIFY")
   remapLevel()
 end
@@ -2467,11 +2470,11 @@ end
 ---------------------------------------------------------------------------
 
 local function getScenes()
-  return persist:get(P_SCENES, {})
+  return persist:get(PersistKey.SCENES, {})
 end
 
 local function saveScenes(scenes)
-  persist:set(P_SCENES, scenes)
+  persist:set(PersistKey.SCENES, scenes)
 end
 
 -- Parse the LIGHT_V2 scene <element> XML. The proxy passes a string of one or
@@ -2952,7 +2955,7 @@ function RFP.SET_PRESET_LEVEL(idBinding, strCommand, tParams, args)
     return
   end
   local level = tointeger(Select(tParams, "LEVEL")) or DEFAULT_PRESET_LEVEL
-  persist:set(P_PRESET_LEVEL, level)
+  persist:set(PersistKey.PRESET_LEVEL, level)
   -- PRESET_LEVEL notify takes a single BRIGHTNESS value (1-100) as a plain
   -- string, not a parameter map. Sending it as {BRIGHTNESS=N} causes the
   -- proxy to reject the value and revert the preset to 0 - blocking users
@@ -2967,9 +2970,9 @@ function RFP.UPDATE_BRIGHTNESS_ON_MODE(idBinding, strCommand, tParams, args)
   end
   local presetId = tointeger(Select(tParams, "BRIGHTNESS_PRESET_ID"))
   local presetLevel = tonumber(Select(tParams, "BRIGHTNESS_PRESET_LEVEL")) or DEFAULT_PRESET_LEVEL
-  persist:set(P_ON_MODE, { id = presetId, level = presetLevel })
+  persist:set(PersistKey.ON_MODE, { id = presetId, level = presetLevel })
   -- So UPDATE_BRIGHTNESS_PRESET edits of this preset move the on level.
-  persist:set(P_BRIGHTNESS_ON_MODE_PRESET, presetId)
+  persist:set(PersistKey.BRIGHTNESS_ON_MODE_PRESET, presetId)
 end
 
 -- Per spec _21.2: SET_BRIGHTNESS_ON_MODE is sent by the proxy to tell the
@@ -2985,12 +2988,12 @@ function RFP.SET_BRIGHTNESS_ON_MODE(idBinding, strCommand, tParams, args)
   if presetId == nil then
     return
   end
-  persist:set(P_BRIGHTNESS_ON_MODE_PRESET, presetId)
+  persist:set(PersistKey.BRIGHTNESS_ON_MODE_PRESET, presetId)
   -- Look up the preset's current level so getOnBrightness uses it immediately.
-  local presets = persist:get(P_BRIGHTNESS_PRESETS) or {}
+  local presets = persist:get(PersistKey.BRIGHTNESS_PRESETS) or {}
   local preset = presets[tostring(presetId)]
   if preset and preset.level then
-    persist:set(P_ON_MODE, { id = presetId, level = preset.level })
+    persist:set(PersistKey.ON_MODE, { id = presetId, level = preset.level })
   end
 end
 
@@ -3006,22 +3009,22 @@ function RFP.UPDATE_BRIGHTNESS_PRESET(idBinding, strCommand, tParams, args)
   if presetId == nil then
     return
   end
-  local presets = persist:get(P_BRIGHTNESS_PRESETS) or {}
+  local presets = persist:get(PersistKey.BRIGHTNESS_PRESETS) or {}
   local key = tostring(presetId)
   if command == "REMOVED" then
     presets[key] = nil
   else
     presets[key] = { id = presetId, name = name, level = level }
   end
-  persist:set(P_BRIGHTNESS_PRESETS, presets)
+  persist:set(PersistKey.BRIGHTNESS_PRESETS, presets)
   -- If this preset is the currently-active on-mode preset, refresh the
   -- on-mode level so getOnBrightness picks up the change immediately.
-  local activeId = tointeger(persist:get(P_BRIGHTNESS_ON_MODE_PRESET))
+  local activeId = tointeger(persist:get(PersistKey.BRIGHTNESS_ON_MODE_PRESET))
   if activeId ~= nil and activeId == presetId then
     if level == nil then
-      persist:delete(P_ON_MODE)
+      persist:delete(PersistKey.ON_MODE)
     else
-      persist:set(P_ON_MODE, { id = presetId, level = level })
+      persist:set(PersistKey.ON_MODE, { id = presetId, level = level })
     end
   end
 end
@@ -3035,8 +3038,8 @@ function RFP.UPDATE_BRIGHTNESS_RATE_DEFAULT(idBinding, strCommand, tParams, args
     return
   end
   local rate = tointeger(Select(tParams, "RATE")) or DEFAULT_RATE
-  persist:set(P_RATE_DEFAULT, rate)
-  persist:set(P_COLOR_RATE_DEFAULT, rate)
+  persist:set(PersistKey.RATE_DEFAULT, rate)
+  persist:set(PersistKey.COLOR_RATE_DEFAULT, rate)
 end
 
 function RFP.UPDATE_COLOR_RATE_DEFAULT(idBinding, strCommand, tParams, args)
@@ -3045,8 +3048,8 @@ function RFP.UPDATE_COLOR_RATE_DEFAULT(idBinding, strCommand, tParams, args)
     return
   end
   local rate = tointeger(Select(tParams, "RATE")) or DEFAULT_RATE
-  persist:set(P_COLOR_RATE_DEFAULT, rate)
-  persist:set(P_RATE_DEFAULT, rate)
+  persist:set(PersistKey.COLOR_RATE_DEFAULT, rate)
+  persist:set(PersistKey.RATE_DEFAULT, rate)
 end
 
 -- The proxy tells the light of its own presets (origin 1) only. The on and dim colors follow an edit of the one the
@@ -3057,7 +3060,7 @@ function RFP.UPDATE_COLOR_PRESET(idBinding, strCommand, tParams, args)
     return
   end
   local presetId = tointeger(Select(tParams, "ID"))
-  local onMode = persist:get(P_COLOR_ON_MODE)
+  local onMode = persist:get(PersistKey.COLOR_ON_MODE)
   if presetId == nil or Select(tParams, "COMMAND") == "REMOVED" or not onMode then
     return
   end
@@ -3068,7 +3071,7 @@ function RFP.UPDATE_COLOR_PRESET(idBinding, strCommand, tParams, args)
       p.mode = tointeger(Select(tParams, "COLOR_MODE"))
     end
   end
-  persist:set(P_COLOR_ON_MODE, onMode)
+  persist:set(PersistKey.COLOR_ON_MODE, onMode)
 end
 
 -- Per spec _20.4: UPDATE_COLOR_ON_MODE carries the active On preset (and a
@@ -3095,7 +3098,7 @@ function RFP.UPDATE_COLOR_ON_MODE(idBinding, strCommand, tParams, args)
       mode = tointeger(Select(tParams, "COLOR_FADE_PRESET_COLOR_MODE")),
     },
   }
-  persist:set(P_COLOR_ON_MODE, mode)
+  persist:set(PersistKey.COLOR_ON_MODE, mode)
 end
 
 -- SET_COLOR_ON_MODE (spec _9.1): proxy tells the driver which mode is active
@@ -3119,7 +3122,7 @@ function RFP.SET_CLICK_RATE_UP(idBinding, strCommand, tParams, args)
     return
   end
   local rate = tointeger(Select(tParams, "RATE")) or DEFAULT_CLICK_RATE
-  persist:set(P_CLICK_RATE_UP, rate)
+  persist:set(PersistKey.CLICK_RATE_UP, rate)
   SendToProxy(PROXY_BINDING, "CLICK_RATE_UP", tostring(rate), "NOTIFY")
 end
 
@@ -3129,7 +3132,7 @@ function RFP.SET_CLICK_RATE_DOWN(idBinding, strCommand, tParams, args)
     return
   end
   local rate = tointeger(Select(tParams, "RATE")) or DEFAULT_CLICK_RATE
-  persist:set(P_CLICK_RATE_DOWN, rate)
+  persist:set(PersistKey.CLICK_RATE_DOWN, rate)
   SendToProxy(PROXY_BINDING, "CLICK_RATE_DOWN", tostring(rate), "NOTIFY")
 end
 
@@ -3139,7 +3142,7 @@ function RFP.SET_HOLD_RATE_UP(idBinding, strCommand, tParams, args)
     return
   end
   local rate = tointeger(Select(tParams, "RATE")) or DEFAULT_HOLD_RATE
-  persist:set(P_HOLD_RATE_UP, rate)
+  persist:set(PersistKey.HOLD_RATE_UP, rate)
   SendToProxy(PROXY_BINDING, "HOLD_RATE_UP", tostring(rate), "NOTIFY")
 end
 
@@ -3149,7 +3152,7 @@ function RFP.SET_HOLD_RATE_DOWN(idBinding, strCommand, tParams, args)
     return
   end
   local rate = tointeger(Select(tParams, "RATE")) or DEFAULT_HOLD_RATE
-  persist:set(P_HOLD_RATE_DOWN, rate)
+  persist:set(PersistKey.HOLD_RATE_DOWN, rate)
   SendToProxy(PROXY_BINDING, "HOLD_RATE_DOWN", tostring(rate), "NOTIFY")
 end
 
@@ -3579,10 +3582,10 @@ function Light.state(entity, state)
   end, reported)
   -- Another client's color clears the stored pick; the first report after a
   -- start cannot tell whose it is, so keeps it.
-  local point = known and not ownColor and persist:get(P_WHITE_POINT)
+  local point = known and not ownColor and persist:get(PersistKey.WHITE_POINT)
   if point and point.picked then
     point.picked = nil
-    persist:set(P_WHITE_POINT, point)
+    persist:set(PersistKey.WHITE_POINT, point)
   end
   -- Our own report: replay the sends since it. Another client's: it is the
   -- light's new target.
@@ -3699,7 +3702,7 @@ function Light.reset(isBound)
   -- On unbind only: a bind also fires at controller start, when the stored
   -- white is still this light's. The proxy keeps the level it shows.
   if not isBound then
-    persist:delete(P_WHITE_POINT)
+    persist:delete(PersistKey.WHITE_POINT)
     SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = false }, "NOTIFY")
   end
   colorPicked = false
