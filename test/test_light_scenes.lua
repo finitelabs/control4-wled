@@ -9111,17 +9111,48 @@ do
   T.eq("a Toggle press while suspended at 60, then back off: its click turns the light on", levels(), { 100 })
 end
 
-T.section("a light loaded while its device is suspended is told so, and tells no level it does not know")
+T.section("a light loaded while its device is suspended stays offline, and tells no level it does not know")
 do
   -- The main driver's answer to the refresh the light sends at late init.
   restart(nil)
   RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
-  T.eq("told only that it is offline", told("ONLINE_CHANGED", "STATE"), { false })
+  T.eq("late init told it offline: nothing more", told("ONLINE_CHANGED", "STATE"), {})
   T.eq("and no level", told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
   mark()
   proxy("GET_LIGHT_LEVEL")
   proxy("TOGGLE")
   T.eq("Get Light Level and a Toggle tell nothing", told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
+end
+
+T.section("a light already told offline is not told so again")
+do
+  local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
+  local function answer()
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+      entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = dimmer }),
+      state = SerializeSafe({ state = true, brightness = 0.6 }),
+    })
+  end
+  light(dimmer)
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  answer()
+  T.eq("suspended, then lost, then back: offline once, then online", told("ONLINE_CHANGED", "STATE"), { false, true })
+  restart(nil)
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("lost after a load, which told it offline: nothing more", told("ONLINE_CHANGED", "STATE"), {})
+  light(dimmer)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
+  mark()
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("lost after a bind, with the proxy still showing it online: told offline", told("ONLINE_CHANGED", "STATE"), {
+    false,
+  })
+  answer()
+  mark()
+  proxy("GET_CONNECTED_STATE")
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("asked, then lost: online, then offline", told("ONLINE_CHANGED", "STATE"), { true, false })
 end
 
 T.section("a light's first report after a load, bind or disconnect tells the proxy only a color it does not show")

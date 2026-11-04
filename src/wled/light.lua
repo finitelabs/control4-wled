@@ -248,6 +248,9 @@ local lightFade = nil
 -- light had a level: it is kept until the device's next report.
 local suspended = false
 
+-- The proxy was last told the light is offline, so a disconnect does not tell it again.
+local toldOffline = false
+
 ---------------------------------------------------------------------------
 -- The proxy's setup
 ---------------------------------------------------------------------------
@@ -2441,6 +2444,7 @@ function RFP.GET_CONNECTED_STATE(idBinding, strCommand, tParams, args)
   if idBinding ~= PROXY_BINDING then
     return
   end
+  toldOffline = STATE == nil
   SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = STATE ~= nil }, "NOTIFY")
 end
 
@@ -3491,7 +3495,10 @@ function Light.disconnect(isSuspended)
   lightBrightness = nil
   lightTarget = {}
   lightFade = nil
-  SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = false }, "NOTIFY")
+  if not toldOffline then
+    toldOffline = true
+    SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = false }, "NOTIFY")
+  end
   -- A device that drops off has usually lost power, so it reads off. A suspended one is as it was: no Light Off
   -- Programming runs, and the device's next report tells its level.
   if isSuspended then
@@ -3533,6 +3540,7 @@ function Light.state(entity, state)
 
   -- Connection state must be sent BEFORE dynamic capabilities
   if not wasConnected then
+    toldOffline = false
     SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = true }, "NOTIFY")
   end
 
@@ -3705,6 +3713,7 @@ function Light.reset(isBound)
   -- white is still this light's. The proxy keeps the level it shows.
   if not isBound then
     persist:delete(PersistKey.WHITE_POINT)
+    toldOffline = true
     SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = false }, "NOTIFY")
   end
   colorPicked = false
@@ -3731,6 +3740,7 @@ end
 --- the proxy's setup is read for the on modes and rates it keeps.
 function Light.lateInit()
   Light.initialized = true
+  toldOffline = true
   SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = false }, "NOTIFY")
   readProxySetup()
 end
