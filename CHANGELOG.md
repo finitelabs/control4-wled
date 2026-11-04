@@ -59,4 +59,8 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
   <!-- #ifdef DRIVERCENTRAL -->
 - Added a `Support Code` property, a `Cloud Monitoring` property, Enabled by
   default, and a `Diagnostics Snapshot` action
+- Added a license check: after five minutes without an active DriverCentral
+  license the WLED driver drops the controller, shows `No active license` in
+  Driver Status, and its lights keep their level with no event; a license
+  connects it again at once
   <!-- #endif -->
