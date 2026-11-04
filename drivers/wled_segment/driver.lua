@@ -42,7 +42,7 @@ local gInitialized = false
 --- @type table|nil
 local gPayload = nil
 
---- Whether the light reads off since it was last told its segment or bound: a repeat tells it nothing.
+--- Whether the light was read off since its last report or bind, so a repeated disconnect tells nothing.
 local gReadOff = false
 
 --- Show the driver's status, and whether the segment is there, to programming.

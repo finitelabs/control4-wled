@@ -199,8 +199,7 @@ local colorRamp = nil
 -- the click outcome.
 local prePressBrightness = nil
 
--- A press's hold ramp waits `ms`, so a click inside it is the only level sent:
--- a controller that does not fade never goes to full or off first.
+-- A press waits `ms` before its hold ramp, so a click inside it is the only level a non-fading controller gets.
 local pressHold = { ms = 250, pending = false }
 
 function pressHold.cancel()
