@@ -1358,6 +1358,35 @@ do
   proxy("SET_PRESET_LEVEL", { LEVEL = 100 })
 end
 
+T.section("a hold let go inside its delay stops a fade in flight where it has got to")
+do
+  rising()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(150)
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_HOLD })
+  run(15000)
+  T.eq("one stop, at the level the fade had reached, and no hold", {
+    commands(),
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"),
+    told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+  }, { 1, {}, { fadeLevel(0, 100, 2650 / 5000) } })
+end
+
+T.section("a Bottom or Toggle click from on inside its press's hold delay sends one command")
+do
+  for _, button in ipairs({ { "Bottom", BOTTOM }, { "Toggle", TOGGLE } }) do
+    light({ ColorMode.COLOR_MODE_BRIGHTNESS })
+    proxy("BUTTON_ACTION", { BUTTON_ID = button[2], ACTION = PRESS })
+    run(110)
+    proxy("BUTTON_ACTION", { BUTTON_ID = button[2], ACTION = RELEASE_CLICK })
+    run(15000)
+    T.eq(button[1] .. " click from on: one command, and the light ends off", {
+      commands(),
+      told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+    }, { 1, { 0 } })
+  end
+end
+
 T.section("a scene started inside a press's hold delay replaces the hold")
 do
   light({ ColorMode.COLOR_MODE_BRIGHTNESS })
