@@ -4911,15 +4911,31 @@ do
   }) do
     none[tag] = false
   end
+  local diagnostics = require("lib.diagnostics")
   for _, c in ipairs({
     { "no answer", false },
     { "an empty answer", "" },
-    { "an answer that is not whole", setup:sub(1, 2000) },
+    { "an answer that is not whole", setup:sub(1, 2000), "Light.readProxySetup" },
     { "a setup with none of the tags", withTags(setup, none) },
   }) do
     proxySetup = c[2]
+    local shim, capture, reported = ShimLateInit, diagnostics.captureError, {}
+    if c[3] then
+      -- The late init reports the setup it could not read to Cloud Monitoring, and carries on.
+      function ShimLateInit()
+        diagnostics.captureError = function(_, _message, _traceback, source)
+          reported[#reported + 1] = source
+        end
+        OnDriverLateInit()
+        diagnostics.captureError = capture
+      end
+    end
     restart({ RGBCT, CT }, false)
+    ShimLateInit = shim
     T.eq(c[1] .. ": nothing stored changes", stored(), before)
+    if c[3] then
+      T.eq(c[1] .. ": Cloud Monitoring hears of it", reported, { c[3] })
+    end
   end
   -- A preset the setup names and does not list has no color or level to
   -- store: the mode stored stands.
