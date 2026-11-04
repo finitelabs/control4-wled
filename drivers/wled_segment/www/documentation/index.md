@@ -19,12 +19,8 @@ ______________________________________________________________________
 
 # <span style="color:#0094FF">Overview</span>
 
-<!-- #ifndef DRIVERCENTRAL -->
-
 > DISCLAIMER: This software is neither affiliated with nor endorsed by either
 > Control4 or WLED.
-
-<!-- #endif -->
 
 One segment of a [WLED](https://kno.wled.ge) controller as its own Control4
 light: on and off, level, color and white with fades, Advanced Lighting Scenes
