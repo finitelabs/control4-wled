@@ -193,11 +193,20 @@ local brightnessRamp = nil
 local colorRamp = nil
 
 -- Snapshot of brightness captured when BUTTON_ACTION PRESS arrives. The proxy
--- sends PRESS on button-down and decides click vs hold ~110ms later. By the
--- time a RELEASE_CLICK arrives, our hold ramp may have stepped 1-2%; the
+-- sends PRESS on button-down and decides click vs hold ~110ms later. A
+-- RELEASE_CLICK past pressHold.ms finds our hold ramp may have stepped; the
 -- click's ramp starts from this snapshot so a brief hold step never inverts
 -- the click outcome.
 local prePressBrightness = nil
+
+-- A press's hold ramp waits `ms`, so a click inside it is the only level sent:
+-- a controller that does not fade never goes to full or off first.
+local pressHold = { ms = 250, pending = false }
+
+function pressHold.cancel()
+  pressHold.pending = false
+  CancelTimer("PressHold")
+end
 
 -- LIGHT_BRIGHTNESS_TARGET_PRESET_ID from the proxy (Daylight Agent integration,
 -- spec _2.1). Echoed back as LIGHT_BRIGHTNESS_CURRENT_PRESET_ID on subsequent
@@ -1663,6 +1672,7 @@ local leaveMergedColor, changingMode, colorRampStopped -- defined below
 
 -- Halt the in-flight transition at the interpolated current level.
 local function brightnessRampStopped()
+  pressHold.cancel()
   cancelBrightnessRampTimers()
   if not rampingBrightness then
     return
@@ -1810,6 +1820,8 @@ local function rampToBrightness(level, rate, presetId, replaced)
   if dropWhileOffline("Level " .. tostring(level)) then
     return
   end
+  -- A level command replaces a press's hold, as it would the hold's ramp.
+  pressHold.cancel()
   level = math.max(0, math.min(100, math.floor((level or 0) + 0.5)))
   rate = math.max(0, tointeger(rate) or 0)
 
@@ -3238,6 +3250,11 @@ local function rewindToPrePress()
   if snapshot == nil then
     return (interpolatedBrightness(nil, true))
   end
+  -- A press still waiting sent nothing: a ramp in flight is the click's to replace.
+  if pressHold.pending then
+    pressHold.cancel()
+    return snapshot
+  end
   local hold = rampingBrightness and brightnessRamp or nil
   cancelBrightnessRampTimers()
   rampingBrightness = false
@@ -3256,9 +3273,9 @@ local function handleButtonAction(buttonId, action)
   end
   if action == constants.ButtonActions.PRESS then
     -- Button-down. Snapshot brightness for the click race, then start a hold
-    -- ramp at the persisted hold rate. If the proxy decides this was a click,
-    -- a RELEASE_CLICK will arrive ~110ms later and the click's ramp starts
-    -- from this snapshot.
+    -- ramp at the persisted hold rate once pressHold.ms has passed. If the
+    -- proxy decides this was a click, a RELEASE_CLICK will arrive ~110ms later
+    -- and cancel the ramp before it begins.
     -- currentBrightness lags a ramp in flight, so take the light's own level.
     prePressBrightness = interpolatedBrightness(nil, true)
     if not supportsDimming then
@@ -3272,17 +3289,27 @@ local function handleButtonAction(buttonId, action)
       return
     end
     -- A hold ramps to full or off until released; a click, to the on level.
+    local level, rate
     if buttonId == constants.ButtonIds.TOP then
-      rampToBrightness(100, getHoldRateUp())
+      level, rate = 100, getHoldRateUp()
     elseif buttonId == constants.ButtonIds.BOTTOM then
-      rampToBrightness(0, getHoldRateDown())
+      level, rate = 0, getHoldRateDown()
     elseif buttonId == constants.ButtonIds.TOGGLE then
       if prePressBrightness > 0 then
-        rampToBrightness(0, getHoldRateDown())
+        level, rate = 0, getHoldRateDown()
       else
-        rampToBrightness(100, getHoldRateUp())
+        level, rate = 100, getHoldRateUp()
       end
+    else
+      return
     end
+    -- As the ramp would at once, so no scene step ends the wait.
+    stopSceneSteps()
+    pressHold.pending = true
+    SetTimer("PressHold", pressHold.ms, function()
+      pressHold.pending = false
+      rampToBrightness(level, rate)
+    end, false)
   elseif action == constants.ButtonActions.RELEASE_HOLD then
     prePressBrightness = nil
     brightnessRampStopped()
@@ -3451,6 +3478,7 @@ function Light.disconnect(isSuspended)
   supportsCCT = false
   supportedColorModes = {}
   prePressBrightness = nil
+  pressHold.cancel()
   mergedColorSent = nil
   currentBrightnessPresetId = nil
   currentColorPreset = nil
@@ -3660,6 +3688,7 @@ function Light.reset(isBound)
   brightnessRamp = nil
   colorRamp = nil
   prePressBrightness = nil
+  pressHold.cancel()
   mergedColorSent = nil
   currentBrightnessPresetId = nil
   currentColorPreset = nil
