@@ -118,8 +118,6 @@ local proxyLevel, proxyLevelTarget
 local proxyOnline
 -- Its Navigator Dynamic Capabilities (6661) as dev's proxies list them:
 -- driver.xml's until it is told others, and again after a controller start.
--- It lists supports_color_stop False for a light without CCT, and for one that
--- does not dim supports_brightness_stop True and its rates 0 (638).
 local CAPABILITY_KEYS = {
   "dimmer",
   "supports_target",
@@ -147,7 +145,42 @@ local CAPABILITY_KEYS = {
   "hide_proxy_events",
   "hide_proxy_conditionals_loops",
 }
-local proxyCapabilities = {}
+-- The proxy holds the capabilities it is told and rewrites 6661 from them only
+-- as one marked true changes (dev, 2026-11-03). Measured in two-key tells:
+-- dimmer, supports_target, the two color flags, has_extras and cold_start come
+-- before the stop flags, the brightness rates after supports_target, and the
+-- color rates and color temperature range after the stop flags. The rest of
+-- this order is inferred: where dimmer and the color flags fall beside the
+-- brightness rates, has_extras and cold_start was not measured.
+local HANDLED = {
+  { "dimmer", true },
+  { "supports_target", true },
+  { "supports_color", true },
+  { "supports_color_correlated_temperature", true },
+  { "brightness_rate_min" },
+  { "brightness_rate_max" },
+  { "has_extras", true },
+  { "cold_start", true },
+  { "supports_brightness_stop" },
+  { "supports_color_stop" },
+  { "color_rate_behavior", true },
+  { "color_rate_min", true },
+  { "color_rate_max", true },
+  { "color_correlated_temperature_min", true },
+  { "color_correlated_temperature_max", true },
+}
+local proxyHeld, proxyCapabilities = {}, {}
+-- For a light that does not dim it lists the rates 0 (638).
+local function rewriteCapabilities()
+  for key, value in pairs(proxyHeld) do
+    proxyCapabilities[key] = value
+  end
+  if proxyHeld.dimmer == "False" then
+    for _, rate in ipairs({ "brightness_rate", "click_rate", "hold_rate" }) do
+      proxyCapabilities[rate .. "_min"], proxyCapabilities[rate .. "_max"] = "0", "0"
+    end
+  end
+end
 --- Tell the modeled proxy capabilities, or put it on driver.xml's with none.
 local function showCapabilities(caps)
   if caps == nil then
@@ -155,21 +188,19 @@ local function showCapabilities(caps)
     local static = f:read("*a"):match("<capabilities>(.-)</capabilities>")
     f:close()
     for _, key in ipairs(CAPABILITY_KEYS) do
-      proxyCapabilities[key] = static:match("<" .. key .. ">([^<]*)</" .. key .. ">") or "False"
+      proxyHeld[key] = static:match("<" .. key .. ">([^<]*)</" .. key .. ">") or "False"
     end
+    rewriteCapabilities()
   end
-  for key, value in pairs(caps or {}) do
-    if proxyCapabilities[key] ~= nil then
-      proxyCapabilities[key] = type(value) == "boolean" and (value and "True" or "False") or tostring(value)
-    end
-  end
-  if proxyCapabilities.supports_color_correlated_temperature ~= "True" then
-    proxyCapabilities.supports_color_stop = "False"
-  end
-  if proxyCapabilities.dimmer == "False" then
-    proxyCapabilities.supports_brightness_stop = "True"
-    for _, rate in ipairs({ "brightness_rate", "click_rate", "hold_rate" }) do
-      proxyCapabilities[rate .. "_min"], proxyCapabilities[rate .. "_max"] = "0", "0"
+  for _, handled in ipairs(caps and HANDLED or {}) do
+    local key, rewrites, value = handled[1], handled[2], caps[handled[1]]
+    if value ~= nil then
+      value = type(value) == "boolean" and (value and "True" or "False") or tostring(value)
+      local changed = proxyHeld[key] ~= value
+      proxyHeld[key] = value
+      if rewrites and changed then
+        rewriteCapabilities()
+      end
     end
   end
 end
@@ -9233,16 +9264,53 @@ do
       T.eq(name .. ": and lists the ones it did", capabilitiesShown(), shown)
     end
   end
-  light({ RGBCT })
-  local shown = capabilitiesShown()
-  proxyCapabilities.color_correlated_temperature_max = "6000" -- as another light or build told it
-  restart(nil)
-  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
-    entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGBCT } }),
-    state = SerializeSafe({ state = true, brightness = 1.0 }),
-  })
-  T.eq("a proxy that lists other capabilities is told the light's once", capabilities(), 1)
-  T.eq("and lists them", capabilitiesShown(), shown)
+  -- Every capability that rewrites 6661 is compared: a proxy that lists another
+  -- value for any one of them, as another light or build told it, is told.
+  for _, handled in ipairs(HANDLED) do
+    local key = handled[1]
+    if handled[2] then
+      light({ RGBCT })
+      local shown, held, other = capabilitiesShown(), proxyHeld[key], nil
+      if held == "True" or held == "False" then
+        other = held == "False"
+      else
+        other = tonumber(held) + 1
+      end
+      showCapabilities({ [key] = other })
+      restart(nil)
+      RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+        entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGBCT } }),
+        state = SerializeSafe({ state = true, brightness = 1.0 }),
+      })
+      T.eq(("a proxy that lists another %s is told the light's capabilities once"):format(key), capabilities(), 1)
+      T.eq(("a proxy that lists another %s: and then lists them"):format(key), capabilitiesShown(), shown)
+    end
+  end
+  -- An on/off light that comes to dim: the proxy rewrites 6661 at dimmer,
+  -- before it handles supports_brightness_stop.
+  local dims = { ColorMode.COLOR_MODE_BRIGHTNESS }
+  local function dimmerStarts()
+    restart(nil)
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+      entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = dims }),
+      state = SerializeSafe({ state = true, brightness = 1.0 }),
+    })
+  end
+  light({ ColorMode.COLOR_MODE_ON_OFF })
+  restart(dims)
+  T.eq(
+    "a light that came to dim: the proxy lists it dims, without a brightness stop",
+    { proxyCapabilities.dimmer, proxyCapabilities.supports_brightness_stop },
+    { "True", "False" }
+  )
+  for i = 1, 2 do
+    dimmerStarts()
+    T.eq(("and at start %d it is told none"):format(i), capabilities(), 0)
+  end
+  showCapabilities({ dimmer = false }) -- as another light or build told it
+  dimmerStarts()
+  T.eq("a proxy that lists it does not dim is told once", capabilities(), 1)
+  T.eq("and lists it dims", proxyCapabilities.dimmer, "True")
   -- Before late init the proxy is not read, so a first report then tells them.
   light({ RGBCT })
   restart(nil)

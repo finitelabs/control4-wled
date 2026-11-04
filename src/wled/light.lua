@@ -362,6 +362,24 @@ local function kelvinToMireds(k)
   return 1e6 / k
 end
 
+-- The capabilities a start compares with the proxy's Navigator Dynamic
+-- Capabilities (6661). The proxy rewrites 6661 only when one of these changes,
+-- so the others can lag what it holds.
+--- @type table<string, boolean>
+local COMPARED_CAPABILITIES = {
+  dimmer = true,
+  supports_target = true,
+  supports_color = true,
+  supports_color_correlated_temperature = true,
+  has_extras = true,
+  cold_start = true,
+  color_rate_behavior = true,
+  color_rate_min = true,
+  color_rate_max = true,
+  color_correlated_temperature_min = true,
+  color_correlated_temperature_max = true,
+}
+
 local function updateDynamicCapabilities(entity)
   if dynamicCapsSent then
     return
@@ -429,22 +447,15 @@ local function updateDynamicCapabilities(entity)
   for key, value in pairs(adapter.capabilities or {}) do
     caps[key] = value
   end
-  -- Told only where the proxy's Navigator Dynamic Capabilities (6661) list
-  -- another: after a controller start it fires its color variables' events for
-  -- any it is told. Whatever it is told, it lists supports_color_stop False
-  -- without CCT, and for a light that does not dim supports_brightness_stop
-  -- True and brightness_rate_max 0. Before late init the proxy is not read.
+  -- Told only where 6661 lists another: after a controller start the proxy
+  -- fires its color variables' events for any it is told. Before late init
+  -- the proxy is not read.
   local ok, xml = pcall(function()
     return Light.initialized and ParseXml(C4:GetDeviceVariable(C4:GetProxyDevices(), 6661))
   end)
   local shown, same = ok and Select(xml, "DynamicCapabilities") or {}, nil
-  local proxyOwn = {
-    supports_color_stop = true,
-    supports_brightness_stop = not supportsDimming,
-    brightness_rate_max = not supportsDimming,
-  }
   for key, value in pairs(caps) do
-    if shown[key] ~= nil and not proxyOwn[key] then
+    if COMPARED_CAPABILITIES[key] and shown[key] ~= nil then
       local want = type(value) == "boolean" and (value and "True" or "False") or value
       same = same ~= false and (shown[key] == want or tonumber(shown[key]) == want)
     end
