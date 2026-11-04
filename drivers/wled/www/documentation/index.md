@@ -19,12 +19,8 @@ ______________________________________________________________________
 
 # <span style="color:#0094FF">Overview</span>
 
-<!-- #ifndef DRIVERCENTRAL -->
-
 > DISCLAIMER: This software is neither affiliated with nor endorsed by either
 > Control4 or WLED.
-
-<!-- #endif -->
 
 Integrate [WLED](https://kno.wled.ge) LED controllers into Control4. The driver
 connects to a WLED controller on the local network, keeps a live connection to
