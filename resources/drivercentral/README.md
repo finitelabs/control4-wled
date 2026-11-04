@@ -1,15 +1,23 @@
 # DriverCentral images
 
-Listing photos for the WLED Lights listing (DriverCentral product 978). Each
-photo is an HTML page rendered to PNG, and the rendered PNGs sit next to their
+Marketing images for the WLED Lights listing (DriverCentral product 978). Each
+image is an HTML page rendered to PNG, and the rendered PNGs sit next to their
 sources.
 
-| Path                             | Size      | Used for                                 |
-| -------------------------------- | --------- | ---------------------------------------- |
-| `photos/1-...` to `photos/6-...` | 2000x2000 | Listing photos, uploaded in number order |
+| Path                             | Size      | Used for                                                                         |
+| -------------------------------- | --------- | -------------------------------------------------------------------------------- |
+| `banners/spotlight-4096x848`     | 4096x848  | DriverCentral homepage spotlight banner (emailed to DriverCentral, not uploaded) |
+| `banners/launch-post-2400x1200`  | 2400x1200 | Launch posts (c4forums, Reddit, Discord)                                         |
+| `banners/facts-strip-2400x200`   | 2400x200  | The first image in the listing's description: four facts in a row               |
+| `photos/1-...` to `photos/6-...` | 2000x2000 | Listing photos, uploaded in number order                                         |
 
-`assets/` holds what the pages share: the Finite Labs logo and the WLED driver's
-icon.
+`assets/` holds what the pages share: the Finite Labs logo, the WLED driver's
+icon (`wled-mark.png`) and WLED's controller module (`brand-mark.png`). The
+module is cropped, otherwise unmodified, from WLED's official logo
+(`images/wled_logo_akemi.png` in https://github.com/wled/WLED at v16.0.1).
+WLED publishes no brand kit; its files are under the EUPL-1.2, which grants no
+trademark rights, so the logo is used only to name the devices the driver
+controls (see the repo's `NOTICE`).
 
 ## Rendering
 
@@ -18,7 +26,7 @@ resources/drivercentral/render.sh
 ```
 
 This needs Google Chrome and a network connection (the pages load Inter from
-Google Fonts). It renders every photo at 2x and overwrites the PNGs. Pass a
+Google Fonts). It renders every page at 2x and overwrites the PNGs. Pass a
 directory to render somewhere else instead.
 
 ## Listing photos
