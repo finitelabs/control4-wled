@@ -178,7 +178,8 @@ it on all of them.
 Displays the state of the segment:
 
 - `Connected`: the **WLED** driver tells this light its segment.
-- `Connecting`: the light is waiting to hear from the **WLED** driver.
+- `Connecting`: the light is waiting to hear from the **WLED** driver, or the
+  **WLED** driver is still reaching the controller.
 - `Not connected to the WLED controller`: the **WLED** driver cannot reach the
   controller.
 - `Segment not found`: the controller no longer has the segment. The light
