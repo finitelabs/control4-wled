@@ -2856,6 +2856,8 @@ function RFP.ACTIVATE_SCENE(idBinding, strCommand, tParams, args)
     log:warn("ACTIVATE_SCENE: unknown scene id %s", sceneId)
     return
   end
+  -- A newer scene replaces a press's hold, as it would the hold's ramp.
+  pressHold.cancel()
   scene.state = 0
   scenes[tostring(sceneId)] = scene
   saveScenes(scenes)

@@ -1358,6 +1358,24 @@ do
   proxy("SET_PRESET_LEVEL", { LEVEL = 100 })
 end
 
+T.section("a scene started inside a press's hold delay replaces the hold")
+do
+  light({ ColorMode.COLOR_MODE_BRIGHTNESS })
+  proxy("SET_LEVEL", { LEVEL = 80 })
+  run(15000)
+  proxy("PUSH_SCENE", { SCENE_ID = 7, ELEMENTS = levelStep(20, 2000) .. levelStep(60, 1000, 500) })
+  mark()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(100)
+  proxy("ACTIVATE_SCENE", { SCENE_ID = 7 })
+  run(15000)
+  T.eq("its steps run, and the hold never begins", {
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"),
+    told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+  }, { { 20, 60 }, { 20, 60 } })
+  proxy("CLEAR_ALL_SCENES")
+end
+
 T.section("a scene step taken at once is where the step or command after it starts from")
 do
   light({ ColorMode.COLOR_MODE_BRIGHTNESS })
