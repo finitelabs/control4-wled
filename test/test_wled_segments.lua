@@ -345,7 +345,12 @@ do
   T.eq("and told no state", #toldOn(strip, "UPDATE_STATE"), 0)
   mark()
   ReceivedFromProxy(strip, "REFRESH_STATE", {})
-  T.eq("one that asks meanwhile is told it is away", #toldOn(strip, "UPDATE_DISCONNECT"), 1)
+  local away = toldOn(strip, "UPDATE_DISCONNECT")
+  T.eq(
+    "one that asks meanwhile is told it is gone",
+    { #away, (away[1] or { params = {} }).params.suspended },
+    { 1, nil }
+  )
   mark()
   fake.reachable = true
   W.run(20000)
@@ -367,6 +372,33 @@ do
   local n = #fake.commands
   lightSends(accent, { seg = { { id = 1, on = false } } }, 1)
   T.eq("no command reaches it", #fake.commands, n)
+end
+
+for _, how in ipairs({ "update", "restart" }) do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local accent = linkNamed("Accent").bindingId
+  connectLight(accent)
+  fake.reachable = false
+  fake:drop()
+  W.run(30000)
+  restart(how)
+  mark()
+  ReceivedFromProxy(accent, "REFRESH_STATE", {})
+  local away = toldOn(accent, "UPDATE_DISCONNECT")
+  T.eq(
+    "reloaded with the controller gone: a light that asks is told it has not answered yet (" .. how .. ")",
+    { #away, (away[1] or { params = {} }).params.suspended },
+    { 1, true }
+  )
+  mark()
+  W.run(60000)
+  away = toldOn(accent, "UPDATE_DISCONNECT")
+  T.eq(
+    "then told it is gone once the first connection fails (" .. how .. ")",
+    { #away, (away[1] or { params = {} }).params.suspended },
+    { 1, nil }
+  )
 end
 
 --------------------------------------------------------------------------------
@@ -502,6 +534,11 @@ for _, how in ipairs({ "update", "restart" }) do
     "a light that asks before the first report is told the controller is away (" .. how .. ")",
     #toldOn(accent, "UPDATE_DISCONNECT"),
     1
+  )
+  T.eq(
+    "as suspended, so it keeps its level till the report (" .. how .. ")",
+    (toldOn(accent, "UPDATE_DISCONNECT")[1] or { params = {} }).params.suspended,
+    true
   )
   W.run(1500)
   T.eq(

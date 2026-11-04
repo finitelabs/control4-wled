@@ -210,6 +210,9 @@ local gSegmentOf = {}
 --- Whether segment lights were told the controller is there since it last went away.
 local gSegmentsTold = false
 
+--- No answer from the controller since this load or the driver's own drop, and not found gone.
+local gSuspended = true
+
 --- The payload last told each segment connection, so a report tells only the lights it changed.
 --- @type table<integer, table>
 local gSegmentSent = {}
@@ -251,14 +254,21 @@ end
 --- @param suspend boolean|nil The driver dropped the connection itself, so the lights keep their level.
 local function setConnected(connected, status, suspend)
   setStatus(status)
-  if not connected and light.isOnline() then
-    light.disconnect(suspend == true)
-  end
-  if not connected and gSegmentsTold then
-    gSegmentsTold = false
-    gSegmentSent = {}
-    for _, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
-      SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", { suspended = suspend or nil }, "NOTIFY")
+  if connected then
+    gSuspended = false
+  else
+    -- Lights with no report since a load or a suspend read off too once the controller is found gone.
+    local gone = not suspend and gSuspended
+    gSuspended = suspend == true and (gSuspended or gConnected)
+    if light.isOnline() or gone then
+      light.disconnect(suspend == true)
+    end
+    if gSegmentsTold or gone then
+      gSegmentsTold = false
+      gSegmentSent = {}
+      for _, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
+        SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", { suspended = suspend or nil }, "NOTIFY")
+      end
     end
   end
   if connected == gConnected then
@@ -691,7 +701,8 @@ local function pushSegment(key, bindingId, always)
   --#endif
   if not gConnected or not seg then
     gSegmentSent[bindingId] = nil
-    SendToProxy(bindingId, "UPDATE_DISCONNECT", gConnected and { status = "Segment not found" } or {}, "NOTIFY")
+    local away = gConnected and { status = "Segment not found" } or { suspended = gSuspended or nil }
+    SendToProxy(bindingId, "UPDATE_DISCONNECT", away, "NOTIFY")
     return
   end
   local payload = Segment.payload(device, seg.id)

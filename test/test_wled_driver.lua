@@ -462,6 +462,42 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A light with no report since a load or a suspend reads off once the controller is found gone")
+--------------------------------------------------------------------------------
+do
+  for _, how in ipairs({ "update", "restart" }) do
+    local fake = fresh("esp32-rgbw-pwm-16")
+    W.run(200)
+    fake.reachable = false
+    restart(how)
+    W.run(60000)
+    T.eq(
+      "reloaded with the controller gone: it reads off once (" .. how .. ")",
+      toldCount("LIGHT_BRIGHTNESS_CHANGED"),
+      1
+    )
+    T.eq("at 0 (" .. how .. ")", proxyVars[1001], "0")
+  end
+
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  fake.reachable = false
+  mark()
+  EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  W.run(60000)
+  T.eq("Reset Driver, then the controller gone: it reads off once", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
+  T.eq("at 0", proxyVars[1001], "0")
+
+  fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  mark()
+  fake.si.info.mac = "02a1b2c3d4ee"
+  fake:drop()
+  W.run(30000)
+  T.eq("a different controller answering at every report: it reads off once", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
+end
+
+--------------------------------------------------------------------------------
 T.section("The IP Address property")
 --------------------------------------------------------------------------------
 do

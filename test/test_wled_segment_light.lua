@@ -355,6 +355,66 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A controller found gone reads off, even with no report since a load, a bind or a suspend")
+--------------------------------------------------------------------------------
+do
+  local function levels()
+    local out = {}
+    for _, p in ipairs(toldOf(PROXY, "LIGHT_BRIGHTNESS_CHANGED")) do
+      out[#out + 1] = p.LIGHT_BRIGHTNESS_CURRENT
+    end
+    return out
+  end
+  for _, c in ipairs({
+    {
+      "suspended",
+      function()
+        RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", { suspended = true })
+      end,
+    },
+    {
+      "reloaded",
+      function()
+        fresh("esp32-rgbw-pwm-16", 1)
+      end,
+    },
+    {
+      "bound again",
+      function()
+        OBC[CONTROLLER](CONTROLLER, "WLED_SEGMENT", true)
+      end,
+    },
+  }) do
+    for _, gone in ipairs({ {}, { status = "Segment not found" } }) do
+      fresh("esp32-rgbw-pwm-16", 1)
+      report()
+      c[2]()
+      mark()
+      RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", gone)
+      T.eq(c[1] .. ", then " .. (gone.status or "the controller gone") .. ": it reads off", levels(), { 0 })
+    end
+  end
+
+  fresh("esp32-rgbw-pwm-16", 1)
+  report()
+  mark()
+  for _ = 1, 3 do
+    RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", { status = "Segment not found" })
+  end
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", {})
+  T.eq("told again while gone: it reads off once", { levels(), #toldOf(PROXY, "ONLINE_CHANGED") }, { { 0 }, 1 })
+
+  fresh("esp32-rgbw-pwm-16", 1)
+  report()
+  fresh("esp32-rgbw-pwm-16", 1)
+  mark()
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", { suspended = true })
+  T.eq("reloaded, the controller not heard from yet: Connecting", Properties["Driver Status"], "Connecting")
+  report()
+  T.eq("and no level till its report: no Light Off", levels(), { 100 })
+end
+
+--------------------------------------------------------------------------------
 T.section("Segment not found, and binding")
 --------------------------------------------------------------------------------
 do
