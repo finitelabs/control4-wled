@@ -283,6 +283,7 @@
           <classname>WLED_SEGMENT</classname>
         </class>
       </classes>
+      <hidden>False</hidden>
     </connection>
   </connections>
 </devicedata>

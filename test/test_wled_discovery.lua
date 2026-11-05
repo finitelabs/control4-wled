@@ -57,6 +57,11 @@ function C4:GetDevicesByC4iName()
   return {}
 end
 
+-- The light reads its proxy's setup at late init.
+function C4:GetProxyDevices()
+  return 9001
+end
+
 function C4:UpdateProperty(name, value)
   Properties[name] = value
 end

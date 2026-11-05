@@ -42,6 +42,9 @@ local gInitialized = false
 --- @type table|nil
 local gPayload = nil
 
+--- Whether the light was read off since its last report or bind, so a repeated disconnect tells nothing.
+local gReadOff = false
+
 --- Show the driver's status, and whether the segment is there, to programming.
 --- @param status string
 --- @param connected boolean
@@ -104,6 +107,7 @@ function RFP.UPDATE_STATE(idBinding, strCommand, tParams)
     return
   end
   gPayload = payload
+  gReadOff = false
   wledLight.device = Segment.view(payload)
   UpdateProperty("Segment", describe(payload.segment))
   setStatus("Connected", true)
@@ -117,16 +121,19 @@ function RFP.UPDATE_DISCONNECT(idBinding, strCommand, tParams)
   end
   gPayload = nil
   wledLight.device = Segment.view(nil)
-  setStatus(Select(tParams, "status") or "Not connected to the WLED controller", false)
-  if light.isOnline() then
-    -- Suspended: the WLED driver dropped the connection itself, and the segment keeps its level.
-    light.disconnect(toboolean(Select(tParams, "suspended")))
+  local suspended = toboolean(Select(tParams, "suspended"))
+  setStatus(Select(tParams, "status") or (suspended and "Connecting" or "Not connected to the WLED controller"), false)
+  -- Suspended keeps the level; gone reads off once, even with no report since a load, a bind or a suspend.
+  if light.isOnline() or not (suspended or gReadOff) then
+    gReadOff = not suspended
+    light.disconnect(suspended)
   end
 end
 
 OBC[CONTROLLER_BINDING] = function(idBinding, strClass, isBound)
   log:trace("OBC[%s](%s, %s)", idBinding, strClass, isBound)
   gPayload = nil
+  gReadOff = false
   wledLight.device = Segment.view(nil)
   light.reset(isBound)
   if isBound then

@@ -437,4 +437,26 @@ do
   T.eq("told once", #toldOf("LIGHT_COLOR_CHANGED"), 1)
 end
 
+--------------------------------------------------------------------------------
+T.section("a click sends the controller only the click's level, as one with Crossfade off needs")
+--------------------------------------------------------------------------------
+do
+  fresh("esp8266-ws2812b-015-nofade")
+  proxy("SET_PRESET_LEVEL", { LEVEL = "50" })
+  for _, c in ipairs({ { "from off", "OFF" }, { "at the on level", "SET_LEVEL" } }) do
+    proxy(c[2], { LEVEL = "50" })
+    W.run(3000)
+    mark()
+    proxy("BUTTON_ACTION", { BUTTON_ID = "0", ACTION = "1" })
+    W.run(110)
+    proxy("BUTTON_ACTION", { BUTTON_ID = "0", ACTION = "2" })
+    W.run(3000)
+    local levels = {}
+    for _, cmd in ipairs(sent()) do
+      levels[#levels + 1] = cmd.bri
+    end
+    T.eq("a Top click " .. c[1] .. ": never full", levels, c[2] == "OFF" and { 128 } or {})
+  end
+end
+
 T.finish()

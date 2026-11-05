@@ -1197,6 +1197,7 @@ end
 
 local TOP, BOTTOM, TOGGLE = 0, 1, 2
 local RELEASE_HOLD, PRESS, RELEASE_CLICK = 0, 1, 2
+local HOLD_DELAY = 250 -- a press's hold ramp begins this long after it
 
 T.section("a held Top or Toggle ramps toward full, past the Default On level, until released")
 do
@@ -1205,7 +1206,13 @@ do
   proxy("SET_LEVEL", { LEVEL = 80 })
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  T.eq("Top from 80: it ramps toward 100", told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"), { 100 })
+  T.eq(
+    "Top from 80: nothing before its hold ramp begins",
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"),
+    {}
+  )
+  run(HOLD_DELAY)
+  T.eq("then it ramps toward 100", told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"), { 100 })
   run(1000)
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_HOLD })
   local stopped = told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT")
@@ -1213,6 +1220,7 @@ do
   proxy("OFF")
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOGGLE, ACTION = PRESS })
+  run(HOLD_DELAY)
   T.eq("Toggle from off: it ramps toward 100", told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"), { 100 })
   proxy("BUTTON_ACTION", { BUTTON_ID = TOGGLE, ACTION = RELEASE_HOLD })
   proxy("SET_PRESET_LEVEL", { LEVEL = 100 })
@@ -1232,13 +1240,29 @@ T.section("a press, click or toggle made in a ramp acts on the level the light h
 do
   rising()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  run(110)
+  run(HOLD_DELAY + 110)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_CLICK })
   T.eq("Top click: the click sends its ramp and nothing else", commands(), 1)
-  T.eq("from the level the press found", told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_CURRENT"), { 50 })
+  T.eq(
+    "from the level its hold ramp began at",
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_CURRENT"),
+    { math.floor(100 * eased((2500 + HOLD_DELAY) / 5000) + 0.5) }
+  )
+  rising()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(110)
+  mark()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_CLICK })
+  T.eq("Top click before the hold ramp begins: the click sends its ramp alone", commands(), 1)
+  T.eq(
+    "from where the ramp in flight has got to",
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_CURRENT"),
+    { math.floor(100 * eased(2610 / 5000) + 0.5) }
+  )
   rising()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOGGLE, ACTION = PRESS })
+  run(HOLD_DELAY)
   T.eq("Toggle press: it ramps toward off", told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"), { 0 })
   run(110)
   proxy("BUTTON_ACTION", { BUTTON_ID = TOGGLE, ACTION = RELEASE_CLICK })
@@ -1252,6 +1276,133 @@ do
   proxy("TOGGLE")
   run(15000)
   T.eq("the proxy's Toggle: the light ends off", told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 0 })
+end
+
+T.section("a click inside its press's hold delay sends the light only the click's level")
+do
+  --- The highest brightness the device was sent since the mark.
+  local function highest()
+    local top = nil
+    for _, s in ipairs(sent) do
+      if s.binding == DEVICE and s.command == "ENTITY_COMMAND" then
+        local b = DeserializeSafe(s.params.body).brightness
+        top = b and math.max(top or 0, b) or top
+      end
+    end
+    return top
+  end
+  local clicks = {
+    {
+      "a Top click",
+      function()
+        proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+        run(110)
+        proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_CLICK })
+      end,
+    },
+    {
+      "a Toggle click",
+      function()
+        proxy("BUTTON_ACTION", { BUTTON_ID = TOGGLE, ACTION = PRESS })
+        run(110)
+        proxy("BUTTON_ACTION", { BUTTON_ID = TOGGLE, ACTION = RELEASE_CLICK })
+      end,
+    },
+    {
+      "a Top Button Link click held 200 ms",
+      function()
+        RFP.DO_PUSH(TOP_LINK, "DO_PUSH", {})
+        run(200)
+        RFP.DO_CLICK(TOP_LINK, "DO_CLICK", {})
+      end,
+    },
+  }
+  for _, c in ipairs(clicks) do
+    light({ ColorMode.COLOR_MODE_BRIGHTNESS }, false)
+    proxy("SET_PRESET_LEVEL", { LEVEL = 50 })
+    mark()
+    c[2]()
+    run(15000)
+    T.eq(c[1] .. " from off: never sent above the on level", highest(), 0.5)
+    T.eq(c[1] .. " from off: told only its ramp", told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"), { 50 })
+  end
+  light({ ColorMode.COLOR_MODE_BRIGHTNESS })
+  proxy("SET_PRESET_LEVEL", { LEVEL = 50 })
+  proxy("SET_LEVEL", { LEVEL = 50 })
+  mark()
+  clicks[1][2]()
+  run(15000)
+  T.eq("a Top click at the on level: nothing is sent", commands(), 0)
+
+  light({ ColorMode.COLOR_MODE_BRIGHTNESS })
+  mark()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(100)
+  proxy("SET_LEVEL", { LEVEL = 30 })
+  run(15000)
+  T.eq("a Set Level inside the delay: the hold never begins", {
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"),
+    told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+  }, { {}, { 30 } })
+  light({ ColorMode.COLOR_MODE_BRIGHTNESS })
+  mark()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(100)
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+    entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { ColorMode.COLOR_MODE_BRIGHTNESS } }),
+    state = SerializeSafe({ state = true, brightness = 0.5 }),
+  })
+  run(15000)
+  T.eq("a disconnect inside the delay, back at once: the hold never begins", commands(), 0)
+  proxy("SET_PRESET_LEVEL", { LEVEL = 100 })
+end
+
+T.section("a hold let go inside its delay stops a fade in flight where it has got to")
+do
+  rising()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(150)
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_HOLD })
+  run(15000)
+  T.eq("one stop, at the level the fade had reached, and no hold", {
+    commands(),
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"),
+    told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+  }, { 1, {}, { fadeLevel(0, 100, 2650 / 5000) } })
+end
+
+T.section("a Bottom or Toggle click from on inside its press's hold delay sends one command")
+do
+  for _, button in ipairs({ { "Bottom", BOTTOM }, { "Toggle", TOGGLE } }) do
+    light({ ColorMode.COLOR_MODE_BRIGHTNESS })
+    proxy("BUTTON_ACTION", { BUTTON_ID = button[2], ACTION = PRESS })
+    run(110)
+    proxy("BUTTON_ACTION", { BUTTON_ID = button[2], ACTION = RELEASE_CLICK })
+    run(15000)
+    T.eq(button[1] .. " click from on: one command, and the light ends off", {
+      commands(),
+      told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+    }, { 1, { 0 } })
+  end
+end
+
+T.section("a scene started inside a press's hold delay replaces the hold")
+do
+  light({ ColorMode.COLOR_MODE_BRIGHTNESS })
+  proxy("SET_LEVEL", { LEVEL = 80 })
+  run(15000)
+  proxy("PUSH_SCENE", { SCENE_ID = 7, ELEMENTS = levelStep(20, 2000) .. levelStep(60, 1000, 500) })
+  mark()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(100)
+  proxy("ACTIVATE_SCENE", { SCENE_ID = 7 })
+  run(15000)
+  T.eq("its steps run, and the hold never begins", {
+    told("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET"),
+    told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+  }, { { 20, 60 }, { 20, 60 } })
+  proxy("CLEAR_ALL_SCENES")
 end
 
 T.section("a scene step taken at once is where the step or command after it starts from")
@@ -1378,13 +1529,16 @@ do
     { "Ramp Scene Up", PROXY, "RAMP_SCENE_UP", { SCENE_ID = 7, RATE = 2000 }, 100 },
     { "a scene step to 60 over 2 s", PROXY, "ACTIVATE_SCENE", { SCENE_ID = 7 }, 60 },
     { "a Top Button Link's click", TOP_LINK, "DO_CLICK", {}, 100 },
-    { "a Toggle Button Link held", TOGGLE_LINK, "DO_PUSH", {}, 100 },
+    { "a Toggle Button Link held", TOGGLE_LINK, "DO_PUSH", {}, 100, HOLD_DELAY },
   }
   for _, c in ipairs(ons) do
     light({ ColorMode.COLOR_MODE_BRIGHTNESS }, false)
     proxy("PUSH_SCENE", { SCENE_ID = 7, ELEMENTS = levelStep(60, 2000) })
     mark()
     RFP[c[3]](c[2], c[3], c[4])
+    if c[6] then
+      run(c[6])
+    end
     T.eq(c[1] .. " from off: its pre-on, and its ramp told from 1", { firstBrightness(), rampsTold() }, {
       0.0039,
       { "1 to " .. c[5] },
@@ -1490,7 +1644,7 @@ do
     { "Ramp Scene Up", PROXY, "RAMP_SCENE_UP", { SCENE_ID = 7, RATE = 2000 } },
     { "a scene step to 60 over 2 s", PROXY, "ACTIVATE_SCENE", { SCENE_ID = 7 } },
     { "a Top Button Link's click", TOP_LINK, "DO_CLICK", {} },
-    { "a Toggle Button Link held", TOGGLE_LINK, "DO_PUSH", {} },
+    { "a Toggle Button Link held", TOGGLE_LINK, "DO_PUSH", {}, HOLD_DELAY },
   }
   for _, c in ipairs(ons) do
     light({ ColorMode.COLOR_MODE_BRIGHTNESS }, false)
@@ -1498,7 +1652,7 @@ do
     mark()
     RFP[c[3]](c[2], c[3], c[4])
     run(1000)
-    T.eq(c[1] .. " from off: the LED is told on as its ramp begins", leds(), { { 0, true } })
+    T.eq(c[1] .. " from off: the LED is told on as its ramp begins", leds(), { { c[5] or 0, true } })
     proxy("CLEAR_ALL_SCENES")
   end
 
@@ -1530,8 +1684,20 @@ do
   light({ ColorMode.COLOR_MODE_BRIGHTNESS }, false)
   mark()
   RFP.DO_PUSH(TOGGLE_LINK, "DO_PUSH", {})
+  run(HOLD_DELAY)
   RFP.DO_RELEASE(TOGGLE_LINK, "DO_RELEASE", {})
-  T.eq("a Toggle Button Link held from off and let go at once: on, then off", leds(), { { 0, true }, { 0, false } })
+  T.eq(
+    "a Toggle Button Link held from off and let go as its ramp begins: on, then off",
+    leds(),
+    { { HOLD_DELAY, true }, { HOLD_DELAY, false } }
+  )
+  light({ ColorMode.COLOR_MODE_BRIGHTNESS }, false)
+  mark()
+  RFP.DO_PUSH(TOGGLE_LINK, "DO_PUSH", {})
+  run(100)
+  RFP.DO_RELEASE(TOGGLE_LINK, "DO_RELEASE", {})
+  run(15000)
+  T.eq("one let go before its ramp begins: the light and its LED are left off", { commands(), leds() }, { 0, {} })
   light({ ColorMode.COLOR_MODE_BRIGHTNESS }, false)
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = 100, RATE = 5000 })
   run(2500)
@@ -1578,16 +1744,19 @@ do
     end
     mark()
   end
-  --- Send `step`: { binding, command, params }.
+  --- Send `step`: { binding, command, params, ms to wait after it or nil }.
   local function send(step)
     RFP[step[2]](step[1], step[2], step[3])
+    if step[4] then
+      run(step[4])
+    end
   end
   local RATED = { PROXY, "SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = 60, RATE = 6000 } }
   local STOP = { PROXY, "SET_BRIGHTNESS_STOP", {} }
   local ends = {
     {
       "a Toggle Button Link held from off and let go",
-      { TOGGLE_LINK, "DO_PUSH", {} },
+      { TOGGLE_LINK, "DO_PUSH", {}, HOLD_DELAY },
       { TOGGLE_LINK, "DO_RELEASE", {} },
     },
     { "Set Brightness Stop in a rated on", RATED, STOP },
@@ -1717,14 +1886,14 @@ do
     return told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT")
   end
   --- A light that is off with Previous On at 40, sent `on` and 50 ms later `stop`, each { binding, command,
-  --- params }; 40 ms on.
+  --- params, ms `on` waits first or nil }; 40 ms on.
   local function stopped(on, stop)
     persist:delete("brightness_presets")
     light(dimmer, false)
     proxy("UPDATE_BRIGHTNESS_PRESET", { COMMAND = "MODIFIED", ID = 10, NAME = "Previous On", LEVEL = 40 })
     mark()
     RFP[on[2]](on[1], on[2], on[3])
-    run(50)
+    run((on[4] or 0) + 50)
     RFP[stop[2]](stop[1], stop[2], stop[3])
     run(40)
   end
@@ -1735,7 +1904,13 @@ do
   for _, c in ipairs({
     { "Set Brightness Stop", RATED, STOP, 0.6, 60 },
     { "an off at once", RATED, { PROXY, "SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = 0, RATE = 0 } }, 0.6, 60 },
-    { "a Toggle Button Link let go", { TOGGLE_LINK, "DO_PUSH", {} }, { TOGGLE_LINK, "DO_RELEASE", {} }, 1.0, 100 },
+    {
+      "a Toggle Button Link let go",
+      { TOGGLE_LINK, "DO_PUSH", {}, HOLD_DELAY },
+      { TOGGLE_LINK, "DO_RELEASE", {} },
+      1.0,
+      100,
+    },
   }) do
     stopped(c[2], c[3])
     push(c[4])
@@ -1747,7 +1922,8 @@ do
       brightnessTold(),
       { "1 to " .. c[5], "40 to 0", "0" }
     )
-    T.eq(c[1] .. ": the LED goes off with it and stays off", leds(), { { 0, true }, { 50, false } })
+    local held = c[2][4] or 0
+    T.eq(c[1] .. ": the LED goes off with it and stays off", leds(), { { held, true }, { held + 50, false } })
   end
   stopped(RATED, STOP)
   push(0)
@@ -1877,12 +2053,12 @@ end
 
 T.section("a command for the level a ramp has got to holds the bulb there")
 do
-  -- At its Default On level a press on Top heads for full before the click.
+  -- At its Default On level a press on Top held past its delay heads for full before the click.
   light({ ColorMode.COLOR_MODE_BRIGHTNESS })
   proxy("SET_PRESET_LEVEL", { LEVEL = 50 })
   proxy("SET_LEVEL", { LEVEL = 50 })
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  run(110)
+  run(HOLD_DELAY + 110)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_CLICK })
   run(15000)
@@ -1893,7 +2069,7 @@ do
   onMode(ON, DIM)
   proxy("SET_LEVEL", { LEVEL = 50 })
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  run(110)
+  run(HOLD_DELAY + 110)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_CLICK })
   run(15000)
@@ -1905,7 +2081,7 @@ do
   onMode(ON, DIM)
   proxy("SET_LEVEL", { LEVEL = 50 })
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  run(50)
+  run(HOLD_DELAY + 50)
   colorTarget(green, 0)
   run(60)
   mark()
@@ -1938,7 +2114,7 @@ do
   light({ ColorMode.COLOR_MODE_RGB })
   proxy("SET_LEVEL", { LEVEL = 50 })
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  run(50)
+  run(HOLD_DELAY + 50)
   colorTarget(green, 0)
   run(60)
   mark()
@@ -4735,15 +4911,31 @@ do
   }) do
     none[tag] = false
   end
+  local diagnostics = require("lib.diagnostics")
   for _, c in ipairs({
     { "no answer", false },
     { "an empty answer", "" },
-    { "an answer that is not whole", setup:sub(1, 2000) },
+    { "an answer that is not whole", setup:sub(1, 2000), "Light.readProxySetup" },
     { "a setup with none of the tags", withTags(setup, none) },
   }) do
     proxySetup = c[2]
+    local shim, capture, reported = ShimLateInit, diagnostics.captureError, {}
+    if c[3] then
+      -- The late init reports the setup it could not read to Cloud Monitoring, and carries on.
+      function ShimLateInit()
+        diagnostics.captureError = function(_, _message, _traceback, source)
+          reported[#reported + 1] = source
+        end
+        OnDriverLateInit()
+        diagnostics.captureError = capture
+      end
+    end
     restart({ RGBCT, CT }, false)
+    ShimLateInit = shim
     T.eq(c[1] .. ": nothing stored changes", stored(), before)
+    if c[3] then
+      T.eq(c[1] .. ": Cloud Monitoring hears of it", reported, { c[3] })
+    end
   end
   -- A preset the setup names and does not list has no color or level to
   -- store: the mode stored stands.
@@ -4759,6 +4951,34 @@ do
     restart({ RGBCT, CT }, false)
     T.eq(c[1] .. ": the mode stored stands", persist:get(c[2], false), had)
   end
+end
+
+T.section("a first report whose proxy variables cannot be read: Cloud Monitoring hears of each")
+do
+  local diagnostics = require("lib.diagnostics")
+  local RGB = ColorMode.COLOR_MODE_RGB
+  light({ RGB })
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  local read, capture, reported = C4.GetDeviceVariable, diagnostics.captureError, {}
+  function C4:GetDeviceVariable(id, variable)
+    if id == 643 then
+      error("no variable " .. tostring(variable))
+    end
+    return read(self, id, variable)
+  end
+  diagnostics.captureError = function(_, _message, _traceback, source)
+    reported[#reported + 1] = source
+  end
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+    entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGB } }),
+    state = SerializeSafe({ state = true, brightness = 1.0, color_mode = RGB, red = 1, green = 0.5, blue = 0 }),
+  })
+  C4.GetDeviceVariable, diagnostics.captureError = read, capture
+  T.eq("its capabilities, its level and its color each", reported, {
+    "Light.updateDynamicCapabilities",
+    "Light.state",
+    "Light.tellShownColor",
+  })
 end
 
 T.section("the brightness on mode and the default rates are read from the proxy's setup too")
@@ -7026,6 +7246,7 @@ do
   proxy("CLEAR_ALL_SCENES")
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  run(HOLD_DELAY)
   T.eq("a held Top ramps to the Max On Level", brightnessSent(), 0.8)
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_HOLD })
 
@@ -7067,7 +7288,7 @@ do
   proxy("SET_HOLD_RATE_DOWN", { RATE = 4000 })
   proxy("SET_LEVEL", { LEVEL = 100 })
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = PRESS })
-  run(2000)
+  run(HOLD_DELAY + 2000)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = RELEASE_HOLD })
   T.eq("a held Bottom let go half way down", { brightnessSent(), levelsTold() }, { 0.4, { 34 } })
@@ -7080,13 +7301,13 @@ do
   -- Under the Min On Level it stops at the Min, or off under half way there.
   proxy("SET_LEVEL", { LEVEL = 100 })
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = PRESS })
-  run(2730)
+  run(HOLD_DELAY + 2730)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = RELEASE_HOLD })
   T.eq("a held Bottom let go at 0.15 goes to the Min On Level", { brightnessSent(), levelsTold() }, { 0.2, { 1 } })
   proxy("SET_LEVEL", { LEVEL = 100 })
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = PRESS })
-  run(3200)
+  run(HOLD_DELAY + 3200)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = RELEASE_HOLD })
   T.eq("let go at 0.05, it goes off", { lastCommand().state, levelsTold() }, { false, { 0 } })
@@ -7301,7 +7522,7 @@ do
   onLevels(80, 20)
   proxy("SET_HOLD_RATE_DOWN", { RATE = 4000 })
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = PRESS })
-  run(1000)
+  run(HOLD_DELAY + 1000)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = RELEASE_HOLD })
   T.eq("a held Bottom let go a quarter of the way", { brightnessSent(), levelsTold() }, { quarterDown(), { 100 } })
@@ -7311,6 +7532,7 @@ do
   light({ ColorMode.COLOR_MODE_BRIGHTNESS })
   onLevels(80, 20)
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = PRESS })
+  run(HOLD_DELAY)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = RELEASE_HOLD })
   T.eq("one let go as it begins holds it at full", brightnessSent(), 1)
@@ -7794,7 +8016,7 @@ do
   pushed({ RGB, CWWW }, state, RANGE)
   fadeMode({ 0.5, 0.4 }, { 0.4, 0.4 }, CCT_MODE)
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  run(1000)
+  run(HOLD_DELAY + 1000)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_HOLD })
   T.eq(
@@ -7847,13 +8069,13 @@ do
   level(50, 4000)
   run(2500)
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
-  run(1000)
+  run(HOLD_DELAY + 1000)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_HOLD })
   T.eq(
     "Top held past half way through a level carrying a Dim-To-Warm white from red, let go a second later: the white, over half a second",
     { lastCommand().color_mode, colors(), brightnessSent(), lengths() },
-    { CWWW, {}, fadeLevel(fadeLevel(100, 50, 2500 / 4000), 100, 1000 / 3000) / 100, { 500 } }
+    { CWWW, {}, fadeLevel(fadeLevel(100, 50, (2500 + HOLD_DELAY) / 4000), 100, 1000 / 3000) / 100, { 500 } }
   )
   for name, color in pairs({ ["a level, with Dim-To-Warm,"] = "", ["a level and 4000 K"] = FOUR_K }) do
     inRed({ RGB, CWWW })
@@ -7932,7 +8154,7 @@ do
   level(50, 4000)
   run(1000)
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = PRESS })
-  run(1000)
+  run(HOLD_DELAY + 1000)
   mark()
   proxy("BUTTON_ACTION", { BUTTON_ID = BOTTOM, ACTION = RELEASE_HOLD })
   T.eq(
@@ -7941,7 +8163,7 @@ do
     {
       RGB,
       { { 1, 0, 0 } },
-      fadeLevel(fadeLevel(100, 50, 1000 / 4000), 0, 1000 / 3000) / 100,
+      fadeLevel(fadeLevel(100, 50, (1000 + HOLD_DELAY) / 4000), 0, 1000 / 3000) / 100,
       { 500 },
       { 0, FULL_MODE },
     }
@@ -8933,17 +9155,59 @@ do
   T.eq("a Toggle press while suspended at 60, then back off: its click turns the light on", levels(), { 100 })
 end
 
-T.section("a light loaded while its device is suspended is told so, and tells no level it does not know")
+T.section("a light loaded while its device is suspended stays offline, and tells no level it does not know")
 do
   -- The main driver's answer to the refresh the light sends at late init.
   restart(nil)
   RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
-  T.eq("told only that it is offline", told("ONLINE_CHANGED", "STATE"), { false })
+  T.eq("late init told it offline: nothing more", told("ONLINE_CHANGED", "STATE"), {})
   T.eq("and no level", told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
   mark()
   proxy("GET_LIGHT_LEVEL")
   proxy("TOGGLE")
   T.eq("Get Light Level and a Toggle tell nothing", told("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
+end
+
+T.section("a light already told offline is not told so again")
+do
+  local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
+  local function answer()
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+      entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = dimmer }),
+      state = SerializeSafe({ state = true, brightness = 0.6 }),
+    })
+  end
+  light(dimmer)
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", { suspended = "true" })
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  answer()
+  T.eq("suspended, then lost, then back: offline once, then online", told("ONLINE_CHANGED", "STATE"), { false, true })
+  restart(nil)
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("lost after a load, which told it offline: nothing more", told("ONLINE_CHANGED", "STATE"), {})
+  light(dimmer)
+  OBC[DEVICE](DEVICE, "DEVICE", true)
+  mark()
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("lost after a bind, with the proxy still showing it online: told offline", told("ONLINE_CHANGED", "STATE"), {
+    false,
+  })
+  answer()
+  mark()
+  proxy("GET_CONNECTED_STATE")
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("asked, then lost: online, then offline", told("ONLINE_CHANGED", "STATE"), { true, false })
+  answer()
+  OBC[DEVICE](DEVICE, "DEVICE", true)
+  mark()
+  proxy("GET_CONNECTED_STATE")
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("asked after a bind, then lost: offline once", told("ONLINE_CHANGED", "STATE"), { false })
+  answer()
+  mark()
+  OBC[DEVICE](DEVICE, "DEVICE", false)
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("unbound, then lost: offline once", told("ONLINE_CHANGED", "STATE"), { false })
 end
 
 T.section("a light's first report after a load, bind or disconnect tells the proxy only a color it does not show")
