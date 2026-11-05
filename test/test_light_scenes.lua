@@ -4953,6 +4953,34 @@ do
   end
 end
 
+T.section("a first report whose proxy variables cannot be read: Cloud Monitoring hears of each")
+do
+  local diagnostics = require("lib.diagnostics")
+  local RGB = ColorMode.COLOR_MODE_RGB
+  light({ RGB })
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  local read, capture, reported = C4.GetDeviceVariable, diagnostics.captureError, {}
+  function C4:GetDeviceVariable(id, variable)
+    if id == 643 then
+      error("no variable " .. tostring(variable))
+    end
+    return read(self, id, variable)
+  end
+  diagnostics.captureError = function(_, _message, _traceback, source)
+    reported[#reported + 1] = source
+  end
+  RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+    entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = { RGB } }),
+    state = SerializeSafe({ state = true, brightness = 1.0, color_mode = RGB, red = 1, green = 0.5, blue = 0 }),
+  })
+  C4.GetDeviceVariable, diagnostics.captureError = read, capture
+  T.eq("its capabilities, its level and its color each", reported, {
+    "Light.updateDynamicCapabilities",
+    "Light.state",
+    "Light.tellShownColor",
+  })
+end
+
 T.section("the brightness on mode and the default rates are read from the proxy's setup too")
 do
   -- The mode as Previous On, whose level the proxy has at 20 %, and both
@@ -9169,6 +9197,17 @@ do
   proxy("GET_CONNECTED_STATE")
   RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
   T.eq("asked, then lost: online, then offline", told("ONLINE_CHANGED", "STATE"), { true, false })
+  answer()
+  OBC[DEVICE](DEVICE, "DEVICE", true)
+  mark()
+  proxy("GET_CONNECTED_STATE")
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("asked after a bind, then lost: offline once", told("ONLINE_CHANGED", "STATE"), { false })
+  answer()
+  mark()
+  OBC[DEVICE](DEVICE, "DEVICE", false)
+  RFP.UPDATE_DISCONNECT(DEVICE, "UPDATE_DISCONNECT", {})
+  T.eq("unbound, then lost: offline once", told("ONLINE_CHANGED", "STATE"), { false })
 end
 
 T.section("a light's first report after a load, bind or disconnect tells the proxy only a color it does not show")
