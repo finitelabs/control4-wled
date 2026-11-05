@@ -11,10 +11,12 @@ sources.
 | `banners/facts-strip-2400x200`   | 2400x200  | The first image in the listing's description: four facts in a row               |
 | `photos/1-...` to `photos/6-...` | 2000x2000 | Listing photos, uploaded in number order                                         |
 
-`assets/` holds what the pages share: the Finite Labs logo, the WLED driver's
-icon (`wled-mark.png`) and WLED's controller module (`brand-mark.png`). The
-module is cropped, otherwise unmodified, from WLED's official logo
-(`images/wled_logo_akemi.png` in https://github.com/wled/WLED at v16.0.1).
+`assets/` holds what the pages share: the Finite Labs logo, `scene.js`, which
+draws the banners' art, and WLED's official logo as `brand-mark.png`
+(`images/wled_logo_akemi.png` in https://github.com/wled/WLED at v16.0.1), with
+only its transparent margin trimmed. The banners' art is `strip`, a glowing LED
+strip behind the logo, set on each banner's `<svg class="scene">`; the
+template's DriverCentral README lists the styles.
 WLED publishes no brand kit; its files are under the EUPL-1.2, which grants no
 trademark rights, so the logo is used only to name the devices the driver
 controls (see the repo's `NOTICE`).
