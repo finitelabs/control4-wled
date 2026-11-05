@@ -1,6 +1,7 @@
 --- The WLED driver's DriverCentral build under its license gate, against the repo's fake WLED controller, with the
 --- real cloud client and a fake Cloud driver: five minutes without a license it drops the connection and sends the
---- controller nothing more, its light keeps its level and no event fires; a license connects it again at once.
+--- controller nothing more, its light keeps its level and no event fires; a license connects it again at once, and
+--- reads its lights off if the controller is gone by then.
 ---
 --- Run from the driver root:
 ---   make test
@@ -177,6 +178,28 @@ do
   tick(40)
   T.eq("still connected", Properties["Driver Status"], "Connected")
   T.eq("a light OFF still reaches the controller", reaches("OFF"), true)
+end
+
+T.section("A license back while the controller is gone reads its lights off")
+do
+  cloud.answer = { AC = 0, AS = "Invalid License" }
+  tick(30)
+  T.eq("a lapse while connected stops it", Properties["Driver Status"], "No active license")
+  fake.reachable = false
+  local toldBefore = #told
+  cloud.answer = { AC = 1, AS = "License Activated" }
+  cloud.say(cloud.answer)
+  W.run(60000)
+  T.eq("Driver Status", Properties["Driver Status"], "Not connected: No connection to the controller")
+  T.eq("the light is told level 0", brightnessSince(toldBefore), 0)
+  local segments = 0
+  for _, segment in pairs(require("lib.bindings"):getDynamicBindings("Segments")) do
+    segments = segments + 1
+    local last = lastTo[segment.bindingId]
+    T.eq("segment " .. segment.bindingId .. " is told the controller is gone", last.command, "UPDATE_DISCONNECT")
+    T.eq("not suspended, so its light reads off", last.params.suspended, nil)
+  end
+  T.eq("the controller has segments", segments > 0, true)
 end
 
 T.finish()

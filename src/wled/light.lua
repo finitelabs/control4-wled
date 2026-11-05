@@ -1838,7 +1838,6 @@ local function rampToBrightness(level, rate, presetId, replaced)
   if dropWhileOffline("Level " .. tostring(level)) then
     return
   end
-  -- A level command replaces a press's hold, as it would the hold's ramp.
   pressHold.cancel()
   level = math.max(0, math.min(100, math.floor((level or 0) + 0.5)))
   rate = math.max(0, tointeger(rate) or 0)
@@ -2873,7 +2872,6 @@ function RFP.ACTIVATE_SCENE(idBinding, strCommand, tParams, args)
     log:warn("ACTIVATE_SCENE: unknown scene id %s", sceneId)
     return
   end
-  -- A newer scene replaces a press's hold, as it would the hold's ramp.
   pressHold.cancel()
   scene.state = 0
   scenes[tostring(sceneId)] = scene

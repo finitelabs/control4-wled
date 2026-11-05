@@ -1096,6 +1096,7 @@ local function licenseChanged(licensed)
   gListsReading = nil
   client:stop()
   setStatus(drivercentral.UNLICENSED_STATUS)
+  gSuspended = gSuspended or gConnected
   if light.isOnline() then
     light.disconnect(true)
   end
