@@ -3381,10 +3381,12 @@ function RFP.BUTTON_ACTION(idBinding, strCommand, tParams, args)
 
   handleButtonAction(buttonId, action)
 
-  -- Echo the button action AFTER the ramp setup. If we send this BEFORE the
-  -- LIGHT_BRIGHTNESS_CHANGING notify, the proxy treats it as a state-change
-  -- event and snaps the UI to the on/off target, then our CHANGING repositions
-  -- back to current and animates - producing a visible jump-and-rewind.
+  -- Echo the button action after handling it. An echo sent before
+  -- LIGHT_BRIGHTNESS_CHANGING makes the proxy snap the UI to the on/off target,
+  -- then the CHANGING moves it back and animates: a visible jump-and-rewind.
+  -- A click's CHANGING, when it has one, goes first, but a press only starts
+  -- its hold wait, so PRESS's echo comes pressHold.ms (250 ms) before any
+  -- CHANGING.
   SendToProxy(PROXY_BINDING, "BUTTON_ACTION", {
     BUTTON_ID = buttonId,
     ACTION = action,
