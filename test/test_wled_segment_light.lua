@@ -184,6 +184,8 @@ do
   T.eq("connecting meanwhile", Properties["Driver Status"], "Connecting")
   T.eq("and not Connected", Variables["Connected"], "0")
   T.contains("driver.xml has no Extras", readXml(), "<has_extras>False</has_extras>")
+  local connection = readXml():match("<id>" .. CONTROLLER .. "</id>(.-)</connection>") or ""
+  T.contains("and its WLED Controller connection says it is not hidden", connection, "<hidden>False</hidden>")
   mark()
   report()
   T.eq("Connected once told", { Properties["Driver Status"], Variables["Connected"] }, { "Connected", "1" })
