@@ -1,8 +1,8 @@
 # DriverCentral images
 
 Marketing images for the WLED Lights listing (DriverCentral product 978). Each
-image is an HTML page rendered to PNG, and the rendered PNGs sit next to their
-sources.
+banner and photo is an HTML page rendered to PNG, and the rendered PNGs sit next
+to their sources. The product card comes from `make icons`.
 
 | Path                             | Size      | Used for                                                                                                                                                                                                               |
 | -------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
