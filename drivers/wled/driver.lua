@@ -6,11 +6,7 @@
 -- (src/wled/light_wled.lua). Its Extras menu is src/wled/extras.lua. WLED Segment lights bind to it,
 -- one per segment, and reach the controller through it (src/wled/segment.lua).
 
---#ifdef DRIVERCENTRAL
-DC_PID = 978
-DC_X = nil
-DC_FILENAME = "wled.c4z"
---#else
+--#ifndef DRIVERCENTRAL
 DRIVER_GITHUB_REPO = "finitelabs/control4-wled"
 --#endif
 
@@ -28,6 +24,8 @@ local bindings = require("lib.bindings")
 local conditionals = require("lib.conditionals")
 local updateSettings = require("lib.update-settings")
 --#ifdef DRIVERCENTRAL
+local deferred = require("deferred")
+local drivercentral = require("lib.drivercentral")
 local supportCode = require("lib.support-code")
 local diagnostics = require("lib.diagnostics")
 --#endif
@@ -120,6 +118,12 @@ local DEFAULT_WARM, DEFAULT_COOL = 2700, 6500
 --- controller that is not the one this driver was set up with.
 --- @param json table
 local function send(json)
+  --#ifdef DRIVERCENTRAL
+  if not drivercentral:licensed() then
+    log:warn("WLED command not sent: no active license")
+    return
+  end
+  --#endif
   if gWrongMac then
     log:warn("WLED command not sent: a different controller answers at this address")
     return
@@ -150,6 +154,11 @@ light.attach(wledLight:adapter())
 local lists = Lists:new({
   device = device,
   get = function(path)
+    --#ifdef DRIVERCENTRAL
+    if not drivercentral:licensed() then
+      return deferred.new():reject({ error = "no active license" })
+    end
+    --#endif
     return client:get(path)
   end,
 })
@@ -667,6 +676,19 @@ end
 --- @param always boolean|nil
 local function pushSegment(key, bindingId, always)
   local seg = gSegmentOf[key]
+  --#ifdef DRIVERCENTRAL
+  -- The gate leaves gConnected as it was, so the license coming back fires no event.
+  if not drivercentral:licensed() then
+    gSegmentSent[bindingId] = nil
+    SendToProxy(
+      bindingId,
+      "UPDATE_DISCONNECT",
+      { status = drivercentral.UNLICENSED_STATUS, suspended = true },
+      "NOTIFY"
+    )
+    return
+  end
+  --#endif
   if not gConnected or not seg then
     gSegmentSent[bindingId] = nil
     SendToProxy(bindingId, "UPDATE_DISCONNECT", gConnected and { status = "Segment not found" } or {}, "NOTIFY")
@@ -844,6 +866,12 @@ end
 
 --- Connect to the controller the properties name, or say what is missing.
 local function connect()
+  --#ifdef DRIVERCENTRAL
+  if not drivercentral:licensed() then
+    setStatus(drivercentral.UNLICENSED_STATUS)
+    return
+  end
+  --#endif
   local ip = ipAddress()
   lists:cancel()
   gListsReading = nil
@@ -1040,6 +1068,36 @@ end
 
 client = Client:new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
 
+--#ifdef DRIVERCENTRAL
+--- DriverCentral's license gate. Without a license the driver drops the connection and stops
+--- following the controller, and its lights and segment lights keep their level, as a driver
+--- update leaves them; with one it connects again, as a load does. Neither fires an event.
+--- @param licensed boolean
+local function licenseChanged(licensed)
+  if licensed then
+    log:info("License active; connecting to the controller")
+    connect()
+    return
+  end
+  log:warn("No active license; disconnecting from the controller")
+  stopFollowing()
+  lists:cancel()
+  gListsReading = nil
+  client:stop()
+  setStatus(drivercentral.UNLICENSED_STATUS)
+  if light.isOnline() then
+    light.disconnect(true)
+  end
+  if gSegmentsTold then
+    gSegmentsTold = false
+    gSegmentSent = {}
+    for _, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
+      SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", { suspended = true }, "NOTIFY")
+    end
+  end
+end
+--#endif
+
 -- ─── Updates ───────────────────────────────────────────────────────────────
 
 --#ifndef DRIVERCENTRAL
@@ -1068,8 +1126,7 @@ end
 
 function OnDriverInit()
   --#ifdef DRIVERCENTRAL
-  require("cloud-client-byte")
-  C4:AllowExecute(false)
+  drivercentral:startClient()
   --#else
   C4:AllowExecute(true)
   --#endif
@@ -1138,6 +1195,9 @@ function OnDriverLateInit()
   connect()
   showFound({})
   search()
+  --#ifdef DRIVERCENTRAL
+  drivercentral:startGate(licenseChanged)
+  --#endif
 end
 
 --#ifdef DRIVERCENTRAL
