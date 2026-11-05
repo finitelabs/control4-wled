@@ -4,22 +4,22 @@ Marketing images for the WLED Lights listing (DriverCentral product 978). Each
 image is an HTML page rendered to PNG, and the rendered PNGs sit next to their
 sources.
 
-| Path                             | Size      | Used for                                                                         |
-| -------------------------------- | --------- | -------------------------------------------------------------------------------- |
-| `banners/spotlight-4096x848`     | 4096x848  | DriverCentral homepage spotlight banner (emailed to DriverCentral, not uploaded) |
-| `banners/launch-post-2400x1200`  | 2400x1200 | Launch posts (c4forums, Reddit, Discord)                                         |
-| `banners/facts-strip-2400x200`   | 2400x200  | The first image in the listing's description: four facts in a row               |
-| `photos/1-...` to `photos/6-...` | 2000x2000 | Listing photos, uploaded in number order                                         |
+| Path                             | Size      | Used for                                                                                                                                                                                                               |
+| -------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `banners/spotlight-4096x848`     | 4096x848  | DriverCentral homepage spotlight banner (emailed to DriverCentral, not uploaded)                                                                                                                                       |
+| `banners/launch-post-2400x1200`  | 2400x1200 | Launch posts (c4forums, Reddit, Discord)                                                                                                                                                                               |
+| `banners/facts-strip-2400x136`   | 2400x136  | The first image in the listing's description: four facts in a row, three-quarters of the width, on a transparent background. Put it in a plain paragraph in the description, not a heading, which adds its own spacing |
+| `product-card-300x300.png`       | 300x300   | The listing's product card, written by `make icons` from `resources/Driver Icons.sketch`                                                                                                                               |
+| `photos/1-...` to `photos/6-...` | 2000x2000 | Listing photos, uploaded in number order                                                                                                                                                                               |
 
 `assets/` holds what the pages share: the Finite Labs logo, `scene.js`, which
 draws the banners' art, and WLED's official logo as `brand-mark.png`
 (`images/wled_logo_akemi.png` in https://github.com/wled/WLED at v16.0.1), with
 only its transparent margin trimmed. The banners' art is `strip`, a glowing LED
 strip behind the logo, set on each banner's `<svg class="scene">`; the
-template's DriverCentral README lists the styles.
-WLED publishes no brand kit; its files are under the EUPL-1.2, which grants no
-trademark rights, so the logo is used only to name the devices the driver
-controls (see the repo's `NOTICE`).
+template's DriverCentral README lists the styles. WLED publishes no brand kit;
+its files are under the EUPL-1.2, which grants no trademark rights, so the logo
+is used only to name the devices the driver controls (see the repo's `NOTICE`).
 
 ## Rendering
 
