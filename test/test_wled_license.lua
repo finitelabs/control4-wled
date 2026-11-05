@@ -54,12 +54,14 @@ local events = {}
 function C4:FireEventByID(id)
   events[#events + 1] = id
 end
---- What the light proxy is told, by command.
+--- What the light proxy is told, by command, and the last thing each other binding is told.
 local told = {}
+local lastTo = {}
 function C4:SendToProxy(id, command, params)
   if id == PROXY then
     told[#told + 1] = { command = command, params = params or {} }
   end
+  lastTo[id] = { command = command, params = params or {} }
 end
 
 --- Run the Lua file at `path` as the DriverCentral build compiles it: the lines its directives leave out are blanked.
@@ -145,6 +147,14 @@ do
   tick(10)
   T.eq("nor does Control4 programming, a property change or a poll", #fake.requests, requests)
   T.eq("Driver Status after a property change", Properties["Driver Status"], "No active license")
+  local _, segment = next(require("lib.bindings"):getDynamicBindings("Segments"))
+  ReceivedFromProxy(segment.bindingId, "REFRESH_STATE", {})
+  T.eq(
+    "a segment asking for its state is told the driver is stopped",
+    lastTo[segment.bindingId].command,
+    "UPDATE_DISCONNECT"
+  )
+  T.eq("and that it is suspended, so its light keeps its level", lastTo[segment.bindingId].params.suspended, true)
 end
 
 T.section("A license connects it again at once")

@@ -676,6 +676,19 @@ end
 --- @param always boolean|nil
 local function pushSegment(key, bindingId, always)
   local seg = gSegmentOf[key]
+  --#ifdef DRIVERCENTRAL
+  -- The gate leaves gConnected as it was, so the license coming back fires no event.
+  if not drivercentral:licensed() then
+    gSegmentSent[bindingId] = nil
+    SendToProxy(
+      bindingId,
+      "UPDATE_DISCONNECT",
+      { status = drivercentral.UNLICENSED_STATUS, suspended = true },
+      "NOTIFY"
+    )
+    return
+  end
+  --#endif
   if not gConnected or not seg then
     gSegmentSent[bindingId] = nil
     SendToProxy(bindingId, "UPDATE_DISCONNECT", gConnected and { status = "Segment not found" } or {}, "NOTIFY")
