@@ -3717,7 +3717,7 @@ function Light.reset(isBound)
   supportsCCT = false
   supportedColorModes = {}
   currentBrightness = 0
-  ledState = false
+  ledState = nil
   rampingBrightness = false
   rampingColor = false
   brightnessRamp = nil
