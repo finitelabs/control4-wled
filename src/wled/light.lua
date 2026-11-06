@@ -3207,7 +3207,7 @@ function RFP.REQUEST_BUTTON_COLORS(idBinding, strCommand, tParams, args)
     end
     local onColor, offColor = getButtonColors(buttonId)
     SendToProxy(idBinding, "BUTTON_COLORS", { ON_COLOR = onColor, OFF_COLOR = offColor }, "NOTIFY")
-    local isOn = ledState
+    local isOn = ledState == true
     if idBinding == OFF_BINDING then
       isOn = not isOn
     end
@@ -3224,7 +3224,7 @@ function RFP.REQUEST_BUTTON_COLORS(idBinding, strCommand, tParams, args)
   end
   -- The MATCH_LED_STATE last sent, per button binding, with bottom inverted (its
   -- LED lights when the light is off so the keypad shows the toggle state correctly).
-  local isOn = ledState
+  local isOn = ledState == true
   SendToProxy(ON_BINDING, "MATCH_LED_STATE", { STATE = isOn }, "NOTIFY", true)
   SendToProxy(OFF_BINDING, "MATCH_LED_STATE", { STATE = not isOn }, "NOTIFY", true)
   SendToProxy(TOGGLE_BINDING, "MATCH_LED_STATE", { STATE = isOn }, "NOTIFY", true)
@@ -3717,7 +3717,7 @@ function Light.reset(isBound)
   supportsCCT = false
   supportedColorModes = {}
   currentBrightness = 0
-  ledState = false
+  ledState = nil
   rampingBrightness = false
   rampingColor = false
   brightnessRamp = nil
