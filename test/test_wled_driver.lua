@@ -396,6 +396,8 @@ do
   Properties["Cool White (K)"] = "5000"
   Properties["Log Level"] = "5 - Debug"
   Properties["Cloud Monitoring"] = "Disabled"
+  Properties["Automatic Updates"] = "Off"
+  Properties["Update Channel"] = "Prerelease"
   local persist = require("lib.persist")
   persist:set("white_point", { x = 0.4, y = 0.4, picked = { x = 0.45, y = 0.41 } })
   T.eq("connected before the reset", Variables["Connected"], "1")
@@ -411,6 +413,8 @@ do
   T.eq("Warm White back to its default", Properties["Warm White (K)"], "2700")
   T.eq("Cool White back to its default", Properties["Cool White (K)"], "6500")
   T.eq("Log Level back to its default", Properties["Log Level"], "3 - Info")
+  T.eq("but Automatic Updates, shared with every item, stays as it was", Properties["Automatic Updates"], "Off")
+  T.eq("and so does Update Channel", Properties["Update Channel"], "Prerelease")
   T.eq("IP Address kept", Properties["IP Address"], fake.ip)
   T.eq("connected again", Variables["Connected"], "1")
   T.eq("and Connected fired for the new start", eventCount(1), 1)
