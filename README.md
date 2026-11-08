@@ -574,3 +574,10 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added finding WLED controllers on the network: a `Found Controllers` list to
   pick a controller from, a `Find Controllers` action, and IP Address and Port
   following the driver's controller by its MAC address when its address changes
+
+### Changed
+
+- Changed Log Level in the DriverCentral build to stop at `4 - Debug`:
+  `5 - Trace` and `6 - Ultra` are offered only while a Support Code from Finite
+  Labs support has the Lua tab open, and a driver set to either goes back to
+  `4 - Debug`.
