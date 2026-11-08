@@ -138,20 +138,20 @@ T.section("capabilities come from the controller's own bits")
 --------------------------------------------------------------------------------
 do
   local cases = {
-    { "esp32-rgbw-pwm-16", true, true, true },
-    { "esp32-rgbw-015", true, false, true },
-    { "esp8266-ws2812b-015", true, false, true },
-    { "esp32-cct-16", false, true, true },
-    { "esp32-white-16", false, false, true },
-    { "esp32-relay-16", false, false, false },
+    { "esp32-rgbw-pwm-16", true, true, true, true },
+    { "esp32-rgbw-015", true, false, true, true },
+    { "esp8266-ws2812b-015", true, false, true, true },
+    { "esp32-cct-16", false, true, true, true },
+    { "esp32-white-16", false, false, true, true },
+    { "esp32-relay-16", false, false, false, false },
   }
   for _, c in ipairs(cases) do
     fresh(c[1])
     local caps = lastCaps() or {}
     T.eq(
-      c[1] .. ": color, color temperature, dimming",
-      { caps.supports_color, caps.supports_color_correlated_temperature, caps.dimmer },
-      { c[2], c[3], c[4] }
+      c[1] .. ": color, color temperature, dimming, color stop",
+      { caps.supports_color, caps.supports_color_correlated_temperature, caps.dimmer, caps.supports_color_stop },
+      { c[2], c[3], c[4], c[5] }
     )
   end
   fresh("esp32-cct-16")
@@ -231,6 +231,38 @@ do
   -- A quarter of the way along a straight line from 20 to 100: 40.
   T.eq(
     "a stop a quarter through holds where the straight line is",
+    toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
+    { 40 }
+  )
+  T.eq("sent as that level at once", cmd and { cmd.bri, cmd.tt }, { 102, 0 })
+end
+
+--------------------------------------------------------------------------------
+T.section("a light with no color declares a color stop, so the proxy passes its brightness stop on")
+--------------------------------------------------------------------------------
+do
+  local f = assert(io.open(XML))
+  local xml = f:read("*a")
+  f:close()
+  T.contains(
+    "driver.xml declares it before the controller reports",
+    xml,
+    "<supports_color_stop>True</supports_color_stop>"
+  )
+  fresh("esp32-white-16")
+  T.eq("a white-only strip is told it too", lastCaps().supports_color_stop, true)
+  proxy("SET_LEVEL", { LEVEL = "20" })
+  W.run(3000)
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "4000" })
+  W.run(1000)
+  mark()
+  proxy("SET_COLOR_STOP")
+  T.eq("a color stop mid-ramp sends the controller nothing", sent(), {})
+  T.eq("and tells the proxy nothing", told, {})
+  proxy("SET_BRIGHTNESS_STOP")
+  local cmd = sent()[1]
+  T.eq(
+    "its brightness stop still holds a quarter through",
     toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"),
     { 40 }
   )
