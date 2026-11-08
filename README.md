@@ -376,8 +376,10 @@ and `Port`, and the programming that uses the driver. It unwires every keypad
 button from the On, Toggle, Off, Next Preset and Previous Preset button links,
 removes every segment connection and preset link (making them again for the
 controller that answers), and returns the other properties to their defaults.
-Bind each **WLED Segment** light and each keypad button again afterwards. The
-light keeps the level it shows, so a reset fires no Light Off or Light On.
+The update settings stay as they are, since every WLED driver in the project
+shares them. Bind each **WLED Segment** light and each keypad button again
+afterwards. The light keeps the level it shows, so a reset fires no Light Off or
+Light On.
 
 **Parameters:**
 

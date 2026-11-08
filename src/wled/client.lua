@@ -13,7 +13,9 @@
 
 local deferred = require("deferred")
 local JSON = require("JSON")
+local WebSocket = require("drivers-common-public.module.websocket")
 
+local http = require("lib.http")
 local log = require("lib.logging")
 --#ifdef DRIVERCENTRAL
 local diagnostics = require("lib.diagnostics")
@@ -116,8 +118,8 @@ function Client:new(opts)
   instance.onState = opts.onState or function() end
   instance.onOnline = opts.onOnline or function() end
   instance.onOffline = opts.onOffline or function() end
-  instance.http = opts.http or require("lib.http")
-  instance.WebSocket = opts.WebSocket or require("drivers-common-public.module.websocket")
+  instance.http = opts.http or http
+  instance.WebSocket = opts.WebSocket or WebSocket
   instance.gen = 0
   instance.mode = "offline"
   instance.queue = {}

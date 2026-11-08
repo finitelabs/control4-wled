@@ -167,14 +167,9 @@ function OnDriverLateInit()
     return
   end
 
+  -- The router runs each handler in its own xpcall and reports its error, so the rest still run.
   for p, _ in pairs(Properties) do
-    local ok, err = pcall(OnPropertyChanged, p)
-    if not ok then
-      log:error("OnPropertyChanged('%s') failed: %s", p, tostring(err))
-      --#ifdef DRIVERCENTRAL
-      diagnostics:captureError(tostring(err), nil, "WLEDSegment.OnPropertyChanged")
-      --#endif
-    end
+    OnPropertyChanged(p)
   end
 
   gInitialized = true
