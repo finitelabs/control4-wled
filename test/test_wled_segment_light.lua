@@ -220,6 +220,20 @@ do
   T.eq("the RGBW segment has no color temperature", (caps[#caps] or {}).supports_color_correlated_temperature, false)
 end
 
+do
+  T.contains("driver.xml declares a color stop", readXml(), "<supports_color_stop>True</supports_color_stop>")
+  fresh("esp32-white-16", 0)
+  mark()
+  report()
+  local caps = toldOf(PROXY, "DYNAMIC_CAPABILITIES_CHANGED")
+  local last = caps[#caps] or {}
+  T.eq(
+    "a white-only segment has no color but a color stop, so the proxy passes its brightness stop on",
+    { last.supports_color, last.supports_color_stop },
+    { false, true }
+  )
+end
+
 --------------------------------------------------------------------------------
 T.section("Its level and power are its segment's")
 --------------------------------------------------------------------------------
