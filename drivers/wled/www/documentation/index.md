@@ -614,8 +614,8 @@ One `WLED_SEGMENT` connection for each segment the controller reports. Bind a
 A keypad button bound to a button link shows whether the light is on, in that
 button's on and off colors. They are set in Composer under the light's **Button
 and Button Connection Status LED Colors** (Top for On, Bottom for Off, Toggle
-for Toggle), and the project's own colors light the Off button while the light
-is off.
+for Toggle). With the project's default colors, the Off button is lit while the
+light is off.
 
 | Connection                         | Description                                                 |
 | ---------------------------------- | ----------------------------------------------------------- |
