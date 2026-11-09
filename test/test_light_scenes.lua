@@ -1589,6 +1589,31 @@ do
   run(15000)
   out = colors()
   T.eq("the On color named well after the level is a pick too", out[#out], onColor)
+  -- Programming's On sends no follow-up: its Set Color right after, to the On color's preset, is a command.
+  for _, on in ipairs({
+    {
+      "programming's On",
+      function()
+        proxy("ON")
+      end,
+    },
+    {
+      "a level naming no brightness preset",
+      function()
+        proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = 100, RATE = 750 })
+      end,
+    },
+  }) do
+    offInBlue()
+    colorTarget(green, 0)
+    mark()
+    on[2]()
+    run(5)
+    presetColor(ON, ON)
+    run(15000)
+    out = colors()
+    T.eq(on[1] .. ", then the On color's preset: it goes out", out[#out], onColor)
+  end
 
   -- With Previous, the proxy names its Previous On preset, which it rewrites at each off with the last color told.
   light({ ColorMode.COLOR_MODE_RGB }, true)

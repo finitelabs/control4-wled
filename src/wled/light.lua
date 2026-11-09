@@ -234,6 +234,8 @@ local nextOnColor = nil
 -- The Color On Mode preset { id, origin } a Navigator On names in the color it sends right after its level, and until
 -- when (untilMs) it is expected, after an on that came on in nextOnColor.
 local heldOnFollowUp = nil
+-- The Color On Mode preset of the on that last came on in nextOnColor, for its command to arm heldOnFollowUp.
+local heldOnPreset = nil
 
 -- Last reported value, then each one sent since (oldest first). A report
 -- matching none of them came from another client.
@@ -1571,11 +1573,7 @@ local function setDeviceBrightness(level, rateMs, keepColor, at)
     mergedColor = nextOnColor
     colorPicked = true
     local onPreset = Select(persist:get(PersistKey.COLOR_ON_MODE), "onPreset")
-    -- The proxy's follow-up came 5-6 ms after the level (dev, 2026-11-08).
-    heldOnFollowUp = onPreset
-        and onPreset.id
-        and onPreset.origin
-        and { id = onPreset.id, origin = onPreset.origin, untilMs = C4:GetTime() + 250 }
+    heldOnPreset = onPreset and onPreset.id and onPreset.origin and { id = onPreset.id, origin = onPreset.origin }
       or nil
     toldWhileOff =
       sameColor(currentColorX, currentColorY, currentColorMode, nextOnColor.x, nextOnColor.y, nextOnColor.mode)
@@ -2256,7 +2254,14 @@ function RFP.SET_BRIGHTNESS_TARGET(idBinding, strCommand, tParams, args)
   -- subsequent LIGHT_BRIGHTNESS_CHANGED notifies report it as the current
   -- preset id; other rampToBrightness call sites omit it and clear the id.
   local presetId = tointeger(Select(tParams, "LIGHT_BRIGHTNESS_TARGET_PRESET_ID"))
+  heldOnPreset = nil
   rampToBrightness(level, rate, presetId)
+  -- A Navigator On arrives as a level naming a brightness preset, and the proxy follows it 5-6 ms later with the
+  -- Color On Mode's own color (dev, 2026-11-08). Programming's On, a toggle, a button or a scene sends none.
+  if heldOnPreset and presetId then
+    heldOnFollowUp = { id = heldOnPreset.id, origin = heldOnPreset.origin, untilMs = C4:GetTime() + 250 }
+  end
+  heldOnPreset = nil
 end
 
 function RFP.ON(idBinding, strCommand, tParams, args)
@@ -3791,6 +3796,7 @@ function Light.reset(isBound)
   colorPicked = false
   nextOnColor = nil
   heldOnFollowUp = nil
+  heldOnPreset = nil
   currentColorX = DEFAULT_COLOR_X
   currentColorY = DEFAULT_COLOR_Y
   currentColorMode = LIGHT_COLOR_MODE_CCT
