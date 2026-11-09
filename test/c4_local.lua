@@ -8,6 +8,8 @@
 ---
 --- The global tohex, which the vendored WebSocket module calls for frames over 125 bytes.
 ---
+--- The project's button LED colors, as dev's project has them, installed as C4:GetProjectProperty.
+---
 --- Director's side of a driver reload that ShimUpdateDriver and ShimRestartDirector leave out: the
 --- new load's fresh Lua state, and the dynamic bindings Director drops.
 ---
@@ -132,6 +134,20 @@ end
 
 function C4:ColorXYtoCCT(x, y)
   return M.xyToCct(x, y)
+end
+
+-- The project's button LED colors, as dev's project has them.
+local PROJECT = {
+  TopLEDOn = "0000ff",
+  TopLEDOff = "000000",
+  BottomLEDOn = "000000",
+  BottomLEDOff = "0000ff",
+  ToggleLEDOn = "0000ff",
+  ToggleLEDOff = "000000",
+}
+
+function C4:GetProjectProperty(name)
+  return PROJECT[name]
 end
 
 -- Hex string to bytes, as Control4's tohex.

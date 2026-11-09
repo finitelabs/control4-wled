@@ -14,6 +14,10 @@ local T = require("testlib")
 require("c4_shim")
 require("lib.utils")
 
+function C4:GetProjectProperty()
+  return "000000"
+end
+
 local NAN = 0 / 0
 local root = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. ".."
 local BRIGHTNESS = 3
