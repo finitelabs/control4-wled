@@ -289,10 +289,11 @@ Binds to one of the **WLED** driver's segment connections.
 | Toggle Button Link | Toggles the light when triggered   |
 | Off Button Link    | Turns the light off when triggered |
 
-A keypad button bound to a button link shows whether the light is on: lit while
-it is on, or for the Off Button Link while it is off. It shows that button's
-colors, set in Composer under the light's **Button and Button Connection Status
-LED Colors** (Top for On, Bottom for Off, Toggle for Toggle).
+A keypad button bound to a button link shows whether the light is on, in that
+button's on and off colors. They are set in Composer under the light's **Button
+and Button Connection Status LED Colors** (Top for On, Bottom for Off, Toggle
+for Toggle). With the project's default colors, the Off button is lit while the
+light is off.
 
 <!-- #ifdef DRIVERCENTRAL -->
 

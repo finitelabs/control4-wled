@@ -8,6 +8,8 @@
 ---
 --- The global tohex, which the vendored WebSocket module calls for frames over 125 bytes.
 ---
+--- A C4:GetProjectProperty stub, which reads every project property as 000000.
+---
 --- Director's side of a driver reload that ShimUpdateDriver and ShimRestartDirector leave out: the
 --- new load's fresh Lua state, and the dynamic bindings Director drops.
 ---
@@ -132,6 +134,10 @@ end
 
 function C4:ColorXYtoCCT(x, y)
   return M.xyToCct(x, y)
+end
+
+function C4:GetProjectProperty()
+  return "000000"
 end
 
 -- Hex string to bytes, as Control4's tohex.

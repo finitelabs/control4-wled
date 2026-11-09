@@ -105,6 +105,18 @@ local capabilitiesTold = false
 function C4:GetProxyDevices()
   return 643
 end
+-- The project's button LED colors, as dev's project has them.
+local project = {
+  TopLEDOn = "0000ff",
+  TopLEDOff = "000000",
+  BottomLEDOn = "000000",
+  BottomLEDOff = "0000ff",
+  ToggleLEDOn = "0000ff",
+  ToggleLEDOff = "000000",
+}
+function C4:GetProjectProperty(name)
+  return project[name]
+end
 -- The proxy's Current Color Chromaticity (1200), which it keeps over a load or
 -- bind: the current a CHANGED or CHANGING told it, to six figures as a dev
 -- proxy shows it, or nil for a proxy never told one. Its target (1210) is a
@@ -1842,9 +1854,9 @@ do
   mark()
   proxy("REQUEST_BUTTON_COLORS")
   T.eq(
-    "Request Button Colors half way up: on, the Bottom's LED inverted",
+    "Request Button Colors half way up: each link told on",
     { leds(), leds(BOTTOM_LINK), leds(TOGGLE_LINK) },
-    { { { 0, true } }, { { 0, false } }, { { 0, true } } }
+    { { { 0, true } }, { { 0, true } }, { { 0, true } } }
   )
   run(15000)
   mark()
@@ -9517,6 +9529,70 @@ do
     )
     T.eq(c[1] .. ": in its mode", told("LIGHT_COLOR_CHANGED", "LIGHT_COLOR_CURRENT_COLOR_MODE"), { 0 })
   end
+end
+
+T.section("a light's buttons have the proxy's colors, or else the project's, and each link is told them at start")
+do
+  local f = assert(io.open(HERE .. "/../drivers/wled/driver.xml"))
+  local xml = f:read("*a")
+  f:close()
+  T.contains("driver.xml lets Composer set the button colors", xml, "<has_leds>True</has_leds>")
+  f = assert(io.open(HERE .. "/../drivers/wled_segment/driver.xml"))
+  xml = f:read("*a")
+  f:close()
+  T.contains("and the segment's", xml, "<has_leds>True</has_leds>")
+
+  local dimmer = { ColorMode.COLOR_MODE_BRIGHTNESS }
+  --- What each Button Link was told of its colors since the mark: Top, Toggle, Bottom.
+  local function linkColors()
+    local out = {}
+    for _, s in ipairs(sent) do
+      if s.command == "BUTTON_COLORS" and s.binding ~= PROXY then
+        out[s.binding] = { s.params.ON_COLOR, s.params.OFF_COLOR }
+      end
+    end
+    return { out[300], out[301], out[302] }
+  end
+  --- Start the light on `setup` with no colors of its own, and keep what it tells.
+  local function started(setup)
+    persist:delete("button_colors")
+    forgetSetup()
+    proxySetup = setup
+    light(nil)
+    RFP.UPDATE_STATE(DEVICE, "UPDATE_STATE", {
+      entity = SerializeSafe({ key = 1, name = "Light", supported_color_modes = dimmer }),
+      state = SerializeSafe({ state = true, brightness = 1.0 }),
+    })
+  end
+  project.TopLEDOn, project.ToggleLEDOff = "ff8800", "112233"
+
+  started("")
+  T.eq("a proxy that lists no buttons: the project's colors", linkColors(), {
+    { "ff8800", "000000" },
+    { "0000ff", "112233" },
+    { "000000", "0000ff" },
+  })
+
+  -- The proxy lists its buttons with the colors it had at install, which may be other than the project's now.
+  local setup = setupFile("setup-643.xml"):gsub("<ON_COLOR>0000ff</ON_COLOR>", "<ON_COLOR>00ff00</ON_COLOR>", 1)
+  started(setup)
+  T.eq("a proxy that lists them: its own", linkColors(), {
+    { "00ff00", "000000" },
+    { "0000ff", "000000" },
+    { "000000", "0000ff" },
+  })
+  mark()
+  RFP.REQUEST_BUTTON_COLORS(TOP_LINK, "REQUEST_BUTTON_COLORS", {})
+  T.eq("and the Top link is answered with them", linkColors(), { { "00ff00", "000000" } })
+
+  started("")
+  mark()
+  proxy("SET_BUTTON_COLOR", { BUTTON_ID = 2, ON_COLOR = "abcdef" })
+  T.eq("an on color alone keeps the project's off color", linkColors(), { nil, { "abcdef", "112233" } })
+
+  project.TopLEDOn, project.ToggleLEDOff = "0000ff", "000000"
+  persist:delete("button_colors")
+  proxySetup = ""
 end
 
 T.section("a light bound to another device shows that device's state on its button links")
