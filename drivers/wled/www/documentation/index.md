@@ -139,7 +139,9 @@ light's click and hold rates. Advanced Lighting Scenes run level and color
 steps, ramps, stops and flash. The light offers color and white as the
 controller's LEDs allow (see [Compatibility](#compatibility)), with color
 temperature between `Warm White (K)` and `Cool White (K)`, or level only, and
-follows the Color On Mode and Dim-To-Warm set on the light in Composer.
+follows the Color On Mode and Dim-To-Warm set on the light in Composer. A color
+set while the light is off is the color it next turns on in, in place of the
+Color On Mode's.
 
 ## Colors and WLED effects
 

@@ -228,6 +228,10 @@ local currentColorPreset = nil
 -- off. Not persisted, so a reload or a restart ends it.
 local colorPicked = false
 
+-- A color Control4 set while the light was off { x, y, mode, preset }: the next on comes on in it over the Color On
+-- Mode's, as Control4's own bulbs do, and it then holds as a picked color. Cleared once the light is on; not persisted.
+local nextOnColor = nil
+
 -- Last reported value, then each one sent since (oldest first). A report
 -- matching none of them came from another client.
 local sentBrightness = {}
@@ -1324,6 +1328,9 @@ local function matchLedState(on)
     return
   end
   ledState = on
+  if on then
+    nextOnColor = nil
+  end
   -- MATCH_LED_STATE goes to each BUTTON_LINK binding (the keypad button
   -- LEDs), not to the LIGHT_V2 proxy binding. STATE is a Lua boolean per
   -- spec. Bottom is inverted: its LED lights when the light is OFF.
@@ -1542,7 +1549,8 @@ local function setDeviceBrightness(level, rateMs, keepColor, at)
   }
 
   -- Merge color into the brightness cmd so brightness+color animate as one
-  -- device transition. Two scenarios:
+  -- device transition. An off light given a color comes on in it, whatever
+  -- the on mode (nextOnColor). Otherwise two scenarios:
   --   1. Dim-to-warm during any brightness change while fade mode is active:
   --      recompute via the formula every step, unless a color was picked since
   --      the light came on (colorPicked), which stays until it goes off.
@@ -1552,9 +1560,16 @@ local function setDeviceBrightness(level, rateMs, keepColor, at)
   --      the SET_COLOR_TARGET handler skip a redundant cmd that
   --      would otherwise cancel and restart the in-flight transition.
   local mergedColor = nil
+  -- The proxy was told a color set while off as it was set, unless another client's has replaced it since.
+  local toldWhileOff = false
   -- A stop that keeps a color sends the level alone.
   -- A color picked in a rated on from off also holds for a level that replaces the on before the light is lit.
-  if not keepColor and not colorPicked then
+  if not keepColor and goingOn and nextOnColor then
+    mergedColor = nextOnColor
+    colorPicked = true
+    toldWhileOff =
+      sameColor(currentColorX, currentColorY, currentColorMode, nextOnColor.x, nextOnColor.y, nextOnColor.mode)
+  elseif not keepColor and not colorPicked then
     if level > 0 and getColorOnModeKind() == COLOR_ON_MODE_FADE then
       mergedColor = computeFadeColor(level)
     elseif goingOn then
@@ -1604,7 +1619,9 @@ local function setDeviceBrightness(level, rateMs, keepColor, at)
   if mergedColorApplied then
     -- This color supersedes a color ramp in flight.
     leaveColorRamp(now)
-    if hasRate and not goingOn then
+    if toldWhileOff then
+      log:debug("LIGHT_COLOR_CHANGED not retold: the proxy has the color set while off")
+    elseif hasRate and not goingOn then
       -- currentColor stays the color left until the ramp's end.
       notifyColorChanging(mergedColor.x, mergedColor.y, mergedColor.mode, rateMs)
     else
@@ -2378,10 +2395,14 @@ function RFP.SET_COLOR_TARGET(idBinding, strCommand, tParams, args)
     return
   end
 
-  -- One set while the light is off is the color it next comes on in, which its Color On Mode then replaces. The
-  -- proxy's follow-up of an instant on's color still goes out, and is no pick.
+  -- One set while the light is off is the color it next comes on in, over its Color On Mode's; one set in a fade to
+  -- off goes out over what the fade has left. The proxy's follow-up of an instant on's color still goes out, and is
+  -- no pick.
   local echo = window
     and sameColor(mergedColorSent.x, mergedColorSent.y, mergedColorSent.mode, targetX, targetY, targetMode)
+  if not ledState and not echo then
+    nextOnColor = { x = targetX, y = targetY, mode = targetMode, preset = currentColorPreset }
+  end
   colorPicked = colorPicked or (isLogicallyOn() and not echo)
   rampToColor(targetX, targetY, targetMode, rate)
 end
@@ -2635,12 +2656,18 @@ local function applySceneStep(step)
   -- A color-only step on an off light sets the next on's color, like a color
   -- command; it does not turn the light on.
   if ownColor and level == nil and not isLogicallyOn() then
+    if not ledState then
+      nextOnColor = { x = color.x, y = color.y, mode = color.mode or LIGHT_COLOR_MODE_FULL }
+    end
     currentColorPreset = nil
     rampToColor(color.x, color.y, color.mode, rate)
     return rate
   end
   -- A step that sets a level alone takes the color a level command would, and none while a picked color holds.
-  if not color and (level or 0) > 0 and not colorPicked then
+  if not color and goingOn and nextOnColor then
+    color = nextOnColor
+    colorPicked = true
+  elseif not color and (level or 0) > 0 and not colorPicked then
     if getColorOnModeKind() == COLOR_ON_MODE_FADE then
       color = computeFadeColor(step.level)
     elseif goingOn then
@@ -3741,6 +3768,7 @@ function Light.reset(isBound)
     SendToProxy(PROXY_BINDING, "ONLINE_CHANGED", { STATE = false }, "NOTIFY")
   end
   colorPicked = false
+  nextOnColor = nil
   currentColorX = DEFAULT_COLOR_X
   currentColorY = DEFAULT_COLOR_Y
   currentColorMode = LIGHT_COLOR_MODE_CCT
