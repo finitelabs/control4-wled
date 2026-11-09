@@ -1470,8 +1470,7 @@ local ELSEWHERE = { 0.2, 1, 0.3 }
 
 T.section("a color set while the light is off is the one its next on comes on in, over the Color On Mode's")
 do
-  -- As Control4's own bulbs do: kept for the next on, told at once, sent with that on's level, and dropped once the
-  -- light is on.
+  -- Kept for the next on, told at once, sent with that on's level, and dropped once the light is on.
   local green = { 0.3, 0.6 }
   light({ ColorMode.COLOR_MODE_RGB }, true)
   local greenSent = setColor(green)
@@ -1534,6 +1533,12 @@ do
   colorTarget(green, 0)
   activate(levelStep(60, 0))
   T.eq("and a scene step's level from off comes on in a color set while off", colors(), { greenSent })
+  proxy("CLEAR_ALL_SCENES")
+  offInBlue()
+  colorTarget(green, 0)
+  activate(levelStep(60, 2000))
+  run(3000)
+  T.eq("over a rate too: its pre-on and its on carry it", colors(), { greenSent, greenSent })
   proxy("CLEAR_ALL_SCENES")
 end
 

@@ -229,7 +229,7 @@ local currentColorPreset = nil
 local colorPicked = false
 
 -- A color Control4 set while the light was off { x, y, mode, preset }: the next on comes on in it over the Color On
--- Mode's, as Control4's own bulbs do, and it then holds as a picked color. Cleared once the light is on; not persisted.
+-- Mode's, and it then holds as a picked color. Cleared once the light is on; not persisted.
 local nextOnColor = nil
 
 -- Last reported value, then each one sent since (oldest first). A report
@@ -2604,6 +2604,8 @@ local function applySceneStep(step)
   -- A color the proxy was told is on its way (color ramp or merged color).
   local colorInFlight = rampingColor or (brightnessRamp and brightnessRamp.mergedColor)
   local goingOn = false
+  -- Read before a rated step's CHANGING, which lights the light and clears it.
+  local heldOnColor = nextOnColor
   local level = nil
   if step.levelEnabled and step.level ~= nil then
     level = supportsDimming and step.level or (step.level > 0 and 100 or 0)
@@ -2664,8 +2666,8 @@ local function applySceneStep(step)
     return rate
   end
   -- A step that sets a level alone takes the color a level command would, and none while a picked color holds.
-  if not color and goingOn and nextOnColor then
-    color = nextOnColor
+  if not color and goingOn and heldOnColor then
+    color = heldOnColor
     colorPicked = true
   elseif not color and (level or 0) > 0 and not colorPicked then
     if getColorOnModeKind() == COLOR_ON_MODE_FADE then
