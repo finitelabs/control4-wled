@@ -1540,6 +1540,72 @@ do
   run(3000)
   T.eq("over a rate too: its pre-on and its on carry it", colors(), { greenSent, greenSent })
   proxy("CLEAR_ALL_SCENES")
+
+  -- A Navigator On is the proxy's DYNAMIC_ON: its level, then 5 ms later the Color On Mode's own color, naming that
+  -- preset (dev, 2026-11-08).
+  local function levelOn()
+    proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = 100, RATE = 750, LIGHT_BRIGHTNESS_TARGET_PRESET_ID = 1 })
+  end
+  local function presetColor(preset, xy)
+    proxy("SET_COLOR_TARGET", {
+      LIGHT_COLOR_TARGET_X = xy[1],
+      LIGHT_COLOR_TARGET_Y = xy[2],
+      LIGHT_COLOR_TARGET_MODE = 0,
+      LIGHT_COLOR_TARGET_COLOR_RATE = 750,
+      LIGHT_COLOR_TARGET_PRESET_ID = preset.id,
+      LIGHT_COLOR_TARGET_PRESET_ORIGIN = preset.origin or 1,
+    })
+  end
+  light({ ColorMode.COLOR_MODE_RGB }, true)
+  local blueSent = setColor(BLUE)
+  offInBlue()
+  colorTarget(green, 0)
+  mark()
+  levelOn()
+  run(5)
+  presetColor(ON, ON)
+  run(15000)
+  T.eq("a Navigator On: the On color it sends after the level is not applied", colors(), { greenSent, greenSent })
+  T.eq(
+    "and the proxy is told the color the light keeps",
+    told("LIGHT_COLOR_CHANGED", "LIGHT_COLOR_CURRENT_X"),
+    { green[1] }
+  )
+  offInBlue()
+  colorTarget(green, 0)
+  mark()
+  levelOn()
+  run(5)
+  colorTarget(BLUE, 0)
+  run(15000)
+  local out = colors()
+  T.eq("another color right after the level is a new pick, which goes out", out[#out], blueSent)
+  offInBlue()
+  colorTarget(green, 0)
+  mark()
+  levelOn()
+  run(300)
+  presetColor(ON, ON)
+  run(15000)
+  out = colors()
+  T.eq("the On color named well after the level is a pick too", out[#out], onColor)
+
+  -- With Previous, the proxy names its Previous On preset, which it rewrites at each off with the last color told.
+  light({ ColorMode.COLOR_MODE_RGB }, true)
+  onMode(PREVIOUS_ON)
+  setColor(BLUE)
+  wentOff()
+  colorTarget(green, 0)
+  mark()
+  levelOn()
+  run(5)
+  presetColor(PREVIOUS_ON, BLUE)
+  run(15000)
+  T.eq("with Previous: the Navigator On's Previous On color is not applied either", colors(), { greenSent, greenSent })
+  wentOff()
+  mark()
+  proxy("ON")
+  T.eq("and the next on, in Previous, is in the color the light went off in", colors(), { greenSent })
 end
 
 T.section("a color the light takes while off is its color, which a color ramp starts from once it is on")

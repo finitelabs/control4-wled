@@ -231,6 +231,9 @@ local colorPicked = false
 -- A color Control4 set while the light was off { x, y, mode, preset }: the next on comes on in it over the Color On
 -- Mode's, and it then holds as a picked color. Cleared once the light is on; not persisted.
 local nextOnColor = nil
+-- The Color On Mode preset { id, origin } a Navigator On names in the color it sends right after its level, and until
+-- when (untilMs) it is expected, after an on that came on in nextOnColor.
+local heldOnFollowUp = nil
 
 -- Last reported value, then each one sent since (oldest first). A report
 -- matching none of them came from another client.
@@ -1567,6 +1570,13 @@ local function setDeviceBrightness(level, rateMs, keepColor, at)
   if not keepColor and goingOn and nextOnColor then
     mergedColor = nextOnColor
     colorPicked = true
+    local onPreset = Select(persist:get(PersistKey.COLOR_ON_MODE), "onPreset")
+    -- The proxy's follow-up came 5-6 ms after the level (dev, 2026-11-08).
+    heldOnFollowUp = onPreset
+        and onPreset.id
+        and onPreset.origin
+        and { id = onPreset.id, origin = onPreset.origin, untilMs = C4:GetTime() + 250 }
+      or nil
     toldWhileOff =
       sameColor(currentColorX, currentColorY, currentColorMode, nextOnColor.x, nextOnColor.y, nextOnColor.mode)
   elseif not keepColor and not colorPicked then
@@ -2341,6 +2351,15 @@ function RFP.SET_COLOR_TARGET(idBinding, strCommand, tParams, args)
   -- The proxy sends a preset's x and y with its id and origin, and sends no preset it is asked for without an origin.
   local presetId = tointeger(Select(tParams, "LIGHT_COLOR_TARGET_PRESET_ID"))
   local presetOrigin = tointeger(Select(tParams, "LIGHT_COLOR_TARGET_PRESET_ORIGIN"))
+  -- A Navigator On sends the Color On Mode's own color right after its level; an on in a color set while off keeps
+  -- that color.
+  local followUp = heldOnFollowUp
+  heldOnFollowUp = nil
+  if followUp and C4:GetTime() < followUp.untilMs and presetId == followUp.id and presetOrigin == followUp.origin then
+    log:debug("SET_COLOR_TARGET of the Color On Mode's preset after an on in a color set while off: not applied")
+    notifyColorChanged(currentColorX, currentColorY, currentColorMode)
+    return
+  end
   currentColorPreset = presetId and presetOrigin and { id = presetId, origin = presetOrigin } or nil
 
   local targetX, targetY, targetMode
@@ -3771,6 +3790,7 @@ function Light.reset(isBound)
   end
   colorPicked = false
   nextOnColor = nil
+  heldOnFollowUp = nil
   currentColorX = DEFAULT_COLOR_X
   currentColorY = DEFAULT_COLOR_Y
   currentColorMode = LIGHT_COLOR_MODE_CCT
