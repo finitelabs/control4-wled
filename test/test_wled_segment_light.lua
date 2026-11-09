@@ -149,7 +149,8 @@ local function proxy(command, params)
 end
 
 --- @param unbound boolean|nil The light is not bound to a WLED driver's segment connection.
-local function fresh(profile, id, setup, unbound)
+--- @param beforeLateInit fun()|nil Runs between OnDriverInit and late init.
+local function fresh(profile, id, setup, unbound, beforeLateInit)
   W.reset()
   fake = W.Fake.new(profile)
   if setup then
@@ -172,7 +173,25 @@ local function fresh(profile, id, setup, unbound)
   end
   dofile(DRIVER)
   OnDriverInit()
+  if beforeLateInit then
+    beforeLateInit()
+  end
   ShimLateInit()
+end
+
+--------------------------------------------------------------------------------
+T.section("A segment the WLED driver tells before late init comes online once late init asks for it")
+--------------------------------------------------------------------------------
+do
+  -- At a controller start the WLED driver can connect and tell its segments before this driver's late init.
+  fresh("esp32-rgbw-pwm-16", 0, nil, nil, function()
+    report()
+  end)
+  T.eq("late init asks for its segment", #toldOf(CONTROLLER, "REFRESH_STATE") >= 1, true)
+  report()
+  local online = toldOf(PROXY, "ONLINE_CHANGED")
+  T.eq("and the answer brings the light online", (online[#online] or {}).STATE, true)
+  T.eq("Connected", Properties["Driver Status"], "Connected")
 end
 
 --------------------------------------------------------------------------------

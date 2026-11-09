@@ -101,6 +101,11 @@ function RFP.UPDATE_STATE(idBinding, strCommand, tParams)
   if idBinding ~= CONTROLLER_BINDING then
     return
   end
+  -- Late init says the light is offline and asks for its segment again: one taken
+  -- before it would leave the light offline.
+  if not gInitialized then
+    return
+  end
   local payload = DeserializeSafe(Select(tParams, "segment"))
   if type(payload) ~= "table" or type(payload.segment) ~= "table" or type(payload.master) ~= "table" then
     log:error("Segment state not understood: %s", tParams)
