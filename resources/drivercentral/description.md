@@ -20,8 +20,29 @@ light for each segment.
 - Live updates when the WLED app, a button or another system changes the
   controller
 
+## Included Drivers
+
+### WLED
+
+Add one for each WLED controller. It finds the controller on the network, keeps
+a live connection to it, and gives it a Control4 light for the whole strip, with
+the controller's effects, palettes, presets and playlists.
+
+### WLED Segment
+
+A Control4 light for one segment of a strip split into parts in WLED. Add one
+for each segment and bind it to that segment's connection on the WLED driver. It
+follows the segment when WLED renumbers or resizes it.
+
 ## System requirements
 
 - Control4 OS 3.3.2+
 - A WLED controller running WLED 0.15 or later, on a network the Control4
   controller can reach
+
+## Compatibility
+
+Any controller running WLED 0.15 or later works, on an ESP32, ESP32-S3, ESP32-C3
+or ESP8266 board, whether WLED came installed or was installed by hand. Each
+light offers what its LEDs can show: color, color with one or two whites,
+tunable white, a single white, or on and off.
