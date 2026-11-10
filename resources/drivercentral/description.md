@@ -2,6 +2,9 @@
 
 ## Overview
 
+*This software is neither affiliated with nor endorsed by either Control4 or
+WLED.*
+
 Control WLED LED controllers from Control4 over your local network. Each
 controller becomes a Control4 light with color, white and fades, and its WLED
 effects, palettes, presets and playlists are at hand from the light's Extras
@@ -10,7 +13,7 @@ light for each segment.
 
 ## Features
 
-- Local network communication requiring no cloud services
+- Local control over your network, with no cloud service
 - A Control4 light with color and white, fades, Color On Mode and Dim-To-Warm
 - Advanced Lighting Scenes and keypad button links with LEDs
 - WLED's effects, palettes, presets and playlists in programming and the Extras
@@ -20,7 +23,7 @@ light for each segment.
 - Live updates when the WLED app, a button or another system changes the
   controller
 
-## Included Drivers
+## Included drivers
 
 ### WLED
 
@@ -44,5 +47,5 @@ follows the segment when WLED renumbers or resizes it.
 
 Any controller running WLED 0.15 or later works, on an ESP32, ESP32-S3, ESP32-C3
 or ESP8266 board, whether WLED came installed or was installed by hand. Each
-light offers what its LEDs can show: color, color with one or two whites,
-tunable white, a single white, or on and off.
+light offers only what its LEDs can show, whether that is color with up to two
+whites, tunable white, a single white, or on and off.
