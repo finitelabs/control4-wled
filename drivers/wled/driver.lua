@@ -246,7 +246,7 @@ end
 --- @return string
 local function connectedStatus()
   local status = client.mode == "http" and "Connected over HTTP; reconnecting live updates" or "Connected"
-  if device.live then
+  if device.live and (device.lor or 0) == 0 then
     -- WLED shows live data from another system in place of its own state, so Control4's commands
     -- show only once it stops.
     local from = device.liveFrom and (" from " .. device.liveFrom) or ""

@@ -39,8 +39,10 @@ local RECONNECT_MAX_MS = 30 * ONE_SECOND
 local OPEN_GRACE_MS = 5 * ONE_SECOND
 local POLL_MS = 10 * ONE_SECOND
 
---- How often /json/si is asked for while the socket is up, for what WLED never pushes.
+--- How often /json/si is asked for while the socket is up, for what WLED never pushes, and how
+--- soon a turn skipped for other traffic is tried again.
 local SOCKET_POLL_MS = 15 * ONE_SECOND
+local SOCKET_POLL_RETRY_MS = 2 * ONE_SECOND
 
 --- A socket that connects but never finishes its upgrade is given up after this long.
 local CONNECT_TIMEOUT_MS = 10 * ONE_SECOND
@@ -102,6 +104,7 @@ end
 --- @field timers table<string, boolean> The client's timers still pending, by name.
 --- @field timerCount integer Timers set so far, for unique names.
 --- @field writes integer Writes sent so far; an HTTP answer asked for before the latest is stale.
+--- @field pushes integer States pushed on the socket so far; a poll answer asked for before the latest is stale.
 --- @field recent table[] WebSocket commands sent within the busy window, oldest first.
 --- @field replaying boolean|nil Whether a busy resend waits to go out.
 local Client = {}
@@ -132,6 +135,7 @@ function Client:new(opts)
   instance.timerPrefix = "WledClient" .. gClients .. "_"
   instance.timers, instance.timerCount = {}, 0
   instance.writes = 0
+  instance.pushes = 0
   instance.recent = {}
   instance.closing = deferred.new():resolve(nil)
   return instance
@@ -360,34 +364,40 @@ function Client:pingLoop(gen, socketGen)
 end
 
 --- Ask for the state every SOCKET_POLL_MS while the socket stays up, and report it as a push. A
---- round is skipped while an HTTP request is under way or a command was just sent, so the poll
---- never queues behind other work or takes the controller's one buffer from a command.
+--- turn waits while an HTTP request is under way, a command was just sent or a busy resend waits,
+--- so the poll never queues behind other work or takes the controller's one buffer from a command.
+--- An answer that a later write or push overtook is dropped; that one tells the state.
 --- @param gen integer The start it belongs to.
 --- @param socketGen integer The socket it belongs to.
-function Client:socketPoll(gen, socketGen)
-  self:after(gen, SOCKET_POLL_MS, function()
+--- @param ms integer|nil The wait before this turn; SOCKET_POLL_MS when nil.
+function Client:socketPoll(gen, socketGen, ms)
+  self:after(gen, ms or SOCKET_POLL_MS, function()
     if not self.socketUp or self.socketGen ~= socketGen then
       return
     end
-    if self.inFlight or #self.queue > 0 or #self:recentFrames() > 0 then
-      self:socketPoll(gen, socketGen)
+    if self.replaying or self.inFlight or #self.queue > 0 or #self:recentFrames() > 0 then
+      self:socketPoll(gen, socketGen, SOCKET_POLL_RETRY_MS)
       return
     end
-    local writes = self.writes
+    local writes, pushes = self.writes, self.pushes
+    -- A stop or a new socket rejects or outdates the request; its loop ends there.
+    local function again()
+      if self.gen == gen and self.socketGen == socketGen then
+        self:socketPoll(gen, socketGen)
+      end
+    end
     self
       :enqueue("GET", "/json/si")
       :next(function(si)
-        if self.gen ~= gen or self.socketGen ~= socketGen or self.writes ~= writes or type(si) ~= "table" then
+        if self.gen ~= gen or self.socketGen ~= socketGen or type(si) ~= "table" then
+          return
+        end
+        if self.writes ~= writes or self.pushes ~= pushes then
           return
         end
         guarded(self.onState, "WLED.SocketPoll")(si.state, si.info)
-      end, function() end)
-      :next(function()
-        -- A stop or a new socket rejects or outdates the request; its loop ends there.
-        if self.gen == gen and self.socketGen == socketGen then
-          self:socketPoll(gen, socketGen)
-        end
       end)
+      :next(again, again)
   end)
 end
 
@@ -434,6 +444,7 @@ function Client:onMessage(data)
     if type(msg.info) == "table" then
       self.arch = msg.info.arch
     end
+    self.pushes = self.pushes + 1
     self.onState(msg.state, msg.info)
   end
 end
