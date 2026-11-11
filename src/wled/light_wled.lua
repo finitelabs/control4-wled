@@ -8,6 +8,8 @@
 --- v16.0.1 and v0.15.4):
 ---   - `tt` is whole tenths of a second, kept as 16-bit milliseconds, so one
 ---     command carries at most 65.5 s; longer fades go as legs on one line.
+---   - 16.x jumps to the target of a fade that arrives while another runs, so
+---     each leg goes a moment after the last one ends.
 ---   - Brightness fades in a straight line from where the output is.
 ---   - The controller reports a command's target at once, and pushes at most
 ---     once a second.
@@ -24,6 +26,9 @@ local CM = light.ColorMode
 
 local TT_MAX = 655
 local LEG_MS = TT_MAX * 100
+--- How long after one leg's end the next is sent; enough for a leg replayed after a busy answer,
+--- which goes 250 ms late.
+local LEG_GAP_MS = 500
 --- How long a level or color sent waits for the controller's report of it before the light
 --- model takes the report it has; WLED pushes at most once a second.
 local ECHO_WAIT_MS = 2500
@@ -481,7 +486,8 @@ end
 --- @param lightAll boolean Whether the first leg turns every segment on.
 function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now, lightAll)
   local n = math.ceil(ms / LEG_MS)
-  local legMs = ms / n
+  -- The gaps come out of the legs, so the fade still ends ms after it starts.
+  local legMs = (ms - (n - 1) * LEG_GAP_MS) / n
   local fromCol = self.lastCol or toCol
   local gen = self.legGen
   local finalOn = json.on
@@ -532,7 +538,7 @@ function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now, lightAll)
     end
     self.sendJson(part)
     if not last then
-      delay(legMs):next(function()
+      delay(legMs + LEG_GAP_MS):next(function()
         leg(k + 1)
       end)
     end

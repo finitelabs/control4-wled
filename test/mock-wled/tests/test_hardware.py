@@ -68,6 +68,55 @@ def test_presets_file_time_reads_zero_after_a_16_restart(device, clock):
     assert d.serialize_info()["fs"]["pmt"] == 0
 
 
+# ---- fades -----------------------------------------------------------------------------------
+
+
+def run(d, clock, ms):
+    for _ in range(ms // 10):
+        clock.advance(10)
+        d.tick()
+
+
+@pytest.mark.parametrize("name", DIG2GO)
+def test_a_fade_sent_while_one_runs_jumps_on_16(device, clock, name):
+    # Measured 2026-11-11 on camera: a 5 s fade sent a second before another ends jumps on 16.0.1.
+    d = device(name)
+    d.deserialize_state({"on": True, "bri": 5, "tt": 0})
+    run(d, clock, 100)
+    d.deserialize_state({"bri": 27, "tt": 50})
+    run(d, clock, 4000)
+    d.deserialize_state({"bri": 51, "tt": 50})
+    run(d, clock, 10)
+    if d.v16:
+        assert d.output()["bri"] == 51
+    else:
+        assert 20 < d.output()["bri"] < 30
+
+
+def test_a_change_without_bri_or_tt_mid_fade_leaves_the_fade_running_on_16(device, clock):
+    d = device("dig2go-rgbw-16")
+    d.deserialize_state({"on": True, "bri": 5, "tt": 0})
+    run(d, clock, 100)
+    d.deserialize_state({"bri": 51, "tt": 50})
+    run(d, clock, 2000)
+    d.deserialize_state({"seg": [{"id": 0, "fx": 9}]})
+    run(d, clock, 10)
+    assert 15 < d.output()["bri"] < 35
+
+
+def test_a_fade_sent_after_one_ends_fades_on_16(device, clock):
+    # Measured the same day: sent 100 ms or 250 ms after the end, it fades.
+    d = device("dig2go-rgbw-16")
+    d.deserialize_state({"on": True, "bri": 5, "tt": 0})
+    run(d, clock, 100)
+    d.deserialize_state({"bri": 27, "tt": 50})
+    run(d, clock, 5100)
+    assert d.output()["bri"] == 27
+    d.deserialize_state({"bri": 51, "tt": 50})
+    run(d, clock, 2500)
+    assert 30 < d.output()["bri"] < 45
+
+
 # ---- white modes -----------------------------------------------------------------------------
 
 

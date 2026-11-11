@@ -518,6 +518,9 @@ class Device:
         self.json_transition_once = False
         self.transition_active = False
         self.transition_start = now
+        # Whether the command being applied sets bri or tt, and whether a fade jumped on 16.x.
+        self.fade_command = False
+        self.fade_jumped = False
         self.blending_style = 0
         self.state_changed = False
 
@@ -987,6 +990,7 @@ class Device:
 
     def apply_final_bri(self):
         self.bri_old = self.bri_t = self.bri
+        self.fade_jumped = False
 
     def state_updated(self, call_mode):
         """led.cpp stateUpdated."""
@@ -1029,6 +1033,10 @@ class Device:
         else:
             if self.transition_active:
                 self.bri_old = self.bri_t
+                # 16.x jumps at once to the target of a fade that arrives while another runs
+                # (measured on a dig2go); 0.15 fades on from where the output is.
+                if self.v16 and self.fade_command:
+                    self.fade_jumped = True
             self.transition_active = True
             self.transition_start = now
         self.state_changed = False
@@ -1040,6 +1048,7 @@ class Device:
         for seg in self.segments:
             seg.reset = False
         state_response = pipe_bool(root.get("v"), False)
+        self.fade_command = root.get("bri") is not None or root.get("tt") is not None
         on_before = self.bri > 0
         _, self.bri = get_val(root.get("bri"), self.bri)
         if self.v16 and self.bri != self.bri_old:
@@ -1150,6 +1159,7 @@ class Device:
             self.preset_cyc_curr = val
             if root.get("win") is None and found and 0 < val < 251 and val != self.current_preset:
                 self.apply_preset(val, call_mode)
+                self.fade_command = False
                 return state_response
             self.preset_cyc_curr = self.current_preset
 
@@ -1166,6 +1176,7 @@ class Device:
 
         if not self.v16 or self.state_changed:
             self.state_updated(call_mode)
+        self.fade_command = False
         if preset_to_restore:
             self.current_preset = preset_to_restore
         return state_response
@@ -1720,6 +1731,9 @@ class Device:
             self.transition_active = False
             self.json_transition_once = False
             self.apply_final_bri()
+            return
+        if self.fade_jumped:
+            self.bri_t = self.bri
             return
         delta = self.bri - self.bri_old
         if self.v16:

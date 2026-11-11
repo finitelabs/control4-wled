@@ -275,6 +275,7 @@ T.section("a fade longer than one command carries goes in legs on one line")
 do
   fresh("esp32-rgbw-pwm-16")
   mark()
+  local snaps = fake.snaps
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "200000" })
   W.run(199000)
   T.eq("no level told before the fade's end", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
@@ -288,10 +289,11 @@ do
     end
   end
   T.eq(
-    "four legs of 50 s, along one line from 128 to 255",
+    "four legs of 49.6 s and three 0.5 s gaps, along one line from 128 to 255",
     { bris, tts },
-    { { 160, 192, 223, 255 }, { 500, 500, 500, 500 } }
+    { { 160, 192, 223, 255 }, { 496, 496, 496, 496 } }
   )
+  T.eq("no leg reaches the controller while one runs", fake.snaps - snaps, 0)
   T.eq("told one change at the start", #toldOf("LIGHT_BRIGHTNESS_CHANGING"), 1)
   T.eq("and its end", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 100 })
   local wraps = 0
@@ -301,6 +303,82 @@ do
     end
   end
   T.eq("no command past 65.5 s, where tt wraps", wraps, 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("each leg of a long fade goes after the last one ends, so 16.x fades it")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16")
+  proxy("SET_LEVEL", { LEVEL = "10" })
+  W.run(3000)
+  local function legs()
+    local out = {}
+    for _, c in ipairs(sent()) do
+      if c.bri then
+        out[#out + 1] = c
+      end
+    end
+    return out
+  end
+  -- When each command reached the controller.
+  local at = {}
+  local apply = fake.apply
+  fake.apply = function(self, cmd)
+    at[cmd] = W.now()
+    return apply(self, cmd)
+  end
+
+  mark()
+  local snaps = fake.snaps
+  local t0 = W.now()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "20", RATE = "70000" })
+  T.eq("two legs, the gap taken out of them: the first at once", #legs(), 1)
+  W.run(35000)
+  T.eq("the second not at 35 s", #legs(), 1)
+  W.run(249)
+  T.eq("nor just before 0.5 s past the first one's end", #legs(), 1)
+  W.run(1)
+  T.eq("but 0.5 s after it", #legs(), 2)
+  local second = legs()[2] or {}
+  T.eq("each leg 34.8 s", { legs()[1].tt, second.tt }, { 348, 348 })
+  T.truthy(
+    "the second leg ends within 50 ms of 70 s",
+    at[second] and second.tt and math.abs(at[second] + second.tt * 100 - (t0 + 70000)) <= 50
+  )
+  T.eq("so no leg reaches the controller while one runs", fake.snaps - snaps, 0)
+  W.run(34749)
+  T.eq("no level told before 70 s", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
+  W.run(1)
+  T.eq("and the fade's end told at 70 s", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 20 })
+
+  -- A stop in the gap holds where the first leg ended, and the second leg never goes.
+  proxy("SET_LEVEL", { LEVEL = "10" })
+  W.run(3000)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "20", RATE = "70000" })
+  local first = legs()[1]
+  W.run(35000)
+  proxy("SET_BRIGHTNESS_STOP")
+  local stop = legs()[2]
+  T.truthy("a stop in the gap is sent at once", stop and stop.tt == 0)
+  T.truthy("near where the first leg ended", stop and first and math.abs(stop.bri - first.bri) <= 1)
+  W.run(40000)
+  T.eq("and the second leg never goes", #legs(), 2)
+
+  -- A busy answer replays the first leg 250 ms late; the next still lands after it ends.
+  proxy("SET_LEVEL", { LEVEL = "10" })
+  W.run(3000)
+  mark()
+  snaps = fake.snaps
+  t0 = W.now()
+  fake.wsBusy = 1
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "20", RATE = "70000" })
+  W.run(71000)
+  local busy = legs()
+  T.eq("both legs reach the controller once", #busy, 2)
+  T.truthy("the first after the busy answer's retry", busy[1] and at[busy[1]] and at[busy[1]] - t0 >= 250)
+  T.eq("and still no leg arrives while one runs", fake.snaps - snaps, 0)
 end
 
 --------------------------------------------------------------------------------
@@ -420,11 +498,13 @@ do
   proxy("SET_LEVEL", { LEVEL = "80" })
   W.run(2000)
   mark()
+  local snaps = fake.snaps
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "0", RATE = "200000" })
   W.run(201000)
   local cmds = sent()
   local last = cmds[#cmds]
   T.eq("the last leg turns it off and keeps the starting level", last and { last.on, last.bri }, { false, 204 })
+  T.eq("no leg reaches the controller while one runs", fake.snaps - snaps, 0)
   T.eq("told off at the end", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 0 })
 end
 
