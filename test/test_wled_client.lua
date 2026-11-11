@@ -205,8 +205,8 @@ do
   W.run(Client.RECONNECT_MAX_MS + 4000)
   T.eq("back on the socket", client.mode, "ws")
   local after = #fake.requests
-  W.run(Client.POLL_MS * 3)
-  T.eq("polling stops with the socket", #fake.requests, after)
+  W.run(Client.SOCKET_POLL_MS * 2)
+  T.eq("the 10 s poll stops with the socket; the 15 s one goes on", #fake.requests, after + 2)
   T.eq("never offline", #log.offline, 0)
   client:stop()
 end
@@ -351,7 +351,8 @@ do
   local before = #log.states
   fake.wsBusy = 100
   client:send({ bri = 40 })
-  W.run(20000)
+  -- The resends give up after about 8 s, before the 15 s poll.
+  W.run(12000)
   T.eq("never taken", fake.si.state.bri, bri)
   T.eq(
     "the state asked for",
@@ -857,6 +858,196 @@ do
   T.eq("an answer a later write overtook is dropped", #httpLog.states, answers)
   T.eq("though the controller took both", { httpFake.si.state.pl, httpFake.si.state.bri }, { -1, 80 })
   http:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("While the socket is up, the state is asked for every 15 s and reported as a push")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  local function siRequests()
+    return count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end)
+  end
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  T.eq("on the socket", client.mode, "ws")
+  local seen = #log.states
+  -- WLED pushes nothing when live data from another system starts.
+  fake:changeSilently(nil, { live = true, lm = "E1.31", lip = "192.0.2.200" })
+  W.run(Client.SOCKET_POLL_MS - 200)
+  T.eq("nothing asked for before 15 s", siRequests(), 0)
+  W.run(400)
+  T.eq("then once", siRequests(), 1)
+  T.eq("and its answer reported", #log.states, seen + 1)
+  T.eq("with what WLED never pushed", log.states[#log.states].info.live, true)
+  W.run(Client.SOCKET_POLL_MS * 4)
+  T.eq("every 15 s after", siRequests(), 5)
+  T.eq("still on the socket, never offline", { client.mode, #log.offline }, { "ws", 0 })
+  client:stop()
+  W.run(Client.SOCKET_POLL_MS * 2)
+  T.eq("none after a stop", siRequests(), 5)
+end
+
+--------------------------------------------------------------------------------
+T.section("The 15 s poll waits for a request under way and a command just sent, then tries again in 2 s")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  local function siRequests()
+    return count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end)
+  end
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  -- A list read that takes 20 s holds the one HTTP slot through the first poll's turn.
+  fake.reachable, fake.timeoutMs = false, 20000
+  client:get("/presets.json")
+  W.run(Client.SOCKET_POLL_MS + 1000)
+  T.eq("no poll while a request is under way", siRequests(), 0)
+  -- A poll queued behind the read would go out the moment it ends, at 20.1 s.
+  W.run(4500)
+  T.eq("none queued behind it either", siRequests(), 0)
+  fake.reachable = true
+  W.run(1000)
+  T.eq("polled within 2 s of the read ending, not a whole turn later", siRequests(), 1)
+
+  -- A command a moment before the next turn, 15 s after the last answer, holds it off 2 s.
+  W.run(log.states[#log.states].at + Client.SOCKET_POLL_MS - 300 - W.now())
+  client:send({ bri = 60 })
+  W.run(1000)
+  T.eq("no poll just after a command", siRequests(), 1)
+  W.run(2000)
+  T.eq("then it polls", siRequests(), 2)
+  client:stop()
+end
+
+--- Run in 10 ms steps until the fake has one more /json/si request than `seen`.
+local function untilPoll(fake, seen)
+  for _ = 1, 4000 do
+    if count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end) > seen then
+      return
+    end
+    W.run(10)
+  end
+end
+
+--------------------------------------------------------------------------------
+T.section("A poll answer that a write or a push overtook is not reported")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local old = fake.si.state.bri
+  -- The answer is built when the poll asks and arrives 500 ms later.
+  fake.slowGetMs = 500
+  untilPoll(fake, 0)
+  local seen = #log.states
+  client:send({ bri = 90 })
+  W.run(2000)
+  local olds = 0
+  for i = seen + 1, #log.states do
+    if log.states[i].state and log.states[i].state.bri == old then
+      olds = olds + 1
+    end
+  end
+  T.eq("after a write, the older answer never reports the old level", olds, 0)
+  T.eq("the write's push stands", log.states[#log.states].state.bri, 90)
+
+  -- Another client's change is pushed before the poll's answer lands.
+  fake.slowGetMs = 3000
+  untilPoll(fake, 1)
+  fake:change({ bri = 77 })
+  W.run(4000)
+  T.eq("after a push, the older answer does not take its place", log.states[#log.states].state.bri, 77)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("The poll waits while a busy resend waits")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  local function siRequests()
+    return count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end)
+  end
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  -- Five busy answers: resends at 0.25, 0.75, 1.75, 3.75 and 7.75 s, so from 5.75 s no command
+  -- is recent while the last wait runs. The poll's turn falls in that gap.
+  W.run(Client.SOCKET_POLL_MS - 6500)
+  fake.wsBusy = 5
+  client:send({ bri = 80 })
+  W.run(7000)
+  T.eq("no poll during the wait", siRequests(), 0)
+  W.run(5000)
+  T.eq("it polls once the resend went through", siRequests(), 1)
+  T.eq("and the command was taken", fake.si.state.bri, 80)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("An error in the driver's handler does not end the poll")
+--------------------------------------------------------------------------------
+do
+  -- The OSS build has no Cloud Monitoring wrapper, so a handler's error reaches the poll's chain.
+  local diagnostics = require("lib.diagnostics")
+  local wrap = diagnostics.wrap
+  diagnostics.wrap = function(_, fn)
+    return fn
+  end
+  W.reset()
+  nextHost = nextHost + 1
+  local fake = W.Fake.new("esp32-rgbw-pwm-16", { ip = "192.0.2." .. nextHost })
+  local client = Client:new({
+    http = W.http,
+    onState = function()
+      error("handler failed")
+    end,
+  })
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  W.run(Client.SOCKET_POLL_MS * 4 + 500)
+  T.eq(
+    "four polls in a minute though each answer's handler fails",
+    count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end),
+    4
+  )
+  client:stop()
+  diagnostics.wrap = wrap
+end
+
+--------------------------------------------------------------------------------
+T.section("Reconnects leave one poll running, not one per socket")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  local function siRequests()
+    return count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end)
+  end
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  for _ = 1, 3 do
+    W.run(4000)
+    fake:drop()
+    W.run(6000)
+    T.eq("back on the socket", client.mode, "ws")
+  end
+  local before = siRequests()
+  W.run(Client.SOCKET_POLL_MS * 4)
+  T.eq("four polls a minute after three reconnects", siRequests() - before, 4)
+  client:stop()
 end
 
 T.finish()

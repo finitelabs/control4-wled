@@ -673,4 +673,43 @@ do
   T.truthy("the next read goes ahead", contains(choices("Apply Preset", "Preset"), "Evening (2)"))
 end
 
+--------------------------------------------------------------------------------
+T.section("What WLED never pushes is picked up within one 15 s poll")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+
+  -- A preset renamed in WLED's app: the file and its time change, and no push follows.
+  local file = fake:presetsFile()
+  file["2"].n = "Evening"
+  fake.files["/presets.json"] = file
+  fake:changeSilently(nil, { fs = { pmt = 1762000100 } })
+  W.run(15500)
+  T.eq("the rename is offered", choices("Apply Preset", "Preset"), { "Mock Warm Glow (1)", "Evening (2)" })
+
+  -- A playlist started here and stopped in WLED's app, which pushes nothing for a change of pl alone.
+  ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
+  W.run(1500)
+  T.eq("running", Variables["Playlist"], "Mock Cycle")
+  mark()
+  fake:changeSilently({ pl = -1 })
+  W.run(15500)
+  T.eq("Playlist Ended once", eventCount(PLAYLIST_ENDED), 1)
+  T.eq("the variable cleared first", (firstEvent(PLAYLIST_ENDED) or {}).Playlist, "")
+
+  -- Nothing changed: a minute of polls fires nothing and reads no list again.
+  mark()
+  local reads = requestCount(fake, "/json/eff") + requestCount(fake, "/json/pal") + requestCount(fake, "/presets.json")
+  local polls = requestCount(fake, "/json/si")
+  W.run(60000)
+  T.eq("no event", programmingEvents(), 0)
+  T.eq(
+    "no list read",
+    requestCount(fake, "/json/eff") + requestCount(fake, "/json/pal") + requestCount(fake, "/presets.json"),
+    reads
+  )
+  T.eq("four polls in the minute", requestCount(fake, "/json/si") - polls, 4)
+end
+
 T.finish()

@@ -458,6 +458,16 @@ end
 function Fake:answer(method, path, body)
   self.requests[#self.requests + 1] = { method = method, path = path, body = body }
   local d = deferred.new()
+  -- slowGetMs: a GET answer built when the request arrives, as WLED builds it, and delivered
+  -- that much later, so a write or push can overtake it on the way.
+  if method == "GET" and self.slowGetMs and self.reachable then
+    local entry = self.files[path]
+    entry = copy(type(entry) == "function" and entry() or entry)
+    self:after(self.slowGetMs, function()
+      d:resolve({ code = 200, body = entry })
+    end)
+    return d
+  end
   -- An unreachable controller fails after timeoutMs, as a real HTTP timeout does.
   local wait = self.reachable and LATENCY_MS or (self.timeoutMs or LATENCY_MS)
   self:after(wait, function()
@@ -574,6 +584,19 @@ function Fake:change(state, info)
     merge(self.si.info, info)
   end
   self:schedulePush()
+end
+
+--- Change the state (and info) the way WLED does without telling its clients: live data from
+--- another system starting or ending, a preset saved, a playlist stopped elsewhere.
+--- @param state table|nil
+--- @param info table|nil
+function Fake:changeSilently(state, info)
+  if state then
+    merge(self.si.state, state)
+  end
+  if info then
+    merge(self.si.info, info)
+  end
 end
 
 --- The network connection drops without a close frame.

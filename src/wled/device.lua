@@ -46,6 +46,10 @@ local CAP_LABELS = {
 --- @field palcount integer|nil Built-in palettes the firmware has.
 --- @field cpalcount integer|nil Custom palettes, which the palette list numbers from info.
 --- @field pmt integer|nil Presets file modified time; moves on every preset save or delete.
+--- @field live boolean|nil Whether another system is sending the controller live data.
+--- @field liveMode string|nil How it arrives, as WLED names it, for example "E1.31".
+--- @field liveFrom string|nil The address it comes from.
+--- @field lor integer|nil Live override: above 0, WLED shows its own state over the live data.
 --- @field on boolean|nil Master power.
 --- @field bri integer|nil Master brightness.
 --- @field state table|nil The last state the controller sent, as sent.
@@ -214,6 +218,7 @@ function Device:update(state, info)
     if pmt ~= self.pmt then
       c.presets, self.pmt = true, pmt
     end
+    self.live, self.liveMode, self.liveFrom = info.live == true, str(info.lm), str(info.lip)
     self.info = info
   end
 
@@ -224,6 +229,7 @@ function Device:update(state, info)
       on = self.on
     end
     self.on, self.bri = on, tointeger(state.bri) or self.bri
+    self.lor = tointeger(state.lor) or self.lor
     if state.seg ~= nil then
       local segs = readSegments(state, info or self.info)
       if not sameSegments(segs, self.segments) then
