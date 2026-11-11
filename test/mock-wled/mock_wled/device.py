@@ -1675,12 +1675,12 @@ class Device:
 
     def press_button(self, preset=0, kind="short"):
         """button.cpp for button 0 with no macros: a short press toggles, a long press picks a
-        random color (setRandomColor, the first selected segment's white kept), and with no double-press macro WLED does not
-        wait for a second press, so a double press is two short ones about 300 ms apart."""
+        random color (setRandomColor) with the first selected segment's white and gives it to
+        every selected segment, and with no double-press macro WLED does not wait for a second
+        press, so a double press is two short ones about 300 ms apart."""
         if preset:
             self.apply_preset(preset, CALL_MODE_BUTTON_PRESET)
         elif kind == "long":
-            # colPri takes the first selected segment's color, then goes whole to every selected one.
             r, g, b = hue_to_rgb(random.randrange(256))
             w = channels(self.first_selected().colors[0])[3]
             for seg in self.segments:
