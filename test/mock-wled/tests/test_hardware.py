@@ -101,6 +101,14 @@ def test_saving_the_same_white_mode_leaves_the_rgbw_flag_alone(device):
     assert d.serialize_info()["leds"]["rgbw"] is True
 
 
+def test_global_white_mode_change_survives_a_restart(device, clock):
+    d = device("dig2go-rgbw-015")
+    d.set_white(rgbwm=2)
+    assert d.serialize_info()["leds"]["lc"] == 1
+    d.boot()
+    assert d.serialize_info()["leds"]["lc"] == 1
+
+
 def test_white_mode_change_survives_a_restart(device, clock):
     d = device("dig2go-rgbw-015")
     d.set_bus(0, 2)
@@ -330,6 +338,20 @@ def test_long_press_picks_a_new_color_keeps_white_and_leaves_power_alone(device,
     st = d.serialize_state()
     col = st["seg"][0]["col"][0]
     assert st["on"] is False and col[:3] != [10, 20, 30] and col[3] == 200
+
+
+def test_long_press_gives_every_selected_segment_the_first_ones_white(device, clock):
+    d = device("dig2go-rgbw-015")
+    seg = [
+        {"id": 0, "start": 0, "stop": 150, "sel": True, "col": [[10, 20, 30, 200]]},
+        {"id": 1, "start": 150, "stop": 300, "sel": True, "col": [[40, 50, 60, 0]]},
+    ]
+    d.deserialize_state({"seg": seg})
+    settle(d, clock)
+    d.press_button(kind="long")
+    settle(d, clock)
+    a, b = (s["col"][0] for s in d.serialize_state()["seg"])
+    assert a == b and a[3] == 200
 
 
 async def test_double_press_toggles_twice_and_pushes_each_a_second_apart(mock, clock):
