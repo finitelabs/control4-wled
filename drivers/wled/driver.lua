@@ -111,9 +111,8 @@ local gWrongMac = nil
 --- after each connect, the controller at the address may be another.
 local gCheckMac = false
 
---- Whether a refused controller's answer reached the device model since the properties and
---- segments were last shown: the model then matches that controller, so when it becomes the
---- driver's own its answer changes nothing, and everything is shown again.
+--- Whether a refused controller's answer reached the model since Device Info and the segments
+--- were last shown; the next accepted answer shows them all again.
 local gShowAll = false
 
 local device = Device:new()

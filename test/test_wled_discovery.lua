@@ -701,6 +701,7 @@ do
   T.contains("the typed address is refused", Properties["Driver Status"], "02:A1:B2:C3:D4:01")
   T.eq("the details stay the first controller's", Properties["MAC Address"], "02:A1:B2:C3:D4:02")
   T.eq("its name too", Properties["Name"], first.name)
+  T.eq("and its segment links", segmentLinks(), 2)
 
   -- The same controller picked: its first answer matches what the refused one already told.
   pick("wled-c3d401 (192.0.2.42)")
