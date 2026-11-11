@@ -663,13 +663,20 @@ function Client:send(cmd)
   if #body <= limit and self:sendFrame({ body = body, cmd = cmd, tries = 0 }) then
     return deferred.new():resolve(true)
   end
+  local gen, writes = self.gen, self.writes
   local answered = self:enqueue("POST", "/json/state", cmd)
   if cmd.v ~= true then
     return answered
   end
-  -- Over HTTP the state comes back as the answer, not as a push.
+  -- Over HTTP the state comes back as the answer, not as a push; a later write makes it stale.
   return answered:next(function(state)
-    if type(state) == "table" and state.seg ~= nil then
+    if self.gen ~= gen or type(state) ~= "table" or state.seg == nil then
+      return state
+    end
+    if not self.socketUp then
+      self:setMode("http")
+    end
+    if self.writes == writes then
       guarded(self.onState, "WLED.Answer")(state, nil)
     end
     return state

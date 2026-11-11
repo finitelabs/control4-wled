@@ -819,16 +819,21 @@ do
   W.run(100)
   local main = fake.si.state.seg[1]
   local seen = #log.states
-  client:send({ seg = { { id = main.id, fx = main.fx } } })
+  client:send({ seg = { { id = main.id, fx = "~0" } } })
   W.run(2000)
-  T.eq("a playlist ended by its own effect is pushed to no one", #log.states, seen)
+  T.eq("a playlist ended by an effect kept as it is is pushed to no one", #log.states, seen)
   T.eq("though it ended", fake.si.state.pl, -1)
 
   fake.si.state.pl = 3
-  client:send({ seg = { { id = main.id, fx = main.fx } }, v = true })
+  client:send({ seg = { { id = main.id, fx = "~0" } }, v = true })
   W.run(50)
   T.eq("with v the socket answers at once", #log.states, seen + 1)
   T.eq("with the ended playlist", log.states[#log.states].state.pl, -1)
+
+  local before = #log.states
+  client:send({ bri = fake.si.state.bri })
+  W.run(2000)
+  T.eq("a command that changes nothing is pushed to no one", #log.states, before)
   client:stop()
 
   local http, httpFake, httpLog = newClient()
@@ -838,11 +843,19 @@ do
   W.run(Client.OPEN_GRACE_MS + 100)
   T.eq("reached over HTTP", http.mode, "http")
   local polled = #httpLog.states
-  http:send({ seg = { { id = main.id, fx = main.fx } }, v = true })
+  http:send({ seg = { { id = main.id, fx = "~0" } }, v = true })
   W.run(50)
   T.eq("over HTTP the answer is the state, before the next poll", #httpLog.states, polled + 1)
   local last = httpLog.states[#httpLog.states]
   T.eq("with the ended playlist, and no info", { last.state.pl, last.info == nil }, { -1, true })
+
+  local answers = #httpLog.states
+  httpFake.si.state.pl = 3
+  http:send({ seg = { { id = main.id, fx = "~0" } }, v = true })
+  http:send({ bri = 80 })
+  W.run(50)
+  T.eq("an answer a later write overtook is dropped", #httpLog.states, answers)
+  T.eq("though the controller took both", { httpFake.si.state.pl, httpFake.si.state.bri }, { -1, 80 })
   http:stop()
 end
 
