@@ -205,8 +205,8 @@ do
   W.run(Client.RECONNECT_MAX_MS + 4000)
   T.eq("back on the socket", client.mode, "ws")
   local after = #fake.requests
-  W.run(Client.POLL_MS * 3)
-  T.eq("polling stops with the socket", #fake.requests, after)
+  W.run(Client.SOCKET_POLL_MS * 2)
+  T.eq("the 10 s poll stops with the socket; the 15 s one goes on", #fake.requests, after + 2)
   T.eq("never offline", #log.offline, 0)
   client:stop()
 end
@@ -351,7 +351,8 @@ do
   local before = #log.states
   fake.wsBusy = 100
   client:send({ bri = 40 })
-  W.run(20000)
+  -- The resends give up after about 8 s, before the 15 s poll.
+  W.run(12000)
   T.eq("never taken", fake.si.state.bri, bri)
   T.eq(
     "the state asked for",
@@ -857,6 +858,70 @@ do
   T.eq("an answer a later write overtook is dropped", #httpLog.states, answers)
   T.eq("though the controller took both", { httpFake.si.state.pl, httpFake.si.state.bri }, { -1, 80 })
   http:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("While the socket is up, the state is asked for every 15 s and reported as a push")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  local function siRequests()
+    return count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end)
+  end
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  T.eq("on the socket", client.mode, "ws")
+  local seen = #log.states
+  -- WLED pushes nothing when live data from another system starts.
+  fake:changeSilently(nil, { live = true, lm = "E1.31", lip = "192.0.2.200" })
+  W.run(Client.SOCKET_POLL_MS - 200)
+  T.eq("nothing asked for before 15 s", siRequests(), 0)
+  W.run(400)
+  T.eq("then once", siRequests(), 1)
+  T.eq("and its answer reported", #log.states, seen + 1)
+  T.eq("with what WLED never pushed", log.states[#log.states].info.live, true)
+  W.run(Client.SOCKET_POLL_MS * 4)
+  T.eq("every 15 s after", siRequests(), 5)
+  T.eq("still on the socket, never offline", { client.mode, #log.offline }, { "ws", 0 })
+  client:stop()
+  W.run(Client.SOCKET_POLL_MS * 2)
+  T.eq("none after a stop", siRequests(), 5)
+end
+
+--------------------------------------------------------------------------------
+T.section("The 15 s poll waits for a request under way and for a command just sent")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  local function siRequests()
+    return count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end)
+  end
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  -- A list read that takes 20 s holds the one HTTP slot through the first poll's turn.
+  fake.reachable, fake.timeoutMs = false, 20000
+  client:get("/presets.json")
+  W.run(Client.SOCKET_POLL_MS + 1000)
+  T.eq("no poll while a request is under way", siRequests(), 0)
+  -- A poll queued behind the read would go out the moment it ends, at 20 s.
+  W.run(5000)
+  T.eq("none queued behind it either", siRequests(), 0)
+  fake.reachable = true
+  W.run(Client.SOCKET_POLL_MS)
+  T.eq("the next turn polls", siRequests(), 1)
+
+  -- A command a moment before the poll's next turn, 15 s after its last answer, holds it off.
+  W.run(log.states[#log.states].at + Client.SOCKET_POLL_MS - 300 - W.now())
+  client:send({ bri = 60 })
+  W.run(1000)
+  T.eq("no poll just after a command", siRequests(), 1)
+  W.run(Client.SOCKET_POLL_MS)
+  T.eq("the turn after polls", siRequests(), 2)
+  client:stop()
 end
 
 T.finish()

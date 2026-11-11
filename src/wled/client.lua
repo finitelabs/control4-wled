@@ -4,9 +4,11 @@
 --- WLED sends its full state and info when the socket opens and again after any change, from
 --- any source, at most once a second. Liveness is WLED's own text ping: "p" every 30 s, answered
 --- "pong"; two missed answers close the socket. While the socket is down it reconnects with
---- growing waits capped at 30 s, sends commands over HTTP and polls /json/si slowly. HTTP keeps
---- one request in flight, because the controller serves every request from one shared buffer;
---- a busy answer ({"error":3}, or HTTP 503 on 0.15) waits and retries.
+--- growing waits capped at 30 s, sends commands over HTTP and polls /json/si slowly. While the
+--- socket is up, /json/si is still asked for every 15 s, because WLED pushes nothing for live data
+--- from another system, a preset save or a playlist stopped elsewhere. HTTP keeps one request in
+--- flight, because the controller serves every request from one shared buffer; a busy answer
+--- ({"error":3}, or HTTP 503 on 0.15) waits and retries.
 ---
 --- The driver sees three things: onState(state, info) for every state the controller reports,
 --- onOnline() when it can reach the controller again, and onOffline(reason) when it cannot.
@@ -36,6 +38,9 @@ local RECONNECT_MAX_MS = 30 * ONE_SECOND
 --- How long a new socket has to open before the first HTTP poll, and the poll cadence after.
 local OPEN_GRACE_MS = 5 * ONE_SECOND
 local POLL_MS = 10 * ONE_SECOND
+
+--- How often /json/si is asked for while the socket is up, for what WLED never pushes.
+local SOCKET_POLL_MS = 15 * ONE_SECOND
 
 --- A socket that connects but never finishes its upgrade is given up after this long.
 local CONNECT_TIMEOUT_MS = 10 * ONE_SECOND
@@ -309,6 +314,7 @@ function Client:openSocket(gen)
     self.missedPings = 0
     self.socketGen = (self.socketGen or 0) + 1
     self:pingLoop(gen, self.socketGen)
+    self:socketPoll(gen, self.socketGen)
     self:setMode("ws")
   end, "WLED.WsEstablished"))
   ws:SetProcessMessageFunction(guarded(function(socket, data)
@@ -350,6 +356,38 @@ function Client:pingLoop(gen, socketGen)
     self.missedPings = self.missedPings + 1
     self.ws:Send("p")
     self:pingLoop(gen, socketGen)
+  end)
+end
+
+--- Ask for the state every SOCKET_POLL_MS while the socket stays up, and report it as a push. A
+--- round is skipped while an HTTP request is under way or a command was just sent, so the poll
+--- never queues behind other work or takes the controller's one buffer from a command.
+--- @param gen integer The start it belongs to.
+--- @param socketGen integer The socket it belongs to.
+function Client:socketPoll(gen, socketGen)
+  self:after(gen, SOCKET_POLL_MS, function()
+    if not self.socketUp or self.socketGen ~= socketGen then
+      return
+    end
+    if self.inFlight or #self.queue > 0 or #self:recentFrames() > 0 then
+      self:socketPoll(gen, socketGen)
+      return
+    end
+    local writes = self.writes
+    self
+      :enqueue("GET", "/json/si")
+      :next(function(si)
+        if self.gen ~= gen or self.socketGen ~= socketGen or self.writes ~= writes or type(si) ~= "table" then
+          return
+        end
+        guarded(self.onState, "WLED.SocketPoll")(si.state, si.info)
+      end, function() end)
+      :next(function()
+        -- A stop or a new socket rejects or outdates the request; its loop ends there.
+        if self.gen == gen and self.socketGen == socketGen then
+          self:socketPoll(gen, socketGen)
+        end
+      end)
   end)
 end
 
@@ -699,6 +737,7 @@ end
 
 Client.PING_MS = PING_MS
 Client.POLL_MS = POLL_MS
+Client.SOCKET_POLL_MS = SOCKET_POLL_MS
 Client.OPEN_GRACE_MS = OPEN_GRACE_MS
 Client.CONNECT_TIMEOUT_MS = CONNECT_TIMEOUT_MS
 Client.RECONNECT_MAX_MS = RECONNECT_MAX_MS

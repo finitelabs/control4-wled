@@ -576,6 +576,19 @@ function Fake:change(state, info)
   self:schedulePush()
 end
 
+--- Change the state (and info) the way WLED does without telling its clients: live data from
+--- another system starting or ending, a preset saved, a playlist stopped elsewhere.
+--- @param state table|nil
+--- @param info table|nil
+function Fake:changeSilently(state, info)
+  if state then
+    merge(self.si.state, state)
+  end
+  if info then
+    merge(self.si.info, info)
+  end
+end
+
 --- The network connection drops without a close frame.
 function Fake:drop()
   if self.binding and self.connected then

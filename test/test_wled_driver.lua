@@ -631,4 +631,39 @@ do
   T.eq("and is told", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
 end
 
+--------------------------------------------------------------------------------
+T.section("Live data from another system shows in Driver Status within one poll, though WLED pushes nothing")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  T.eq("connected", Properties["Driver Status"], "Connected")
+  mark()
+  -- An E1.31 sender takes over; WLED says so only in /json/si.
+  fake:changeSilently(nil, { live = true, lm = "E1.31", lip = "192.0.2.200" })
+  W.run(15200)
+  T.eq(
+    "the status says who is in control",
+    Properties["Driver Status"],
+    "Connected; live data from 192.0.2.200 (E1.31) is in control"
+  )
+  T.eq("still connected, no event", { Variables["Connected"], eventCount(1), eventCount(2) }, { "1", 0, 0 })
+  T.eq("and the proxy is told nothing", #told, 0)
+
+  -- It ends about 2.5 s after the sender's last packet.
+  fake:changeSilently(nil, { live = false, lm = "", lip = "" })
+  W.run(15200)
+  T.eq("back to Connected once it ends", Properties["Driver Status"], "Connected")
+
+  -- Neither the mode nor the address known: the status still says so.
+  fake:changeSilently(nil, { live = true, lm = "", lip = "" })
+  W.run(15200)
+  T.eq("an unnamed sender", Properties["Driver Status"], "Connected; live data from another system is in control")
+  fake:changeSilently(nil, { live = false })
+  W.run(15200)
+  T.eq("and back", Properties["Driver Status"], "Connected")
+  T.eq("nothing told the proxy over a minute of polls", #told, 0)
+  T.eq("no event either", #events, 0)
+end
+
 T.finish()
