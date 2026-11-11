@@ -195,10 +195,9 @@ Pro.
 - Turning a segment light on while the controller is off turns the controller on
   with only that segment lit. With a fade, the segment and the controller fade
   up together, so it starts a little slower than on a lit controller.
-- Turning off the last lit segment turns the controller off alone. The segment
-  stays set to come back when this light turns on.
-- Turning this light on when no segment is lit turns every segment on, as it
-  lights the whole strip. With a segment lit, it turns on the controller only.
+- Turning off the last lit segment turns the controller off alone.
+- Turning this light on turns every segment on, as it lights the whole strip. A
+  level or color change while it is on leaves each segment on or off as it is.
 - This light's colors, effects and presets still cover every segment.
 
 WLED can renumber segments, for example when a segment is deleted or a preset
