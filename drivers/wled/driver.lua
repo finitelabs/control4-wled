@@ -1497,9 +1497,10 @@ end
 
 --- Unload the running playlist; the current look stays.
 local function stopPlaylist()
-  -- An empty playlist object unloads the running one, as WLED's own app stops it; an empty
-  -- array would be ignored, so the object is marked for the encoder.
-  send({ playlist = JSON:newObject() })
+  -- Any effect set unloads a playlist, and "~0" keeps the one running; an empty playlist object
+  -- does not stop one on 16.x. WLED pushes the end to no one, so "v" asks for the state back.
+  local seg = mainSegment(device.state or {})
+  send({ seg = { { id = seg and seg.id or 0, fx = "~0" } }, v = true })
 end
 
 --- Stop the running playlist; the current look stays.

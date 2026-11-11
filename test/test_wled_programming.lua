@@ -307,8 +307,13 @@ do
   ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
   T.eq("Start Playlist: ps", lastCommand(fake), { ps = 3 })
 
+  local main = fake.si.state.seg[1]
   ExecuteCommand("Stop Playlist", {})
-  T.eq("Stop Playlist: an empty playlist object", fake.wire[#fake.wire], '{"playlist":{}}')
+  T.eq(
+    "Stop Playlist: the running effect kept, asking for the state back",
+    lastCommand(fake),
+    { seg = { { id = main.id, fx = "~0" } }, v = true }
+  )
 
   local sent = #fake.commands
   ExecuteCommand("Set Effect", { Effect = "No Such Effect" })
@@ -493,6 +498,35 @@ do
   W.run(1500)
   T.eq("an effect outside a preset ends the playlist", eventCount(PLAYLIST_ENDED), 1)
   T.eq("and leaves the preset", Variables["Preset"], "")
+end
+
+--------------------------------------------------------------------------------
+T.section("Stop Playlist shows at once on 0.15 and 16.x, though WLED pushes it to no one")
+--------------------------------------------------------------------------------
+for _, profile in ipairs({ "esp32-rgbw-015", "esp32-rgbw-pwm-16" }) do
+  local fake = fresh(profile, function(f)
+    -- The 0.15.4 capture has no presets; both get the same ones.
+    f.files["/presets.json"] = W.fixture("esp32-rgbw-pwm-16", "presets.json")
+  end)
+  W.run(500)
+  ExecuteCommand("Apply Preset", { Preset = "Mock Warm Glow (1)" })
+  W.run(1500)
+
+  mark()
+  ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
+  W.run(1500)
+  T.eq("its first preset already showing, the start is pushed (" .. profile .. ")", eventCount(PLAYLIST_STARTED), 1)
+  T.eq("Playlist variable (" .. profile .. ")", Variables["Playlist"], "Mock Cycle")
+
+  mark()
+  ExecuteCommand("Stop Playlist", {})
+  W.run(100)
+  T.eq("Playlist Ended at once (" .. profile .. ")", eventCount(PLAYLIST_ENDED), 1)
+  T.eq("Playlist variable cleared (" .. profile .. ")", Variables["Playlist"], "")
+  T.eq("the controller's playlist unloaded (" .. profile .. ")", fake.si.state.pl, -1)
+  T.eq("the look stays (" .. profile .. ")", { fake.si.state.ps, Variables["Preset"] }, { 1, "Mock Warm Glow" })
+  W.run(10000)
+  T.eq("and nothing more (" .. profile .. ")", programmingEvents(), 1)
 end
 
 --------------------------------------------------------------------------------
