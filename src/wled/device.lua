@@ -1,11 +1,12 @@
 --- The controller as its pushes describe it.
 ---
 --- Fed every state and info the controller sends (GET /json/si, each WebSocket push), keeps
---- what later layers read: identity, LED count, segments with their capability bits, the
+--- what the driver and the light adapter read: identity, LED count, segments with their capability bits, the
 --- controller's own bits, and the counters that say when the effect, palette or preset lists
 --- changed. Each update returns what changed, so callers act only on real changes.
 
 require("lib.utils")
+local version = require("version")
 
 --- Capability bits, as WLED's const.h names them.
 local CAP_RGB, CAP_WHITE, CAP_CCT = 0x01, 0x02, 0x04
@@ -21,6 +22,9 @@ local CAP_LABELS = {
   "Tunable white",
   "RGB, tunable white",
 }
+
+--- The oldest WLED line the driver supports.
+local OLDEST_SUPPORTED = "0.15"
 
 --- @class WledSegment
 --- @field id integer WLED's segment id.
@@ -60,6 +64,7 @@ local Device = {}
 Device.__index = Device
 
 Device.CAP_RGB, Device.CAP_WHITE, Device.CAP_CCT = CAP_RGB, CAP_WHITE, CAP_CCT
+Device.OLDEST_SUPPORTED = OLDEST_SUPPORTED
 
 --- Creates a model with nothing known yet; updates fill it.
 --- @return WledDevice device An empty controller model.
@@ -88,20 +93,16 @@ end
 --- @param ver string|nil A firmware version, for example "0.15.4".
 --- @return boolean v16 True for 16.x and later.
 function Device.isV16(ver)
-  local major = tonumber(tostring(ver or ""):match("^(%d+)"))
-  return major ~= nil and major >= 16
+  local v = version(tostring(ver or ""))
+  return v ~= nil and v >= version("16")
 end
-
---- The oldest WLED line the driver supports: 0.15, as 0.MINOR.
-local OLDEST_MINOR = 15
-Device.OLDEST_SUPPORTED = "0." .. OLDEST_MINOR
 
 --- Whether a version string is older than the oldest supported line.
 --- @param ver string|nil A firmware version, for example "0.14.0".
 --- @return boolean older False for a version that cannot be read.
 function Device.isUnsupported(ver)
-  local major, minor = tostring(ver or ""):match("^(%d+)%.(%d+)")
-  return tonumber(major) == 0 and tonumber(minor) < OLDEST_MINOR
+  local v = version(tostring(ver or ""))
+  return v ~= nil and v < version(OLDEST_SUPPORTED)
 end
 
 local function str(v)

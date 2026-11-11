@@ -76,14 +76,14 @@ local PROGRAMMING = "Programming"
 local SEGMENTS = "Segments"
 
 --- Persist key for those records: the WLED id and LED range each connection last stood for.
-local SEGMENT_RECORDS_KEY = "WledSegmentRecords"
+local SEGMENT_RECORDS_PERSIST_KEY = "WledSegmentRecords"
 
 --- A keypad tap sends DO_PUSH then DO_CLICK and some senders only one, so a link acts on the
 --- first of a burst and ignores the rest for this long.
 local BUTTON_LINK_COALESCE_MS = 500
 
 --- Persist key for the MAC of the controller this driver was set up with.
-local MAC_KEY = "WledControllerMac"
+local MAC_PERSIST_KEY = "WledControllerMac"
 
 --- Device Info properties and the model field or method each shows.
 local DEVICE_INFO = {
@@ -186,12 +186,12 @@ local gListsReading = nil
 
 --- Persist key for what programming last saw, so a change made while the driver reloads is
 --- still told.
-local SHOWN_KEY = "WledShown"
+local SHOWN_PERSIST_KEY = "WledShown"
 
 --- What programming last saw: the main segment's effect and palette, the preset and the
 --- playlist. Nil until the driver's controller first reports, which seeds it without events.
 --- @type {fx: integer|nil, pal: integer|nil, ps: integer, pl: integer}|nil
-local gShown = persist:get(SHOWN_KEY)
+local gShown = persist:get(SHOWN_PERSIST_KEY)
 
 --- What the Extras menu last told the proxy: the setup's shape and the values sent since. Nil
 --- until the first setup after a load or reset.
@@ -206,7 +206,7 @@ local gExtrasChoices = nil
 --- What each segment connection last stood for, by record key: the WLED id, LED range and name,
 --- and whether the last report still had the segment.
 --- @type table<string, WledSegmentRecord>
-local gSegmentRecords = persist:get(SEGMENT_RECORDS_KEY) or {}
+local gSegmentRecords = persist:get(SEGMENT_RECORDS_PERSIST_KEY) or {}
 
 --- The records a report since this load found gone while a segment light was still connected.
 --- @type table<string, boolean>
@@ -226,6 +226,7 @@ local gSuspended = true
 --- @type table<integer, table>
 local gSegmentSent = {}
 
+--#ifndef DRIVERCENTRAL
 --- All WLED instances on this controller, sorted by device id. The lowest runs updates.
 --- @return integer[]
 local function getWledDriverIds()
@@ -237,6 +238,7 @@ local function getWledDriverIds()
   table.sort(ids)
   return ids
 end
+--#endif
 
 -- ─── Connection state ──────────────────────────────────────────────────────
 
@@ -321,9 +323,9 @@ local function isOurController()
   if not device.mac then
     return true
   end
-  local remembered = persist:get(MAC_KEY)
+  local remembered = persist:get(MAC_PERSIST_KEY)
   if IsEmpty(remembered) then
-    persist:set(MAC_KEY, device.mac)
+    persist:set(MAC_PERSIST_KEY, device.mac)
     return true
   end
   return remembered == device.mac
@@ -404,7 +406,7 @@ local function updateProgramming()
   end
   gShown = now
   if not was or now.fx ~= was.fx or now.pal ~= was.pal or now.ps ~= was.ps or now.pl ~= was.pl then
-    persist:set(SHOWN_KEY, now)
+    persist:set(SHOWN_PERSIST_KEY, now)
   end
   if not was then
     return
@@ -458,11 +460,11 @@ end
 
 --- Persist keys for the cycle, kept so the buttons step at once after a reload, and for the id
 --- each name in Cycle Presets last stood for, so a rename on the controller keeps its place.
-local CYCLE_KEY, CYCLE_NAMES_KEY = "WledPresetCycle", "WledPresetCycleNames"
+local CYCLE_PERSIST_KEY, CYCLE_NAMES_PERSIST_KEY = "WledPresetCycle", "WledPresetCycleNames"
 
 --- The presets Next Preset and Previous Preset step through.
 --- @type WledListEntry[]
-local gCycle = persist:get(CYCLE_KEY) or {}
+local gCycle = persist:get(CYCLE_PERSIST_KEY) or {}
 
 --- The preset the cycle last applied, so a step after the look was changed goes on from there.
 --- @type integer|nil
@@ -630,13 +632,14 @@ local function updateCycle()
   local from = tostring(Properties["Cycle Presets"] or "") .. "\n" .. table.concat(lists:presetChoices(), "\n")
   if from ~= gCycleFrom then
     gCycleFrom = from
-    local cycle, unknown, named = Cycle.parse(Properties["Cycle Presets"], lists.presets, persist:get(CYCLE_NAMES_KEY))
+    local cycle, unknown, named =
+      Cycle.parse(Properties["Cycle Presets"], lists.presets, persist:get(CYCLE_NAMES_PERSIST_KEY))
     if #unknown > 0 then
       log:warn("Cycle Presets: the controller has no preset %s", table.concat(unknown, ", "))
     end
     gCycle = cycle
-    persist:set(CYCLE_KEY, #cycle > 0 and cycle or nil)
-    persist:set(CYCLE_NAMES_KEY, next(named) and named or nil)
+    persist:set(CYCLE_PERSIST_KEY, #cycle > 0 and cycle or nil)
+    persist:set(CYCLE_NAMES_PERSIST_KEY, next(named) and named or nil)
     local labels, inCycle = {}, {}
     for _, e in ipairs(cycle) do
       local key, label = tostring(e.id), string.format("%s (%d)", e.name, e.id)
@@ -775,7 +778,7 @@ local function registerSegmentLink(key, binding)
       gSegmentsGone[key] = nil
       gSegmentRecords[key] = nil
       gSegmentSent[idBinding] = nil
-      persist:set(SEGMENT_RECORDS_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
+      persist:set(SEGMENT_RECORDS_PERSIST_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
     end
   end
 end
@@ -831,7 +834,7 @@ local function updateSegments()
     end
   end
   gSegmentOf = matched
-  persist:set(SEGMENT_RECORDS_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
+  persist:set(SEGMENT_RECORDS_PERSIST_KEY, next(gSegmentRecords) and gSegmentRecords or nil)
 end
 
 local function wantAllLists()
@@ -974,7 +977,7 @@ end
 --- it was. A host name in IP Address is the installer's, and is kept.
 --- @param found MdnsService[]
 local function follow(found)
-  local mac = persist:get(MAC_KEY)
+  local mac = persist:get(MAC_PERSIST_KEY)
   local ip, port = ipAddress(), tostring(Properties["Port"])
   if not gFollow or not gLost or IsEmpty(mac) or not ip:match("^%d+%.%d+%.%d+%.%d+$") then
     return
@@ -1017,7 +1020,7 @@ end
 
 --- Look for the driver's controller now and every FOLLOW_MS while it cannot be reached.
 local function startFollowing()
-  if gFollowing or not gFollow or IsEmpty(persist:get(MAC_KEY)) then
+  if gFollowing or not gFollow or IsEmpty(persist:get(MAC_PERSIST_KEY)) then
     return
   end
   gFollowing = true
@@ -1304,9 +1307,9 @@ function OPC.Found_Controllers(propertyValue)
   log:info("Using the WLED controller %s", propertyValue)
   -- The installer named this controller; one announced without a MAC is taken when it first answers.
   if controller.mac then
-    persist:set(MAC_KEY, controller.mac)
+    persist:set(MAC_PERSIST_KEY, controller.mac)
   else
-    persist:delete(MAC_KEY)
+    persist:delete(MAC_PERSIST_KEY)
   end
   UpdateProperty("IP Address", controller.ip)
   UpdateProperty("Port", tostring(controller.port))
@@ -1412,7 +1415,8 @@ end
 
 --- The effects the controller offers, by name.
 --- @return string[]
-function GCPL.Set_Effect(_paramName)
+function GCPL.Set_Effect(paramName)
+  log:trace("GCPL.Set_Effect(%s)", paramName)
   return lists:effectNames()
 end
 
@@ -1458,7 +1462,8 @@ end
 
 --- The palettes the controller offers, by name.
 --- @return string[]
-function GCPL.Set_Palette(_paramName)
+function GCPL.Set_Palette(paramName)
+  log:trace("GCPL.Set_Palette(%s)", paramName)
   return lists:paletteNames()
 end
 
@@ -1476,7 +1481,8 @@ end
 
 --- The presets the controller holds, as "Name (id)".
 --- @return string[]
-function GCPL.Apply_Preset(_paramName)
+function GCPL.Apply_Preset(paramName)
+  log:trace("GCPL.Apply_Preset(%s)", paramName)
   return lists:presetChoices()
 end
 
@@ -1495,7 +1501,8 @@ end
 
 --- The playlists the controller holds, as "Name (id)".
 --- @return string[]
-function GCPL.Start_Playlist(_paramName)
+function GCPL.Start_Playlist(paramName)
+  log:trace("GCPL.Start_Playlist(%s)", paramName)
   return lists:playlistChoices()
 end
 
@@ -1705,7 +1712,7 @@ function EC.Reset_Driver(params)
     return
   end
   log:print("Resetting driver to initial state")
-  persist:delete(MAC_KEY)
+  persist:delete(MAC_PERSIST_KEY)
   stopFollowing()
   -- Tell the proxy and programming before the light's state is cleared. The controller is still
   -- there, so its lights keep their level: no Light Off for a light that did not change.
@@ -1718,7 +1725,7 @@ function EC.Reset_Driver(params)
   lists.device = device
   lists:clear()
   gShown = nil
-  persist:delete(SHOWN_KEY)
+  persist:delete(SHOWN_PERSIST_KEY)
   gExtrasShape, gExtrasSent, gExtrasChoices = nil, {}, nil
   -- A fresh install has no keypad wired to a button link; the light's own proxy stays bound.
   local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
@@ -1732,9 +1739,9 @@ function EC.Reset_Driver(params)
   gCycle, gCycleLast, gCycleSentFrom, gCycleFrom, gLinkLeds, gPresetIsItems = {}, nil, nil, nil, {}, nil
   gPresetShowing = nil
   gSegmentRecords, gSegmentsGone, gSegmentOf, gSegmentsTold, gSegmentSent = {}, {}, {}, false, {}
-  persist:delete(SEGMENT_RECORDS_KEY)
-  persist:delete(CYCLE_KEY)
-  persist:delete(CYCLE_NAMES_KEY)
+  persist:delete(SEGMENT_RECORDS_PERSIST_KEY)
+  persist:delete(CYCLE_PERSIST_KEY)
+  persist:delete(CYCLE_NAMES_PERSIST_KEY)
   SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = "<extras_setup><extra></extra></extras_setup>" }, "NOTIFY")
   values:update("Connected", false, "BOOL")
   ensureVariables()

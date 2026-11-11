@@ -31,7 +31,7 @@ local LEG_MS = TT_MAX * 100
 local LEG_GAP_MS = 500
 --- How long a level or color sent waits for the controller's report of it before the light
 --- model takes the report it has; WLED pushes at most once a second.
-local ECHO_WAIT_MS = 2500
+local ECHO_WAIT_MS = 2.5 * ONE_SECOND
 --- The longest ramp rate offered, in ms over the full range; legs carry a fade past 65.5 s.
 local RATE_MAX = 86400000
 
@@ -453,9 +453,8 @@ function Adapter:send(cmd)
     self.cct = cct
   end
   self:apply(cmd)
-  -- Turning this light on from off lights the whole strip, every segment with it; a change while it
-  -- is on leaves each segment as its own light set it.
-  -- A preset sent just before is left to set the segments itself.
+  -- On from off lights every segment, unless a preset just sent sets them; while on, each
+  -- segment keeps what its own light set.
   local lightAll = json.on == true
     and not self.device.presetPending
     and not (self.device.on == true and anySegmentOn(self.device))
