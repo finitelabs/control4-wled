@@ -279,7 +279,8 @@ Sets WLED's web port. Leave it at `80` unless it was changed in WLED.
 
 Shown only while the last search found a controller. Lists the WLED controllers
 the driver finds on the network as `name (address)`, with the port after the
-address when it is not 80. Picking one sets `IP Address` and `Port` to it. The
+address when it is not 80. Picking one sets `IP Address` and `Port` to it and
+makes it the driver's controller, in place of any controller it used before. The
 driver searches when it loads, when [Find Controllers](#find-controllers) runs,
 and while its controller cannot be reached. It finds controllers on the same
 network as the Control4 controller that have an mDNS address set in WLED's WiFi
@@ -370,8 +371,9 @@ different controller answers at the address later, for example after the router
 gives the address to another device, the driver does not drive it. It looks for
 its own controller on the network and follows it (see
 [IP Address](#ip-address)), and until then `Driver Status` names the other one.
-Run Reset Driver with `Yes` when the controller was replaced on purpose: the
-driver forgets the old one and takes the controller at the address.
+When the controller was replaced on purpose, pick the new one in
+[`Found Controllers`](#found-controllers--select--found-controllers-), or run
+Reset Driver with `Yes`: the driver forgets the old one and takes the new one.
 
 Reset Driver returns the driver to a fresh install. It keeps the `IP Address`
 and `Port`, and the programming that uses the driver. It unwires every keypad

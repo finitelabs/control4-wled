@@ -727,6 +727,7 @@ function Fake:mdnsAnswerTo(query)
     port = self.port,
     mac = mac,
     ip = self.ip,
+    withoutTxt = self.mdnsWithoutTxt,
   })
 end
 
