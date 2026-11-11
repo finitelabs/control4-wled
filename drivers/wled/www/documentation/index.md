@@ -92,7 +92,8 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 # <span style="color:#0094FF">Compatibility</span>
 
 Any controller running WLED 0.15 or later: ESP32, ESP32-S3, ESP32-C3 and ESP8266
-boards, whether WLED came installed or was installed by hand.
+boards, whether WLED came installed or was installed by hand. A controller with
+older firmware still connects, and `Driver Status` asks for a WLED update.
 
 Each segment reports what its LEDs can light, and the
 [`Segments`](#segments-read-only) property shows it:
@@ -323,6 +324,8 @@ Displays the state of the connection:
 - `Connected`: the driver has a live connection to the controller.
 - `Connected over HTTP; reconnecting live updates`: the live connection dropped
   and the driver reaches the controller over HTTP while it reconnects.
+- `...; WLED ... is older than 0.15, update WLED`: the controller is driven, but
+  its firmware is older than the driver supports. Update it in WLED's settings.
 - `Connecting`: the driver is reaching the controller.
 - `Not connected: ...`: the controller cannot be reached, and why.
 - `Set the IP Address ...`: no address is set.
