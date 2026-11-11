@@ -20,9 +20,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 
+# default_color is a new segment's (Segment's constructor); boot_color is what beginStrip leaves
+# on the boot segment, colPri's default (wled.h), as a dig2go showed on both releases.
 FIRMWARE = {
-    "16.0.1": {"vid": 2605010, "cn": "Niji", "default_color": 0xFFA000, "fixed_palettes": 72},
-    "0.15.4": {"vid": 2508020, "cn": "Kōsen", "default_color": 0xFFAA00, "fixed_palettes": 71},
+    "16.0.1": {
+        "vid": 2605010,
+        "cn": "Niji",
+        "default_color": 0xFFA000,
+        "boot_color": 0xFFA000,
+        "fixed_palettes": 72,
+    },
+    "0.15.4": {
+        "vid": 2508020,
+        "cn": "Kōsen",
+        "default_color": 0xFFAA00,
+        "boot_color": 0xFFA000,
+        "fixed_palettes": 71,
+    },
 }
 
 # const.h capability bits.
@@ -315,6 +329,21 @@ def color_from_hex(s):
     return [(n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF]
 
 
+def hue_to_rgb(index):
+    """colors.cpp colorHStoRGB at full saturation and value, for a 0-255 wheel index."""
+    h = index * 360 / 256
+    sector, frac = int(h // 60) % 6, (h % 60) / 60
+    up, down = int(255 * frac), int(255 * (1 - frac))
+    return [
+        (255, up, 0),
+        (down, 255, 0),
+        (0, 255, up),
+        (0, down, 255),
+        (up, 0, 255),
+        (255, 0, down),
+    ][sector]
+
+
 def color_k_to_rgb(kelvin):
     """colors.cpp colorKtoRGB."""
     import math
@@ -491,7 +520,7 @@ class Device:
         self.blending_style = 0
         self.state_changed = False
 
-        color = self.fw["default_color"]
+        color = self.fw["boot_color"]
         segs = p.get("segments") or [{"start": 0, "stop": self.width}]
         self.segments = []
         for s in segs[: self.max_segments]:
@@ -544,11 +573,28 @@ class Device:
             self.apply_preset(self.boot_preset, CALL_MODE_INIT)
         self.state_updated(CALL_MODE_INIT)
 
-    def set_bus(self, index, rgbwm=None):
-        if rgbwm is not None:
+    def set_bus(self, index, rgbwm=None, at_restart=False):
+        """A white mode saved in the LED settings, kept across restarts like cfg.json. Saved over
+        /json/cfg it shows only after the next restart."""
+        if rgbwm is None:
+            return
+        self.profile["buses"] = copy.deepcopy(self.profile["buses"])
+        self.profile["buses"][index]["rgbwm"] = rgbwm
+        if not at_restart:
             self.buses[index].rgbwm = rgbwm
 
-    def set_white(self, rgbwm=None, correct_wb=None, cct_from_rgb=None):
+    def set_white(self, rgbwm=None, correct_wb=None, cct_from_rgb=None, at_restart=False):
+        white = dict(self.profile.get("white", {}))
+        for key, value in (
+            ("rgbwm", rgbwm),
+            ("correct_wb", correct_wb),
+            ("cct_from_rgb", cct_from_rgb),
+        ):
+            if value is not None:
+                white[key] = value
+        self.profile["white"] = white
+        if at_restart:
+            return
         if rgbwm is not None:
             self.global_awm = rgbwm
         if correct_wb is not None:
@@ -1220,7 +1266,7 @@ class Device:
             "count": self.total,
             "pwr": self.power_estimate(),
             "fps": 42 if self.output_bri() else 0,
-            "maxpwr": 850 if self.power_estimate() else 0,
+            "maxpwr": self.profile.get("maxpwr", 850) if self.power_estimate() else 0,
             "maxseg": self.max_segments,
             "bootps": self.boot_preset,
         }
@@ -1619,13 +1665,23 @@ class Device:
 
     # ---- outside the API ---------------------------------------------------------------------
 
-    def press_button(self, preset=0):
-        """button.cpp shortPressAction for button 0."""
+    def press_button(self, preset=0, kind="short"):
+        """button.cpp for button 0 with no macros: a short press toggles, a long press picks a
+        random color (setRandomColor), and with no double-press macro WLED does not wait for a
+        second press, so a double press is two short ones."""
         if preset:
             self.apply_preset(preset, CALL_MODE_BUTTON_PRESET)
-        else:
-            self.toggle_on_off()
+        elif kind == "long":
+            r, g, b = hue_to_rgb(random.randrange(256))
+            for seg in self.segments:
+                if seg.is_active() and seg.selected:
+                    seg.colors[0] = rgbw32(r, g, b, 0)
+            self.state_changed = True
             self.state_updated(CALL_MODE_BUTTON)
+        else:
+            for _ in range(2 if kind == "double" else 1):
+                self.toggle_on_off()
+                self.state_updated(CALL_MODE_BUTTON)
 
     # ---- the loop ----------------------------------------------------------------------------
 

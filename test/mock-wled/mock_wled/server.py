@@ -402,12 +402,14 @@ class Instance:
                 "firmware": self.device.version,
                 "chip": self.device.chip_name,
                 "actions": {
-                    "POST /_mock/button": '{"preset": 0} toggles, a preset id applies it',
+                    "POST /_mock/button": '{"preset": 0} toggles, a preset id applies it; '
+                    '{"kind": "long"} picks a random color, "double" toggles twice',
                     "POST /_mock/client": "any JSON state, applied as another client would",
                     "POST /_mock/live": '{"mode": "e131", "ip": "192.0.2.200"} starts live data',
                     "POST /_mock/live_stop": '{"immediate": false} ends it, after the timeout',
                     "POST /_mock/white": '{"bus": 0, "rgbwm": 2} or {"rgbwm", "correct_wb", '
-                    '"cct_from_rgb"}; {"push": true} also pushes',
+                    '"cct_from_rgb"}; {"push": true} also pushes; {"at_restart": true} saves it '
+                    "for the next restart, as /json/cfg does",
                     "POST /_mock/reboot": '{"down_ms": 3000}',
                     "POST /_mock/drop": '{"down_ms": 0} drops every socket, optionally refuses',
                     "POST /_mock/busy": '{"ms": 500} holds the JSON buffer',
@@ -436,7 +438,10 @@ class Instance:
             return web.json_response({"error": "body must be an object"}, status=400)
         d = self.device
         if action == "button":
-            d.press_button(int(body.get("preset", 0)))
+            kind = body.get("kind", "short")
+            if kind not in ("short", "long", "double"):
+                return web.json_response({"error": f"unknown press {kind}"}, status=400)
+            d.press_button(int(body.get("preset", 0)), kind)
         elif action == "client":
             d.deserialize_state(body, CALL_MODE_DIRECT_CHANGE)
             await self.after_command()
@@ -448,10 +453,13 @@ class Instance:
         elif action == "live_stop":
             d.live_stop(bool(body.get("immediate", False)))
         elif action == "white":
+            later = bool(body.get("at_restart", False))
             if "bus" in body:
-                d.set_bus(int(body["bus"]), body.get("rgbwm"))
+                d.set_bus(int(body["bus"]), body.get("rgbwm"), later)
             else:
-                d.set_white(body.get("rgbwm"), body.get("correct_wb"), body.get("cct_from_rgb"))
+                d.set_white(
+                    body.get("rgbwm"), body.get("correct_wb"), body.get("cct_from_rgb"), later
+                )
             if body.get("push"):
                 d.interface_update_call_mode = CALL_MODE_DIRECT_CHANGE
         elif action == "reboot":
