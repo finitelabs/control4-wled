@@ -662,6 +662,20 @@ do
   fake:changeSilently(nil, { live = false })
   W.run(15200)
   T.eq("and back", Properties["Driver Status"], "Connected")
+
+  -- With WLED's live override on, WLED shows its own state over the live data.
+  fake:changeSilently({ lor = 1 }, { live = true, lm = "E1.31", lip = "192.0.2.200" })
+  W.run(15200)
+  T.eq("live data under the override is not in control", Properties["Driver Status"], "Connected")
+  fake:changeSilently({ lor = 0 })
+  W.run(15200)
+  T.eq(
+    "the override off, it is again",
+    Properties["Driver Status"],
+    "Connected; live data from 192.0.2.200 (E1.31) is in control"
+  )
+  fake:changeSilently(nil, { live = false })
+  W.run(15200)
   T.eq("nothing told the proxy over a minute of polls", #told, 0)
   T.eq("no event either", #events, 0)
 end

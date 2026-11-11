@@ -927,11 +927,9 @@ end
 --- Run in 10 ms steps until the fake has one more /json/si request than `seen`.
 local function untilPoll(fake, seen)
   for _ = 1, 4000 do
-    if
-      count(fake.requests, function(r)
-        return r.path == "/json/si"
-      end) > seen
-    then
+    if count(fake.requests, function(r)
+      return r.path == "/json/si"
+    end) > seen then
       return
     end
     W.run(10)
@@ -999,6 +997,12 @@ end
 T.section("An error in the driver's handler does not end the poll")
 --------------------------------------------------------------------------------
 do
+  -- The OSS build has no Cloud Monitoring wrapper, so a handler's error reaches the poll's chain.
+  local diagnostics = require("lib.diagnostics")
+  local wrap = diagnostics.wrap
+  diagnostics.wrap = function(_, fn)
+    return fn
+  end
   W.reset()
   nextHost = nextHost + 1
   local fake = W.Fake.new("esp32-rgbw-pwm-16", { ip = "192.0.2." .. nextHost })
@@ -1019,6 +1023,7 @@ do
     4
   )
   client:stop()
+  diagnostics.wrap = wrap
 end
 
 --------------------------------------------------------------------------------

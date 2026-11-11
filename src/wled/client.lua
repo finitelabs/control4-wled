@@ -363,6 +363,27 @@ function Client:pingLoop(gen, socketGen)
   end)
 end
 
+--- Report a state answered over HTTP. An answer asked for before a restart or a later write is
+--- dropped; that write's report tells the state. While the socket is down the answer also shows
+--- the controller reachable, as a poll does.
+--- @param client WledClient
+--- @param gen integer The connection generation when the request went out.
+--- @param writes integer The write count when the request went out.
+--- @param state table|nil
+--- @param info table|nil
+--- @param tag string The error-report name for onState.
+local function report(client, gen, writes, state, info, tag)
+  if client.gen ~= gen then
+    return
+  end
+  if not client.socketUp then
+    client:setMode("http")
+  end
+  if client.writes == writes then
+    guarded(client.onState, tag)(state, info)
+  end
+end
+
 --- Ask for the state every SOCKET_POLL_MS while the socket stays up, and report it as a push. A
 --- turn waits while an HTTP request is under way, a command was just sent or a busy resend waits,
 --- so the poll never queues behind other work or takes the controller's one buffer from a command.
@@ -389,13 +410,9 @@ function Client:socketPoll(gen, socketGen, ms)
     self
       :enqueue("GET", "/json/si")
       :next(function(si)
-        if self.gen ~= gen or self.socketGen ~= socketGen or type(si) ~= "table" then
-          return
+        if self.pushes == pushes and type(si) == "table" then
+          report(self, gen, writes, si.state, si.info, "WLED.SocketPoll")
         end
-        if self.writes ~= writes or self.pushes ~= pushes then
-          return
-        end
-        guarded(self.onState, "WLED.SocketPoll")(si.state, si.info)
       end)
       :next(again, again)
   end)
@@ -536,27 +553,6 @@ function Client:sendFrame(frame)
     return true
   end
   return false
-end
-
---- Report a state answered over HTTP. An answer asked for before a restart or a later write is
---- dropped; that write's report tells the state. While the socket is down the answer also shows
---- the controller reachable, as a poll does.
---- @param client WledClient
---- @param gen integer The connection generation when the request went out.
---- @param writes integer The write count when the request went out.
---- @param state table|nil
---- @param info table|nil
---- @param tag string The error-report name for onState.
-local function report(client, gen, writes, state, info, tag)
-  if client.gen ~= gen then
-    return
-  end
-  if not client.socketUp then
-    client:setMode("http")
-  end
-  if client.writes == writes then
-    guarded(client.onState, tag)(state, info)
-  end
 end
 
 --- Ask the controller for its state and report it, for a command it may not have taken.
