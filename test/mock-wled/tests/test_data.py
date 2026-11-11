@@ -76,6 +76,6 @@ def test_node_packet_layout(device):
     assert len(pkt) == 44 and pkt[:2] == b"\xff\x01" and pkt[2:6] == bytes([192, 0, 2, 10])
     assert pkt[6:38].rstrip(b"\0").decode() == d.name
     assert pkt[38] == 32 | 0x80 and pkt[39] == 10
-    assert struct.unpack("<I", pkt[40:44])[0] == 2605010
+    assert struct.unpack("<I", pkt[40:44])[0] == 2606300
     d.deserialize_state({"on": False})
     assert node_packet(d, "192.0.2.10")[38] == 32

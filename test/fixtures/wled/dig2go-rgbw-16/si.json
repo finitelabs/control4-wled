@@ -1,0 +1,148 @@
+{
+ "state": {
+  "on": true,
+  "bri": 128,
+  "transition": 7,
+  "bs": 0,
+  "ps": -1,
+  "pl": -1,
+  "ledmap": 0,
+  "nl": {
+   "on": false,
+   "dur": 60,
+   "mode": 1,
+   "tbri": 0,
+   "rem": -1
+  },
+  "udpn": {
+   "send": false,
+   "recv": true,
+   "sgrp": 1,
+   "rgrp": 1
+  },
+  "lor": 0,
+  "mainseg": 0,
+  "seg": [
+   {
+    "id": 0,
+    "start": 0,
+    "stop": 300,
+    "len": 300,
+    "grp": 1,
+    "spc": 0,
+    "of": 0,
+    "on": true,
+    "frz": false,
+    "bri": 255,
+    "cct": 127,
+    "set": 0,
+    "lc": 3,
+    "col": [
+     [
+      255,
+      160,
+      0,
+      0
+     ],
+     [
+      0,
+      0,
+      0,
+      0
+     ],
+     [
+      0,
+      0,
+      0,
+      0
+     ]
+    ],
+    "fx": 0,
+    "sx": 128,
+    "ix": 128,
+    "pal": 0,
+    "c1": 128,
+    "c2": 128,
+    "c3": 16,
+    "sel": true,
+    "rev": false,
+    "mi": false,
+    "o1": false,
+    "o2": false,
+    "o3": false,
+    "si": 0,
+    "m12": 0,
+    "bm": 0
+   }
+  ]
+ },
+ "info": {
+  "ver": "16.0.1",
+  "vid": 2606300,
+  "cn": "Niji",
+  "release": "ESP32",
+  "repo": "wled/WLED",
+  "deviceId": "9eae82ea786eb5e0a8b26d1ccf7d24ac12edb7a563",
+  "leds": {
+   "count": 300,
+   "pwr": 0,
+   "fps": 0,
+   "maxpwr": 0,
+   "maxseg": 32,
+   "bootps": 0,
+   "seglc": [
+    3
+   ],
+   "lc": 3,
+   "rgbw": true,
+   "wv": 2,
+   "cct": 0
+  },
+  "str": false,
+  "name": "Mock Bench Strip",
+  "udpport": 21324,
+  "simplifiedui": false,
+  "live": false,
+  "liveseg": -1,
+  "lm": "",
+  "lip": "",
+  "ws": 0,
+  "fxcount": 220,
+  "palcount": 72,
+  "cpalcount": 0,
+  "umpalcount": 0,
+  "cpalmax": 129,
+  "maps": [
+   {
+    "id": 0
+   }
+  ],
+  "wifi": {
+   "bssid": "02:00:00:00:00:01",
+   "rssi": -58,
+   "signal": 84,
+   "channel": 6,
+   "ap": false
+  },
+  "fs": {
+   "u": 16,
+   "t": 983,
+   "pmt": 0
+  },
+  "ndc": 0,
+  "arch": "esp32",
+  "core": "v4.4.7",
+  "clock": 240,
+  "flash": 4,
+  "lwip": 0,
+  "bootloaderSHA256": "a7b50fe3170b0054042269b42b082faff158d87430b0e9328516c65aba7f42a5",
+  "freeheap": 160000,
+  "uptime": 0,
+  "time": "1970-1-1, 00:00:00",
+  "opt": 79,
+  "brand": "WLED",
+  "product": "FOSS",
+  "mac": "02a1b2c3d4f2",
+  "ip": ""
+ }
+}

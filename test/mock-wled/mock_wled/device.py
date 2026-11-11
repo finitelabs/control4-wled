@@ -20,9 +20,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 
+# default_color is a new segment's (Segment's constructor); boot_color is what beginStrip leaves
+# on the boot segment, colPri's default (wled.h), as a dig2go showed on both releases.
 FIRMWARE = {
-    "16.0.1": {"vid": 2605010, "cn": "Niji", "default_color": 0xFFA000, "fixed_palettes": 72},
-    "0.15.4": {"vid": 2508020, "cn": "Kōsen", "default_color": 0xFFAA00, "fixed_palettes": 71},
+    "16.0.1": {
+        "vid": 2606300,
+        "cn": "Niji",
+        "default_color": 0xFFA000,
+        "boot_color": 0xFFA000,
+        "fixed_palettes": 72,
+    },
+    "0.15.4": {
+        "vid": 2508020,
+        "cn": "Kōsen",
+        "default_color": 0xFFAA00,
+        "boot_color": 0xFFA000,
+        "fixed_palettes": 71,
+    },
 }
 
 # const.h capability bits.
@@ -51,6 +65,7 @@ NL_MODE_SET, NL_MODE_FADE, NL_MODE_COLORFADE, NL_MODE_SUN = 0, 1, 2, 3
 INTERFACE_UPDATE_COOLDOWN = 1000  # const.h
 JSON_LOCK_WAIT = 250  # util.cpp requestJSONBufferLock
 REALTIME_TIMEOUT_DEFAULT = 2500  # wled.h realtimeTimeoutMs
+DOUBLE_PRESS_GAP = 300  # a double press's second release, roughly as a hand makes it
 UINT32_MAX = 0xFFFFFFFF
 INT32_MAX = 0x7FFFFFFF
 ULTRAWHITE = 0xFFFFFFFF
@@ -315,6 +330,21 @@ def color_from_hex(s):
     return [(n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF]
 
 
+def hue_to_rgb(index):
+    """colors.cpp colorHStoRGB at full saturation and value, for a 0-255 wheel index."""
+    h = index * 360 / 256
+    sector, frac = int(h // 60) % 6, (h % 60) / 60
+    up, down = int(255 * frac), int(255 * (1 - frac))
+    return [
+        (255, up, 0),
+        (down, 255, 0),
+        (0, 255, up),
+        (0, down, 255),
+        (up, 0, 255),
+        (255, 0, down),
+    ][sector]
+
+
 def color_k_to_rgb(kelvin):
     """colors.cpp colorKtoRGB."""
     import math
@@ -491,7 +521,7 @@ class Device:
         self.blending_style = 0
         self.state_changed = False
 
-        color = self.fw["default_color"]
+        color = self.fw["boot_color"]
         segs = p.get("segments") or [{"start": 0, "stop": self.width}]
         self.segments = []
         for s in segs[: self.max_segments]:
@@ -531,6 +561,8 @@ class Device:
         self.realtime_timeout = 0
         self.realtime_stop_at = None
         self.output_bri_override = None
+        self.second_toggle_at = None
+        self.bus_change_pending = False
 
         self.error_flag = ERR_NONE
         self.do_reboot = False
@@ -544,11 +576,31 @@ class Device:
             self.apply_preset(self.boot_preset, CALL_MODE_INIT)
         self.state_updated(CALL_MODE_INIT)
 
-    def set_bus(self, index, rgbwm=None):
-        if rgbwm is not None:
+    def set_bus(self, index, rgbwm=None, at_restart=False):
+        """A white mode saved in the LED settings, kept across restarts like cfg.json. Saved over
+        /json/cfg it shows only after the next restart."""
+        if rgbwm is None:
+            return
+        self.profile["buses"] = copy.deepcopy(self.profile["buses"])
+        self.profile["buses"][index]["rgbwm"] = rgbwm
+        if not at_restart:
             self.buses[index].rgbwm = rgbwm
+        elif rgbwm != self.buses[index].rgbwm:
+            # Until the restart a dig2go on 0.15.4 read info.leds.rgbw false, bits unchanged.
+            self.bus_change_pending = True
 
-    def set_white(self, rgbwm=None, correct_wb=None, cct_from_rgb=None):
+    def set_white(self, rgbwm=None, correct_wb=None, cct_from_rgb=None, at_restart=False):
+        white = dict(self.profile.get("white", {}))
+        for key, value in (
+            ("rgbwm", rgbwm),
+            ("correct_wb", correct_wb),
+            ("cct_from_rgb", cct_from_rgb),
+        ):
+            if value is not None:
+                white[key] = value
+        self.profile["white"] = white
+        if at_restart:
+            return
         if rgbwm is not None:
             self.global_awm = rgbwm
         if correct_wb is not None:
@@ -603,6 +655,8 @@ class Device:
         return any(bus_has_white(b.type) for b in self.buses)
 
     def has_rgbw_bus(self):
+        if self.bus_change_pending:
+            return False
         return any(bus_has_rgb(b.type) and bus_has_white(b.type) for b in self.buses)
 
     def mode_count(self):
@@ -1220,7 +1274,7 @@ class Device:
             "count": self.total,
             "pwr": self.power_estimate(),
             "fps": 42 if self.output_bri() else 0,
-            "maxpwr": 850 if self.power_estimate() else 0,
+            "maxpwr": self.profile.get("maxpwr", 850) if self.power_estimate() else 0,
             "maxseg": self.max_segments,
             "bootps": self.boot_preset,
         }
@@ -1531,7 +1585,7 @@ class Device:
         not_running = self.pl_index < 0 and self.pl_repeat > 0
         pl["repeat"] = self.pl_repeat - 1 if not_running else self.pl_repeat
         pl["end"] = 255 if self.pl_options & PL_OPTION_RESTORE else self.pl_end_preset
-        pl["r"] = bool(self.pl_options & PL_OPTION_SHUFFLE)
+        pl["r"] = self.pl_options & PL_OPTION_SHUFFLE
         for e in self.pl_entries:
             pl["ps"].append(e.preset)
             pl["dur"].append(e.dur // 100 if self.v16 else e.dur)
@@ -1619,13 +1673,26 @@ class Device:
 
     # ---- outside the API ---------------------------------------------------------------------
 
-    def press_button(self, preset=0):
-        """button.cpp shortPressAction for button 0."""
+    def press_button(self, preset=0, kind="short"):
+        """button.cpp for button 0 with no macros: a short press toggles, a long press picks a
+        random color (setRandomColor) with the first selected segment's white and gives it to
+        every selected segment, and with no double-press macro WLED does not wait for a second
+        press, so a double press is two short ones about 300 ms apart."""
         if preset:
             self.apply_preset(preset, CALL_MODE_BUTTON_PRESET)
+        elif kind == "long":
+            r, g, b = hue_to_rgb(random.randrange(256))
+            w = channels(self.first_selected().colors[0])[3]
+            for seg in self.segments:
+                if seg.is_active() and seg.selected:
+                    seg.colors[0] = rgbw32(r, g, b, w)
+            self.state_changed = True
+            self.state_updated(CALL_MODE_BUTTON)
         else:
             self.toggle_on_off()
             self.state_updated(CALL_MODE_BUTTON)
+            if kind == "double":
+                self.second_toggle_at = self.now() + DOUBLE_PRESS_GAP
 
     # ---- the loop ----------------------------------------------------------------------------
 
@@ -1706,6 +1773,10 @@ class Device:
     def tick(self):
         """One pass of WLED's main loop. Sets push_due when a WebSocket push is due."""
         now = self.now()
+        if self.second_toggle_at is not None and now >= self.second_toggle_at:
+            self.second_toggle_at = None
+            self.toggle_on_off()
+            self.state_updated(CALL_MODE_BUTTON)
         if self.realtime_stop_at is not None and now >= self.realtime_stop_at:
             self.realtime_stop_at = None
             self.exit_realtime()
