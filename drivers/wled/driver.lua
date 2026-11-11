@@ -1546,9 +1546,9 @@ local EXTRA_LISTS = {
   end,
 }
 
---- Set one Extras control on every segment and show it in the menu: a list pick by the text the
---- last setup gave its entry, a slider clamped to its range, or a check. The controller's next
---- report shows what it did.
+--- Set one Extras control on every segment: a list pick by the text the last setup gave its entry,
+--- a slider clamped to its range, or a check. The menu is told what was set, except a check it
+--- picked itself, which it already shows. The controller's next report shows what it did.
 --- @param id string The control's id, as the menu names it (fx, sx, c1, o1, ...).
 --- @param picked any
 --- @param fromMenu boolean|nil True for a pick in the menu itself.

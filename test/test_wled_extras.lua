@@ -501,6 +501,23 @@ do
   T.eq("the controller's report of the same check tells the menu nothing", #statesOf("o1"), 0)
 
   mark()
+  elsewhere(fake, { seg = { { id = 0, o1 = false }, { id = 1, o1 = false } } })
+  W.run(500)
+  T.eq("the check changed on the controller right after a tap shows", (statesOf("o1")[1] or {}).value, "false")
+
+  mark()
+  pick("o1", "true")
+  W.run(1500)
+  T.eq("ticked again, not answered", #statesOf("o1"), 0)
+  mark()
+  pick("fx", "Scanner")
+  W.run(1500)
+  T.eq("an effect picked after a tap shows its own check", (statesOf("o1")[1] or {}).value, "false")
+
+  mark()
+  pick("o1", "true")
+  W.run(1500)
+  mark()
   pick("o1", "false")
   W.run(1500)
   T.eq("unticking is not answered either", #statesOf("o1"), 0)
@@ -512,11 +529,6 @@ do
   mark()
   pick("sx", "100")
   T.eq("a slider pick is still answered", object((toldOf("EXTRAS_STATE_CHANGED")[1] or {}).xml, "sx").value, "100")
-
-  mark()
-  elsewhere(fake, { seg = { { id = 0, o1 = false }, { id = 1, o1 = false } } })
-  W.run(500)
-  T.eq("a check changed on the controller still shows", (statesOf("o1")[1] or {}).value, "false")
 end
 
 --------------------------------------------------------------------------------
