@@ -519,7 +519,7 @@ function Fake:answer(method, path, body)
   return d
 end
 
-local function pathOf(fake, url)
+local function pathOf(url)
   local host, port, path = tostring(url):match("^http://([^:/]+):(%d+)(/.*)$")
   local target = host and byAddress[host .. ":" .. port]
   return target, path
@@ -529,7 +529,7 @@ end
 M.http = {}
 
 function M.http:get(url)
-  local fake, path = pathOf(nil, url)
+  local fake, path = pathOf(url)
   if not fake then
     return deferred.new():reject({ error = "HTTP GET request failed; no route" })
   end
@@ -537,7 +537,7 @@ function M.http:get(url)
 end
 
 function M.http:post(url, data)
-  local fake, path = pathOf(nil, url)
+  local fake, path = pathOf(url)
   if not fake then
     return deferred.new():reject({ error = "HTTP POST request failed; no route" })
   end
@@ -677,6 +677,11 @@ function Fake:onSend(data)
             self:sendText("pong")
           end)
         end
+      elseif self.frameLimit and #frame.payload > self.frameLimit then
+        -- frameLimit: WLED refuses a frame longer than its buffer with error 9 and takes nothing.
+        self:after(LATENCY_MS, function()
+          self:sendText('{"error":9}')
+        end)
       elseif self.wsBusy > 0 then
         self.wsBusy = self.wsBusy - 1
         self:after(LATENCY_MS, function()

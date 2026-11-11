@@ -559,6 +559,52 @@ do
   client:stop()
 end
 
+--- Sixteen segments' colors, too long for one ESP8266 frame.
+local function sixteenSegments()
+  local seg = {}
+  for i = 0, 15 do
+    seg[#seg + 1] = { id = i, col = { { 255, 128, 0 }, { 0, 0, 0 }, { 0, 0, 0 } } }
+  end
+  return seg
+end
+
+--------------------------------------------------------------------------------
+T.section("A command sent while a POST is under way goes behind it, so the newest lands last")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient("esp8266-ws2812b-015")
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  client:send({ bri = 10, seg = sixteenSegments() })
+  client:send({ bri = 200 })
+  W.run(100)
+  T.eq("the later command lands last", fake.si.state.bri, 200)
+  T.eq("both went over HTTP, in order", posts(fake), 2)
+  client:send({ bri = 150 })
+  W.run(20)
+  T.eq("with nothing ahead, the socket again", posts(fake), 2)
+  T.eq("and it lands", fake.si.state.bri, 150)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A frame the controller refuses as too big goes over HTTP, and the frames after it follow")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  -- The controller's buffer is smaller than the frame the client takes for its chip.
+  fake.frameLimit = 600
+  client:send({ bri = 10, seg = sixteenSegments() })
+  client:send({ bri = 200 })
+  W.run(200)
+  T.eq("the refused command landed", fake.si.state.seg[1].col[1], { 255, 128, 0 })
+  T.eq("the later one went again after it, so it lands last", fake.si.state.bri, 200)
+  T.eq("each over HTTP once", posts(fake), 2)
+  client:stop()
+end
+
 --------------------------------------------------------------------------------
 T.section("One HTTP request in flight")
 --------------------------------------------------------------------------------
@@ -965,6 +1011,23 @@ do
   fake:change({ bri = 77 })
   W.run(4000)
   T.eq("after a push, the older answer does not take its place", log.states[#log.states].state.bri, 77)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A refresh answer that a push overtook is not reported")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  -- The answer is built when the refresh asks and arrives 3 s later, after another client's push.
+  fake.slowGetMs = 3000
+  client:refresh()
+  W.run(500)
+  fake:change({ bri = 77 })
+  W.run(4000)
+  T.eq("the push stands", log.states[#log.states].state.bri, 77)
   client:stop()
 end
 
