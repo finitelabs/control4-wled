@@ -1028,7 +1028,9 @@ class Device:
             self.apply_final_bri()
         else:
             if self.transition_active:
-                self.bri_old = self.bri_t
+                # 16.x shows the target of a fade that arrives while another runs at once (measured
+                # on a dig2go; wled/WLED#4976); 0.15 fades on from where the output is.
+                self.bri_old = self.bri if self.v16 else self.bri_t
             self.transition_active = True
             self.transition_start = now
         self.state_changed = False

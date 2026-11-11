@@ -304,6 +304,51 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("each leg of a long fade goes after the last one ends, so 16.x fades it")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16")
+  proxy("SET_LEVEL", { LEVEL = "10" })
+  W.run(3000)
+  local function legs()
+    local out = {}
+    for _, c in ipairs(sent()) do
+      if c.bri then
+        out[#out + 1] = c
+      end
+    end
+    return out
+  end
+  mark()
+  local snaps = fake.snaps
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "20", RATE = "70000" })
+  T.eq("two legs of 35 s: the first at once", #legs(), 1)
+  W.run(35000)
+  T.eq("the second not at the first one's end", #legs(), 1)
+  W.run(249)
+  T.eq("nor just before 0.25 s past it", #legs(), 1)
+  W.run(1)
+  T.eq("but 0.25 s after it", #legs(), 2)
+  T.eq("so no leg reaches the controller while one runs", fake.snaps - snaps, 0)
+  W.run(36000)
+  T.eq("told the fade's end", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 20 })
+
+  -- A stop in the gap holds where the first leg ended, and the second leg never goes.
+  proxy("SET_LEVEL", { LEVEL = "10" })
+  W.run(3000)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "20", RATE = "70000" })
+  local first = legs()[1]
+  W.run(35100)
+  proxy("SET_BRIGHTNESS_STOP")
+  local stop = legs()[2]
+  T.truthy("a stop in the gap is sent at once", stop and stop.tt == 0)
+  T.truthy("near where the first leg ended", stop and first and math.abs(stop.bri - first.bri) <= 1)
+  W.run(40000)
+  T.eq("and the second leg never goes", #legs(), 2)
+end
+
+--------------------------------------------------------------------------------
 T.section("a color goes to every segment and ends an effect; a level never does")
 --------------------------------------------------------------------------------
 do

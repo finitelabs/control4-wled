@@ -223,6 +223,7 @@ function Fake.new(profile, opts)
   self.busy = 0
   self.wsBusy = 0
   self.commands = {}
+  self.snaps = 0
   self.wire = {}
   self.requests = {}
   self.pings = 0
@@ -390,6 +391,18 @@ local PRESET_LOAD_MS = 40
 --- @param cmd table
 function Fake:apply(cmd)
   self.commands[#self.commands + 1] = cmd
+  -- 16.x jumps to the target of a fade that arrives while another runs (measured on a dig2go);
+  -- 0.15 fades on from where the output is. snaps counts the fades that jumped.
+  local tt = tonumber(cmd.tt)
+  if tt and tt > 0 then
+    local now = C4:GetTime()
+    if self:isV16() and self.fadeUntil and now <= self.fadeUntil then
+      self.snaps = self.snaps + 1
+    end
+    self.fadeUntil = now + tt * 100
+  elseif tt == 0 then
+    self.fadeUntil = nil
+  end
   self:applyFields(cmd)
   if type(cmd.playlist) == "table" and next(cmd.playlist) == nil then
     -- 16.x takes an empty playlist sent during one as a nested playlist, and the running one
