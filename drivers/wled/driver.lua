@@ -296,7 +296,7 @@ local function updateDeviceInfo()
 end
 
 --- Whether the reporting controller is the one this driver was set up with. The first one
---- seen is remembered; Reset Driver forgets it.
+--- seen is remembered; Reset Driver forgets it, and a pick in Found Controllers names another.
 --- @return boolean
 local function isOurController()
   if not device.mac then
@@ -1265,7 +1265,8 @@ function OPC.Port(propertyValue)
   addressChanged()
 end
 
---- Picking a found controller sets IP Address and Port to its address.
+--- Picking a found controller sets IP Address and Port to its address and makes it the driver's
+--- controller, in place of one the driver used before.
 function OPC.Found_Controllers(propertyValue)
   log:trace("OPC.Found_Controllers(%s)", propertyValue)
   if not gInitialized or IsEmpty(propertyValue) or propertyValue == SELECT_OPTION then
@@ -1277,6 +1278,12 @@ function OPC.Found_Controllers(propertyValue)
     return
   end
   log:info("Using the WLED controller %s", propertyValue)
+  -- The installer named this controller; one announced without a MAC is taken when it first answers.
+  if controller.mac then
+    persist:set(MAC_KEY, controller.mac)
+  else
+    persist:delete(MAC_KEY)
+  end
   UpdateProperty("IP Address", controller.ip)
   UpdateProperty("Port", tostring(controller.port))
   addressChanged()
