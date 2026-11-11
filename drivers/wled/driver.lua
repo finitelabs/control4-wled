@@ -1551,7 +1551,8 @@ local EXTRA_LISTS = {
 --- report shows what it did.
 --- @param id string The control's id, as the menu names it (fx, sx, c1, o1, ...).
 --- @param picked any
-local function setExtra(id, picked)
+--- @param fromMenu boolean|nil True for a pick in the menu itself.
+local function setExtra(id, picked, fromMenu)
   if gWrongMac then
     log:warn("Extras: not sent, a different controller answers at this address")
     return
@@ -1583,7 +1584,10 @@ local function setExtra(id, picked)
   if gExtrasShape then
     value = tostring(value)
     gExtrasSent[id] = value
-    SendToProxy(PROXY_BINDING, "EXTRAS_STATE_CHANGED", { XML = Extras.state({ [id] = value }, {}) }, "NOTIFY")
+    -- The Control4 app unticks a checkbox when a state answers its own tap; the box already shows it.
+    if not (fromMenu and kind == "bool") then
+      SendToProxy(PROXY_BINDING, "EXTRAS_STATE_CHANGED", { XML = Extras.state({ [id] = value }, {}) }, "NOTIFY")
+    end
   end
 end
 
@@ -1597,7 +1601,7 @@ function RFP.EXTRA_SET(idBinding, strCommand, tParams)
   if idBinding ~= PROXY_BINDING then
     return
   end
-  setExtra(Select(tParams, "id"), Select(tParams, "value"))
+  setExtra(Select(tParams, "id"), Select(tParams, "value"), true)
 end
 
 --- The running effect's Custom sliders and Check options, by the names the menu and programming

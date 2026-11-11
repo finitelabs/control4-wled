@@ -478,6 +478,48 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A checkbox picked in the menu is not answered, so the app keeps its tick")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+
+  --- The objects for one control in every state told since the mark.
+  local function statesOf(id)
+    local out = {}
+    for _, t in ipairs(toldOf("EXTRAS_STATE_CHANGED")) do
+      out[#out + 1] = object(t.xml, id)
+    end
+    return out
+  end
+
+  mark()
+  pick("o1", "true")
+  T.eq("the check reaches every segment", { lastCommand(fake).seg[1].o1, lastCommand(fake).seg[2].o1 }, { true, true })
+  T.eq("and no state answers the tap", #toldOf("EXTRAS_STATE_CHANGED"), 0)
+  W.run(1500)
+  T.eq("the controller's report of the same check tells the menu nothing", #statesOf("o1"), 0)
+
+  mark()
+  pick("o1", "false")
+  W.run(1500)
+  T.eq("unticking is not answered either", #statesOf("o1"), 0)
+
+  mark()
+  ExecuteCommand("Set Effect Option", { Option = "Check 1", State = "On" })
+  T.eq("programming's check still shows in the menu", (statesOf("o1")[1] or {}).value, "true")
+
+  mark()
+  pick("sx", "100")
+  T.eq("a slider pick is still answered", object((toldOf("EXTRAS_STATE_CHANGED")[1] or {}).xml, "sx").value, "100")
+
+  mark()
+  elsewhere(fake, { seg = { { id = 0, o1 = false }, { id = 1, o1 = false } } })
+  W.run(500)
+  T.eq("a check changed on the controller still shows", (statesOf("o1")[1] or {}).value, "false")
+end
+
+--------------------------------------------------------------------------------
 T.section("A pick is the text the menu gave its entry, and a new effect starts from its own defaults")
 --------------------------------------------------------------------------------
 do
