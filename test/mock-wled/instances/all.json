@@ -2,6 +2,14 @@
   "host": "0.0.0.0",
   "instances": [
     {
+      "port": 18092,
+      "profile": "dig2go-rgbw-015"
+    },
+    {
+      "port": 18093,
+      "profile": "dig2go-rgbw-16"
+    },
+    {
       "port": 18081,
       "profile": "esp32-cct-16"
     },
