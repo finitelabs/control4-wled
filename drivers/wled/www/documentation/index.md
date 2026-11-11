@@ -41,6 +41,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 - [System Requirements](#system-requirements)
 - [Features](#features)
 - [Compatibility](#compatibility)
+  - [Updating WLED](#updating-wled)
 - [Using the light](#using-the-light)
   - [On, off, level and scenes](#on-off-level-and-scenes)
   - [Colors and WLED effects](#colors-and-wled-effects)
@@ -93,7 +94,8 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 
 Any controller running WLED 0.15 or later: ESP32, ESP32-S3, ESP32-C3 and ESP8266
 boards, whether WLED came installed or was installed by hand. `Driver Status`
-names a controller running firmware older than 0.15; update WLED on it.
+names a controller running firmware older than 0.15;
+[update WLED](#updating-wled) on it.
 
 Each segment reports what its LEDs can light, and the
 [`Segments`](#segments-read-only) property shows it:
@@ -128,6 +130,20 @@ If you have a board or controller that does not work, please
 [open an issue](https://github.com/finitelabs/control4-wled/issues/new).
 
 <!-- #endif -->
+
+## Updating WLED
+
+1. Download the WLED release file for the controller's chip from the
+   [WLED releases page](https://github.com/wled/WLED/releases), or the board
+   maker's own file if WLED came installed and the maker publishes one.
+
+1. Open the controller's address in a browser, then "Config", then "Security &
+   Updates".
+
+1. Under "Software Update", open the update page, choose the file and upload it.
+
+1. The controller restarts with its settings kept, and the driver connects again
+   on its own.
 
 # <span style="color:#0094FF">Using the light</span>
 
@@ -329,7 +345,7 @@ Displays the state of the connection:
   when WLED reports them. It doesn't show while WLED's live override is on,
   since WLED then shows its own state.
 - `...; WLED ... is older than 0.15, update WLED`: the controller's firmware is
-  older than the driver supports. Update it in WLED's settings.
+  older than the driver supports. See [Updating WLED](#updating-wled).
 - `Connecting`: the driver is reaching the controller.
 - `Not connected: ...`: the controller cannot be reached, and why.
 - `Set the IP Address ...`: no address is set.
