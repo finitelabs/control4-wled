@@ -611,15 +611,47 @@ do
   W.run(1500)
   T.eq("and the strip is lit", { fake.si.state.seg[1].on, fake.si.state.seg[2].on }, { true, true })
 
+  --- The segments a command turns on, as "id=on" texts.
+  local function segsOn(cmd)
+    local out = {}
+    for _, s in ipairs((cmd or {}).seg or {}) do
+      out[#out + 1] = s.id .. "=" .. tostring(s.on)
+    end
+    return out
+  end
+
   elsewhere(fake, { seg = { { id = 1, on = false } } })
   W.run(1500)
   n = #fake.commands
-  ReceivedFromProxy(5001, "OFF", {})
+  ReceivedFromProxy(5001, "SET_LEVEL", { LEVEL = "40" })
   W.run(100)
+  T.eq("a level while it is on leaves a segment that is off as it is", fake.commands[n + 1].seg, nil)
+  W.run(1500)
+  ReceivedFromProxy(5001, "OFF", {})
+  W.run(1500)
+  n = #fake.commands
   ReceivedFromProxy(5001, "ON", {})
   W.run(100)
-  T.eq("with a segment lit, On is the master only", fake.commands[#fake.commands].seg, nil)
-  local _ = n
+  T.eq(
+    "On from off lights every segment, the one that was off too",
+    segsOn(fake.commands[n + 1]),
+    { "0=true", "1=true" }
+  )
+  W.run(1500)
+
+  -- As left by the last segment light turned off: the master off, that segment still set in WLED.
+  elsewhere(fake, { on = false, seg = { { id = 0, on = false }, { id = 1, on = true } } })
+  W.run(1500)
+  n = #fake.commands
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(100)
+  T.eq(
+    "after every segment light went off, On lights every segment",
+    segsOn(fake.commands[n + 1]),
+    { "0=true", "1=true" }
+  )
+  W.run(1500)
+  T.eq("and the whole strip is lit", { fake.si.state.seg[1].on, fake.si.state.seg[2].on }, { true, true })
 end
 
 do

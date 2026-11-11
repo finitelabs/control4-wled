@@ -439,8 +439,9 @@ function Adapter:send(cmd)
     self.cct = cct
   end
   self:apply(cmd)
-  -- With every segment off, turning the light on turns them all on, as it lights the whole strip.
-  local lightAll = json.on == true and not anySegmentOn(self.device)
+  -- Turning this light on from off lights the whole strip, every segment with it; a change while it
+  -- is on leaves each segment as its own light set it.
+  local lightAll = json.on == true and not (self.device.on == true and anySegmentOn(self.device))
   if lightAll then
     json.seg = withAllOn(json.seg, self.device)
   end
