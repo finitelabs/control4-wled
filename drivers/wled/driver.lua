@@ -242,7 +242,6 @@ end
 --- @return string
 local function connectedStatus()
   local status = client.mode == "http" and "Connected over HTTP; reconnecting live updates" or "Connected"
-  -- Older firmware is still driven, but the installer is told it is outside what the driver supports.
   if Device.isUnsupported(device.ver) then
     status = string.format("%s; WLED %s is older than %s, update WLED", status, device.ver, Device.OLDEST_SUPPORTED)
   end
