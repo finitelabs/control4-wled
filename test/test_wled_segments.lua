@@ -691,6 +691,26 @@ do
       { 1, false }
     )
   end
+
+  -- Once the controller has reported, the light's On from off lights its segments again.
+  ReceivedFromProxy(5001, "OFF", {})
+  W.run(1500)
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(1500)
+  T.eq("after the report, On from off lights every segment again", fake.si.state.seg[2].on, true)
+
+  -- A playlist starts with its first preset, which keeps its segments the same way.
+  elsewhere(fake, { on = false, seg = { { id = 0, on = true }, { id = 1, on = false } } })
+  W.run(1500)
+  ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
+  W.run(1)
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(1500)
+  T.eq(
+    "On just after a playlist starts keeps its first preset's segments",
+    { fake.si.state.pl, fake.si.state.seg[2].on },
+    { 3, false }
+  )
 end
 
 do

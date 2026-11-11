@@ -266,9 +266,6 @@ end
 --- @return table|nil
 local function withAllOn(seg, device)
   local segs = device.segments or {}
-  if #segs == 0 then
-    return seg
-  end
   local list, byId = {}, {}
   if type(seg) == "table" and seg[1] then
     for _, e in ipairs(seg) do
