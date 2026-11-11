@@ -26,9 +26,9 @@ local MAX_RECORDS = 32
 --- @field key string Lowercase labels joined by dots, for matching.
 
 --- @class MdnsRecord
---- @field name MdnsName
---- @field type integer
---- @field ttl integer
+--- @field name MdnsName The record's owner name.
+--- @field type integer The record type (TYPE_A, TYPE_PTR, TYPE_TXT, TYPE_SRV).
+--- @field ttl integer Seconds the record stays valid; 0 withdraws it.
 --- @field target MdnsName|nil PTR and SRV.
 --- @field port integer|nil SRV.
 --- @field txt table<string, string>|nil TXT, keys lowercase.
@@ -37,8 +37,8 @@ local MAX_RECORDS = 32
 --- @class MdnsService
 --- @field name string The instance name, as the controller announces it.
 --- @field host string|nil The host name, without .local.
---- @field ip string
---- @field port integer
+--- @field ip string The address to connect to.
+--- @field port integer The web port, 80 when the SRV record gives none.
 --- @field mac string|nil 12 lowercase hex digits.
 
 --- @param n integer
