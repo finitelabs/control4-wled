@@ -57,6 +57,8 @@ T.section("Capability bits for every segment of every profile")
 do
   -- What each profile's segments light, from the mock's model of WLED's capability rules.
   local want = {
+    ["dig2go-rgbw-015"] = "3",
+    ["dig2go-rgbw-16"] = "3",
     ["esp32-cct-16"] = "6",
     ["esp32-matrix-16"] = "1",
     ["esp32-relay-16"] = "0",
@@ -70,7 +72,7 @@ do
     ["esp8266-ws2812b-015-nofade"] = "1",
   }
   local profiles = W.profiles()
-  T.eq("every profile has an expectation", #profiles, 11)
+  T.eq("every profile has an expectation", #profiles, 13)
   for _, profile in ipairs(profiles) do
     local d, si = load(profile)
     T.eq(profile .. ": segment bits", bits(d), want[profile])
