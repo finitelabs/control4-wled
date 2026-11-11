@@ -675,6 +675,47 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A refused controller picked afterwards shows its own details")
+--------------------------------------------------------------------------------
+do
+  local function segmentLinks()
+    local n = 0
+    for _ in pairs(require("lib.bindings"):getDynamicBindings("Segments")) do
+      n = n + 1
+    end
+    return n
+  end
+
+  local fakes = fresh({ { profile = RGBW, ip = "192.0.2.41" }, { profile = STRIP, ip = "192.0.2.42" } })
+  W.run(3000)
+  local first = {
+    name = Properties["Name"],
+    leds = Properties["LED Count"],
+    segments = Properties["Segments"],
+  }
+  T.eq("a link for each of the first controller's two segments", segmentLinks(), 2)
+
+  -- Typed, so refused: it answers, but the details stay the driver's own controller's.
+  set("IP Address", "192.0.2.42")
+  W.run(5000)
+  T.contains("the typed address is refused", Properties["Driver Status"], "02:A1:B2:C3:D4:01")
+  T.eq("the details stay the first controller's", Properties["MAC Address"], "02:A1:B2:C3:D4:02")
+  T.eq("its name too", Properties["Name"], first.name)
+
+  -- The same controller picked: its first answer matches what the refused one already told.
+  pick("wled-c3d401 (192.0.2.42)")
+  -- The fake never answers a close frame, so the socket to the same address takes up to 30 s.
+  W.run(35000)
+  T.eq("driven", Properties["Driver Status"], "Connected")
+  T.eq("its MAC", Properties["MAC Address"], "02:A1:B2:C3:D4:01")
+  T.eq("its name", Properties["Name"], fakes[2].si.info.name)
+  T.eq("its LED count", Properties["LED Count"], tostring(fakes[2].si.info.leds.count))
+  T.neq("its LED count, not the first one's", Properties["LED Count"], first.leds)
+  T.neq("its segments, not the first one's", Properties["Segments"], first.segments)
+  T.eq("a link for its one segment", segmentLinks(), 1)
+end
+
+--------------------------------------------------------------------------------
 T.section("A controller that answers is never moved")
 --------------------------------------------------------------------------------
 do

@@ -111,6 +111,11 @@ local gWrongMac = nil
 --- after each connect, the controller at the address may be another.
 local gCheckMac = false
 
+--- Whether a refused controller's answer reached the device model since the properties and
+--- segments were last shown: the model then matches that controller, so when it becomes the
+--- driver's own its answer changes nothing, and everything is shown again.
+local gShowAll = false
+
 local device = Device:new()
 
 --- @type WledClient
@@ -1032,6 +1037,7 @@ local function onState(state, info)
     gCheckMac = false
     if not isOurController() then
       gWrongMac = device.mac
+      gShowAll = true
       setConnected(
         false,
         string.format(
@@ -1048,7 +1054,7 @@ local function onState(state, info)
   end
   gFollow, gLost = true, false
   stopFollowing()
-  if changes.identity or changes.mac or changes.leds or changes.segments then
+  if gShowAll or changes.identity or changes.mac or changes.leds or changes.segments then
     updateDeviceInfo()
   end
   setConnected(true, connectedStatus())
@@ -1060,9 +1066,10 @@ local function onState(state, info)
   end
   if state ~= nil then
     light.state(wledLight:entity(), wledLight:state())
-    if changes.segments or changes.first or next(gSegmentOf) == nil then
+    if gShowAll or changes.segments or changes.first or next(gSegmentOf) == nil then
       updateSegments()
     end
+    gShowAll = false
     pushSegments()
   end
   for _, kind in ipairs(LIST_KINDS) do
