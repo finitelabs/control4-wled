@@ -259,11 +259,16 @@ local function anySegmentOn(device)
   return #segs == 0
 end
 
---- Segment entries with every segment turned on, merged into the entries a command carries.
---- @param seg table|nil The command's segment entries.
+--- Segment entries that turn on every segment the model has off, merged into the entries a
+--- command carries. The command's own seg when none is off or the controller lists none.
+--- @param seg table|nil The command's seg: entries, one object, or nil.
 --- @param device table
---- @return table[]
+--- @return table|nil
 local function withAllOn(seg, device)
+  local segs = device.segments or {}
+  if #segs == 0 then
+    return seg
+  end
   local list, byId = {}, {}
   if type(seg) == "table" and seg[1] then
     for _, e in ipairs(seg) do
@@ -271,13 +276,20 @@ local function withAllOn(seg, device)
       byId[e.id] = e
     end
   end
-  for _, s in ipairs(device.segments or {}) do
-    local e = byId[s.id]
-    if not e then
-      e = { id = s.id }
-      list[#list + 1] = e
+  local added = false
+  for _, s in ipairs(segs) do
+    if s.on == false then
+      local e = byId[s.id]
+      if not e then
+        e = { id = s.id }
+        list[#list + 1] = e
+      end
+      e.on = true
+      added = true
     end
-    e.on = true
+  end
+  if not added then
+    return seg
   end
   return list
 end
@@ -441,7 +453,10 @@ function Adapter:send(cmd)
   self:apply(cmd)
   -- Turning this light on from off lights the whole strip, every segment with it; a change while it
   -- is on leaves each segment as its own light set it.
-  local lightAll = json.on == true and not (self.device.on == true and anySegmentOn(self.device))
+  -- A preset sent just before is left to set the segments itself.
+  local lightAll = json.on == true
+    and not self.device.presetPending
+    and not (self.device.on == true and anySegmentOn(self.device))
   if lightAll then
     json.seg = withAllOn(json.seg, self.device)
   end

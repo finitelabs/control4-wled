@@ -51,6 +51,7 @@ local CAP_LABELS = {
 --- @field state table|nil The last state the controller sent, as sent.
 --- @field info table|nil The last info the controller sent, as sent.
 --- @field seen boolean|nil True once the model has taken an update.
+--- @field presetPending boolean|nil A preset or playlist was sent and the controller has not reported since.
 local Device = {}
 Device.__index = Device
 
@@ -205,6 +206,7 @@ function Device:update(state, info)
   end
 
   if type(state) == "table" then
+    self.presetPending = nil
     local on = state.on
     if type(on) ~= "boolean" then
       on = self.on
