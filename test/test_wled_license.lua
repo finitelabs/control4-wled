@@ -9,6 +9,7 @@
 ---   ./test/run_test.sh test_wled_license.lua
 
 local T = require("testlib")
+local F = require("c4_fixtures")
 local W = require("wled_fixtures")
 require("c4_local")
 -- After the fixture's timers, so the fake Cloud driver drives the client's ping on top of them.
@@ -65,26 +66,6 @@ function C4:SendToProxy(id, command, params)
   lastTo[id] = { command = command, params = params or {} }
 end
 
---- Run the Lua file at `path` as the DriverCentral build compiles it: the lines its directives leave out are blanked.
-local function dofileDriverCentral(path)
-  local f = assert(io.open(path))
-  local lines, stack, including = {}, {}, true
-  for line in f:lines() do
-    local directive, name = line:match("^%s*%-%-%s*#(ifn?def)%s+([%w_]+)%s*$")
-    if directive then
-      stack[#stack + 1] = including
-      including = including and (name == "DRIVERCENTRAL") == (directive == "ifdef")
-    elseif line:match("^%s*%-%-%s*#else%s*$") then
-      including = stack[#stack] and not including
-    elseif line:match("^%s*%-%-%s*#endif%s*$") then
-      including = table.remove(stack)
-    end
-    lines[#lines + 1] = including and line or ""
-  end
-  f:close()
-  assert(load(table.concat(lines, "\n"), "@" .. path))()
-end
-
 W.reset()
 local fake = W.Fake.new("esp32-rgbw-pwm-16", { ip = "192.0.2.41" })
 for block in readXml():gmatch("<property>(.-)</property>") do
@@ -123,9 +104,9 @@ local function brightnessSince(from)
 end
 
 cloud.answer = { AC = 0, AS = "Invalid License" }
-dofileDriverCentral(DRIVER)
+F.dofileBuild(DRIVER, "drivercentral")
 OnDriverInit()
-OnDriverLateInit("DIT_ADDED")
+ShimLateInit("DIT_ADDED")
 W.run(200)
 
 T.section("Without a license the driver runs five minutes after its load, then drops the controller")
@@ -136,6 +117,10 @@ do
   local eventsBefore, toldBefore = #events, #told
   tick()
   T.eq("the 30th read stops it: Driver Status", Properties["Driver Status"], "No active license")
+  local _, lapsed = next(require("lib.bindings"):getDynamicBindings("Segments"))
+  T.eq("each segment link is told at once", Select(lastTo, lapsed.bindingId, "command"), "UPDATE_DISCONNECT")
+  T.eq("with the reason its light shows", Select(lastTo, lapsed.bindingId, "params", "status"), "No active license")
+  T.eq("suspended, so its light keeps its level", Select(lastTo, lapsed.bindingId, "params", "suspended"), true)
   T.eq("the light is told it is offline", Select(told, #told, "command"), "ONLINE_CHANGED")
   T.eq("at the level it had, so no Light Off", brightnessSince(toldBefore), nil)
   T.eq("and no event fires", #events, eventsBefore)
