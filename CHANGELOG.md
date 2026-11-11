@@ -45,6 +45,8 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
   property, a button link for each cycled preset and a Preset Is conditional
 - Added a Connected variable, Connected and Disconnected events, and a
   connection status conditional
+- Added a status line while another system sends the controller live data, and a
+  check every 15 seconds for preset and playlist changes WLED does not announce
   <!-- #ifdef DRIVERCENTRAL -->
 - Added a Support Code property, Cloud Monitoring and a Diagnostics Snapshot
   action

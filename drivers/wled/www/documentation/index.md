@@ -323,6 +323,10 @@ Displays the state of the connection:
 - `Connected`: the driver has a live connection to the controller.
 - `Connected over HTTP; reconnecting live updates`: the live connection dropped
   and the driver reaches the controller over HTTP while it reconnects.
+- `...; live data ... is in control`: another system is sending the
+  controller live lighting data, which WLED shows in place of its own state, so
+  Control4's commands show once it stops. The line names the sender's address
+  and protocol when WLED reports them.
 - `...; WLED ... is older than 0.15, update WLED`: the controller's firmware is
   older than the driver supports. Update it in WLED's settings.
 - `Connecting`: the driver is reaching the controller.
@@ -577,6 +581,11 @@ neither connection event. The effect, preset and playlist events fire only for a
 change: a driver start, a reload or a reconnect that finds the controller as it
 was fires none of them, and applying the preset already shown fires nothing.
 Each variable is set before its event fires.
+
+WLED tells the driver at once about most changes, but not about a preset saved,
+renamed or deleted, a playlist stopped in the WLED app, or live data starting or
+ending. The driver also asks the controller every 15 seconds, so these show in
+the lists, variables, events and `Driver Status` within that time.
 
 ### Conditionals
 
