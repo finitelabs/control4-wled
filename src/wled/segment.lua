@@ -234,6 +234,10 @@ end
 --- @param json table The JSON state command sent.
 --- @param device WledDevice The WLED driver's model, changed in place.
 function Segment.note(json, device)
+  if json.ps ~= nil then
+    -- What a preset or playlist does to power and segments is known only from the next report.
+    device.presetPending = true
+  end
   if type(json.on) == "boolean" then
     device.on = json.on
   end

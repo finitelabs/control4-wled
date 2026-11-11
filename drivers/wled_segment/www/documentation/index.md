@@ -110,14 +110,14 @@ Color temperature runs between the light's `Warm White (K)` and
   segment and the controller fade up together, so it starts a little slower than
   on a lit controller.
 - Turning off the last lit segment turns the controller off alone, so the
-  controller light reads off. The segment stays set to come back when the
-  controller light turns on.
+  controller light reads off.
 - Segment lights in one scene, or in a room turned on or off at once, act
   together: each sees what the others just did.
 - A color or a scene step on a segment light changes its segment only, and ends
   a WLED effect running on it.
 - The controller light's commands still cover every segment. Turning the
-  controller light on when no segment is lit turns every segment on.
+  controller light on turns every segment on; this light's On turns on its
+  segment only.
 
 # <span style="color:#0094FF">Installer Setup</span>
 

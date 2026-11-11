@@ -611,15 +611,44 @@ do
   W.run(1500)
   T.eq("and the strip is lit", { fake.si.state.seg[1].on, fake.si.state.seg[2].on }, { true, true })
 
+  --- The segments a command turns on, as "id=on" texts.
+  local function segsOn(cmd)
+    local out = {}
+    for _, s in ipairs((cmd or {}).seg or {}) do
+      out[#out + 1] = s.id .. "=" .. tostring(s.on)
+    end
+    return out
+  end
+
   elsewhere(fake, { seg = { { id = 1, on = false } } })
   W.run(1500)
   n = #fake.commands
-  ReceivedFromProxy(5001, "OFF", {})
+  ReceivedFromProxy(5001, "SET_LEVEL", { LEVEL = "40" })
   W.run(100)
+  T.eq("a level while it is on leaves a segment that is off as it is", fake.commands[n + 1].seg, nil)
+  W.run(1500)
+  ReceivedFromProxy(5001, "OFF", {})
+  W.run(1500)
+  n = #fake.commands
   ReceivedFromProxy(5001, "ON", {})
   W.run(100)
-  T.eq("with a segment lit, On is the master only", fake.commands[#fake.commands].seg, nil)
-  local _ = n
+  T.eq("On from off turns on the segment that was off too", segsOn(fake.commands[n + 1]), { "1=true" })
+  W.run(1500)
+  T.eq("so every segment is lit", { fake.si.state.seg[1].on, fake.si.state.seg[2].on }, { true, true })
+
+  -- As left by the last segment light turned off: the master off, that segment still set in WLED.
+  elsewhere(fake, { on = false, seg = { { id = 0, on = false }, { id = 1, on = true } } })
+  W.run(1500)
+  n = #fake.commands
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(100)
+  T.eq(
+    "after every segment light went off, On turns on the segment that was off",
+    segsOn(fake.commands[n + 1]),
+    { "0=true" }
+  )
+  W.run(1500)
+  T.eq("and the whole strip is lit", { fake.si.state.seg[1].on, fake.si.state.seg[2].on }, { true, true })
 end
 
 do
@@ -636,6 +665,97 @@ do
     segOn[#segOn + 1] = seg.id .. "=" .. tostring(seg.on)
   end
   T.eq("a fade too long for one command lights the segments with its first leg", segOn, { "0=true", "1=true" })
+end
+
+--------------------------------------------------------------------------------
+T.section("The light's On leaves a preset sent just before alone, and names only segments that are off")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    local presets = f:presetsFile()
+    presets["1"].seg = { { id = 0, on = true }, { id = 1, on = false } }
+    f.files["/presets.json"] = presets
+  end)
+  W.run(500)
+  for _, gap in ipairs({ 1, 300 }) do
+    -- Segment 1 already off, as the preset leaves it: On must not light it before the report.
+    elsewhere(fake, { on = false, seg = { { id = 0, on = true }, { id = 1, on = false } } })
+    W.run(1500)
+    ExecuteCommand("Apply Preset", { Preset = "Mock Warm Glow (1)" })
+    W.run(gap)
+    ReceivedFromProxy(5001, "ON", {})
+    W.run(1500)
+    T.eq(
+      "On " .. gap .. " ms after a preset keeps the preset and its segment off",
+      { fake.si.state.ps, fake.si.state.seg[2].on },
+      { 1, false }
+    )
+  end
+
+  -- Once the controller has reported, the light's On from off lights its segments again.
+  ReceivedFromProxy(5001, "OFF", {})
+  W.run(1500)
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(1500)
+  T.eq("after the report, On from off lights every segment again", fake.si.state.seg[2].on, true)
+
+  -- A playlist starts with its first preset, which keeps its segments the same way.
+  elsewhere(fake, { on = false, seg = { { id = 0, on = true }, { id = 1, on = false } } })
+  W.run(1500)
+  ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
+  W.run(1)
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(1500)
+  T.eq(
+    "On just after a playlist starts keeps its first preset's segments",
+    { fake.si.state.pl, fake.si.state.seg[2].on },
+    { 3, false }
+  )
+end
+
+do
+  local fake = fresh("esp32-rgbw-015")
+  W.run(500)
+  elsewhere(fake, { on = false })
+  W.run(1500)
+  local n = #fake.commands
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(1500)
+  local bare = 0
+  for i = n + 1, #fake.commands do
+    for _, e in ipairs(type(fake.commands[i].seg) == "table" and fake.commands[i].seg or {}) do
+      bare = bare + ((e.on ~= nil and e.col == nil) and 1 or 0)
+    end
+  end
+  T.eq("a segment already on gets no entry of its own", bare, 0)
+  T.eq("and the light is on", fake.si.state.on, true)
+
+  fake.si.state.seg = {}
+  fake:pushNow()
+  W.run(1500)
+  ReceivedFromProxy(5001, "OFF", {})
+  W.run(1500)
+  n = #fake.commands
+  ReceivedFromProxy(5001, "SET_COLOR_TARGET", {
+    LIGHT_COLOR_TARGET_X = 0.708,
+    LIGHT_COLOR_TARGET_Y = 0.292,
+    LIGHT_COLOR_TARGET_MODE = 0,
+    LIGHT_COLOR_TARGET_COLOR_RATE = 0,
+  })
+  ReceivedFromProxy(5001, "ON", {})
+  W.run(1500)
+  local colors, empty = 0, 0
+  for i = n + 1, #fake.commands do
+    local seg = fake.commands[i].seg
+    if type(seg) == "table" and seg[1] == nil then
+      if seg.col then
+        colors = colors + 1
+      else
+        empty = empty + 1
+      end
+    end
+  end
+  T.eq("with no segments listed, On keeps the color in one seg object", { colors > 0, empty }, { true, 0 })
 end
 
 --------------------------------------------------------------------------------
