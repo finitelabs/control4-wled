@@ -680,4 +680,27 @@ do
   T.eq("no event either", #events, 0)
 end
 
+--------------------------------------------------------------------------------
+T.section("Live data and old firmware together: the live clause first, then the update note")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-015")
+  fake.si.info.ver, fake.si.info.vid = "0.14.0", 2310130
+  W.run(200)
+  fake:changeSilently(nil, { live = true, lm = "E1.31", lip = "192.0.2.200" })
+  W.run(15200)
+  T.eq(
+    "both, in that order",
+    Properties["Driver Status"],
+    "Connected; live data from 192.0.2.200 (E1.31) is in control; WLED 0.14.0 is older than 0.15, update WLED"
+  )
+  fake:changeSilently(nil, { live = false, lm = "", lip = "" })
+  W.run(15200)
+  T.eq(
+    "live data ended, the update note stays",
+    Properties["Driver Status"],
+    "Connected; WLED 0.14.0 is older than 0.15, update WLED"
+  )
+end
+
 T.finish()
