@@ -52,6 +52,20 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("Firmware older than 0.15 is told apart")
+--------------------------------------------------------------------------------
+do
+  T.truthy("0.14.0", Device.isUnsupported("0.14.0"))
+  T.truthy("0.13.3", Device.isUnsupported("0.13.3"))
+  T.falsy("0.15.0", Device.isUnsupported("0.15.0"))
+  T.falsy("a 0.15 beta", Device.isUnsupported("0.15.0-b3"))
+  T.falsy("0.15.4", Device.isUnsupported("0.15.4"))
+  T.falsy("16.0.1", Device.isUnsupported("16.0.1"))
+  T.falsy("no version yet", Device.isUnsupported(nil))
+  T.falsy("a version it cannot read", Device.isUnsupported("dev"))
+end
+
+--------------------------------------------------------------------------------
 T.section("Capability bits for every segment of every profile")
 --------------------------------------------------------------------------------
 do

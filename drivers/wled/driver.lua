@@ -245,10 +245,11 @@ end
 --- The status line for a connected controller.
 --- @return string
 local function connectedStatus()
-  if client.mode == "http" then
-    return "Connected over HTTP; reconnecting live updates"
+  local status = client.mode == "http" and "Connected over HTTP; reconnecting live updates" or "Connected"
+  if Device.isUnsupported(device.ver) then
+    status = string.format("%s; WLED %s is older than %s, update WLED", status, device.ver, Device.OLDEST_SUPPORTED)
   end
-  return "Connected"
+  return status
 end
 
 --- Tell Control4 the controller came or went. Connection events and the variable follow every
