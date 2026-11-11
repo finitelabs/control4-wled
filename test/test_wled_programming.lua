@@ -305,14 +305,14 @@ do
   T.eq("Apply Preset: ps", lastCommand(fake), { ps = 2 })
 
   ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
-  T.eq("Start Playlist: ps, asking for the state back", lastCommand(fake), { ps = 3, v = true })
+  T.eq("Start Playlist: ps", lastCommand(fake), { ps = 3 })
 
   local main = fake.si.state.seg[1]
   ExecuteCommand("Stop Playlist", {})
   T.eq(
-    "Stop Playlist: the running effect again, asking for the state back",
+    "Stop Playlist: the running effect kept, asking for the state back",
     lastCommand(fake),
-    { seg = { { id = main.id, fx = main.fx } }, v = true }
+    { seg = { { id = main.id, fx = "~0" } }, v = true }
   )
 
   local sent = #fake.commands
@@ -377,7 +377,7 @@ do
   ExecuteCommand("Apply Preset", { Preset = "Mock Rainbow (2)" })
   T.eq("a choice made before the rename still applies", lastCommand(fake), { ps = 2 })
   ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
-  T.eq("a playlist choice made before the rename still starts", lastCommand(fake), { ps = 3, v = true })
+  T.eq("a playlist choice made before the rename still starts", lastCommand(fake), { ps = 3 })
   ExecuteCommand("Apply Preset", { Preset = "Evening" })
   T.eq("a bare name resolves too", lastCommand(fake), { ps = 2 })
 end
@@ -501,7 +501,7 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("Start and Stop Playlist show at once on 0.15 and 16.x, where WLED pushes neither")
+T.section("Stop Playlist shows at once on 0.15 and 16.x, though WLED pushes it to no one")
 --------------------------------------------------------------------------------
 for _, profile in ipairs({ "esp32-rgbw-015", "esp32-rgbw-pwm-16" }) do
   local fake = fresh(profile, function(f)
@@ -514,12 +514,8 @@ for _, profile in ipairs({ "esp32-rgbw-015", "esp32-rgbw-pwm-16" }) do
 
   mark()
   ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
-  W.run(100)
-  T.eq(
-    "its first preset already showing, Playlist Started at once (" .. profile .. ")",
-    eventCount(PLAYLIST_STARTED),
-    1
-  )
+  W.run(1500)
+  T.eq("its first preset already showing, the start is pushed (" .. profile .. ")", eventCount(PLAYLIST_STARTED), 1)
   T.eq("Playlist variable (" .. profile .. ")", Variables["Playlist"], "Mock Cycle")
 
   mark()

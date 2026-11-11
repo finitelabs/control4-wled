@@ -1468,13 +1468,6 @@ function GCPL.Start_Playlist(_paramName)
   return lists:playlistChoices()
 end
 
---- Start a playlist by its preset id.
---- @param id integer
-local function startPlaylist(id)
-  -- A playlist whose first preset already shows changes only pl, which WLED pushes to no one.
-  send({ ps = id, v = true })
-end
-
 --- Start a playlist, found by the id its choice carries.
 --- @param params table
 function EC.Start_Playlist(params)
@@ -1484,19 +1477,15 @@ function EC.Start_Playlist(params)
     log:warn("Start Playlist: the controller has no playlist %s", tostring(Select(params, "Playlist")))
     return
   end
-  startPlaylist(id)
+  send({ ps = id })
 end
 
 --- Unload the running playlist; the current look stays.
 local function stopPlaylist()
-  -- Setting an effect unloads a playlist on every WLED line, the one running included; an
-  -- empty playlist object does not on 16.x, which keeps the running one under it.
+  -- Any effect set unloads a playlist, and "~0" keeps the one running; an empty playlist object
+  -- does not stop one on 16.x. WLED pushes the end to no one, so "v" asks for the state back.
   local seg = mainSegment(device.state or {})
-  if not seg or seg.fx == nil then
-    return
-  end
-  -- WLED pushes a playlist's end to no one, so "v" asks for the state back.
-  send({ seg = { { id = seg.id, fx = seg.fx } }, v = true })
+  send({ seg = { { id = seg and seg.id or 0, fx = "~0" } }, v = true })
 end
 
 --- Stop the running playlist; the current look stays.
@@ -1552,7 +1541,7 @@ local EXTRA_LISTS = {
     end
     local id = Lists.byId(lists.playlists, value)
     if id then
-      startPlaylist(id)
+      send({ ps = id })
     end
     return id
   end,

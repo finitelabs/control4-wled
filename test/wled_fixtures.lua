@@ -292,9 +292,16 @@ function Fake:applyFields(cmd, fromPreset)
           end
           if s.fx ~= nil then
             fxSent = true
+            local fx = s.fx
+            -- "~n" steps the effect by n, wrapping (parseNumber in util.cpp); "~0" keeps it.
+            local step = type(fx) == "string" and tonumber(fx:match("^~(%-?%d+)$"))
+            if step then
+              local count = #(self.files["/json/eff"] or {})
+              fx = count > 0 and (seg.fx + step) % count or seg.fx
+            end
             -- The effect already running changes nothing, so the preset still shows.
-            if seg.fx ~= s.fx then
-              seg.fx = s.fx
+            if seg.fx ~= fx then
+              seg.fx = fx
               if s.fxdef then
                 self:effectDefaults(seg)
               end
@@ -374,7 +381,12 @@ function Fake:applyPreset(id, fromPlaylist)
   state.ps = id
 end
 
---- Apply a command the way the controller would for the parts these suites use.
+--- WLED loads a preset from its file system on a later pass of its loop, after the command's
+--- answer (json.cpp); measured about 40 ms on 16.0.1.
+local PRESET_LOAD_MS = 40
+
+--- Apply a command the way the controller would for the parts these suites use. A preset loads
+--- a moment later, as WLED's does.
 --- @param cmd table
 function Fake:apply(cmd)
   self.commands[#self.commands + 1] = cmd
@@ -387,7 +399,9 @@ function Fake:apply(cmd)
     end
   end
   if cmd.ps ~= nil then
-    self:applyPreset(cmd.ps)
+    self:after(PRESET_LOAD_MS, function()
+      self:loadPreset(cmd.ps)
+    end)
   end
 end
 
@@ -409,20 +423,34 @@ local function same(a, b, skip)
   return true
 end
 
---- Apply a command from a client and tell the clients as WLED does. A change that moves only the
---- playlist is pushed to no one (measured on 0.15.4 and 16.0.1), and "v" answers the sender
---- with the state unless a push is already on its way (ws.cpp).
+--- Load a preset, or start a playlist, and push it: a playlist's start always is, as WLED
+--- shows the playlist's own id first; a preset only when it changed something.
+--- @param id integer
+function Fake:loadPreset(id)
+  local before = copy(self.si.state)
+  self:applyPreset(id)
+  local entry = self:presetsFile()[tostring(id)]
+  if (type(entry) == "table" and type(entry.playlist) == "table") or not same(before, self.si.state) then
+    self:schedulePush()
+  end
+end
+
+--- Apply a command from a client and tell the clients as WLED does. A command that changes
+--- nothing (led.cpp) or only moves the playlist (measured on 0.15.4 and 16.0.1) is pushed to no
+--- one, and "v" answers the sender with the state as the command found it, unless a push is
+--- already on its way (ws.cpp).
 --- @param cmd table
---- @return boolean answer Whether the sender gets the state back on its own.
+--- @return table|nil answer The state the sender gets back on its own, if any.
 function Fake:handle(cmd)
   local before = copy(self.si.state)
   self:apply(cmd)
-  local state = self.si.state
-  local plOnly = before.pl ~= state.pl and same(before, state, { pl = true })
-  if not plOnly then
+  if not same(before, self.si.state, { pl = true }) then
     self:schedulePush()
   end
-  return cmd.v == true and not self.pushDue
+  if cmd.v == true and not self.pushDue then
+    return copy(self.si)
+  end
+  return nil
 end
 
 -- HTTP, shaped like lib.http.
@@ -621,9 +649,10 @@ function Fake:onSend(data)
       else
         local ok, cmd = pcall(JSON.decode, JSON, frame.payload)
         self.wire[#self.wire + 1] = frame.payload
-        if ok and type(cmd) == "table" and self:handle(cmd) then
+        local answer = ok and type(cmd) == "table" and self:handle(cmd) or nil
+        if answer then
           self:after(LATENCY_MS, function()
-            self:sendText(JSON:encode(self.si))
+            self:sendText(JSON:encode(answer))
           end)
         end
       end

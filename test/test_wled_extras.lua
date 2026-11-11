@@ -431,17 +431,13 @@ do
   T.eq("a preset applied", lastCommand(fake), { ps = 2 })
   mark()
   pick("pl", "Mock Cycle")
-  T.eq("a playlist started", lastCommand(fake), { ps = 3, v = true })
+  T.eq("a playlist started", lastCommand(fake), { ps = 3 })
   states = toldOf("EXTRAS_STATE_CHANGED")
   T.eq("the menu shows it running at once", object(states[1] and states[1].xml, "pl").value, "Mock Cycle")
   W.run(1500)
   local main = fake.si.state.seg[1]
   pick("pl", "None")
-  T.eq(
-    "None stops it: the running effect again",
-    lastCommand(fake),
-    { seg = { { id = main.id, fx = main.fx } }, v = true }
-  )
+  T.eq("None stops it, the running effect kept", lastCommand(fake), { seg = { { id = main.id, fx = "~0" } }, v = true })
 
   local n = #fake.commands
   mark()
