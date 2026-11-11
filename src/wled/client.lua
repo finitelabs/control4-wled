@@ -489,20 +489,33 @@ function Client:sendFrame(frame)
   return false
 end
 
---- Ask the controller for its state and report it, for a command it may not have taken. An
---- answer asked for before a later write is dropped; that write's report tells the state. An
---- answer while the socket is down reports the controller reachable first, as a poll does.
+--- Report a state answered over HTTP. An answer asked for before a restart or a later write is
+--- dropped; that write's report tells the state. While the socket is down the answer also shows
+--- the controller reachable, as a poll does.
+--- @param client WledClient
+--- @param gen integer The connection generation when the request went out.
+--- @param writes integer The write count when the request went out.
+--- @param state table|nil
+--- @param info table|nil
+--- @param tag string The error-report name for onState.
+local function report(client, gen, writes, state, info, tag)
+  if client.gen ~= gen then
+    return
+  end
+  if not client.socketUp then
+    client:setMode("http")
+  end
+  if client.writes == writes then
+    guarded(client.onState, tag)(state, info)
+  end
+end
+
+--- Ask the controller for its state and report it, for a command it may not have taken.
 function Client:refresh()
   local gen, writes = self.gen, self.writes
   self:enqueue("GET", "/json/si"):next(function(si)
-    if self.gen ~= gen or type(si) ~= "table" then
-      return
-    end
-    if not self.socketUp then
-      self:setMode("http")
-    end
-    if self.writes == writes then
-      guarded(self.onState, "WLED.Refresh")(si.state, si.info)
+    if type(si) == "table" then
+      report(self, gen, writes, si.state, si.info, "WLED.Refresh")
     end
   end, function() end)
 end
@@ -668,16 +681,10 @@ function Client:send(cmd)
   if cmd.v ~= true then
     return answered
   end
-  -- Over HTTP the state comes back as the answer, not as a push; a later write makes it stale.
+  -- Over HTTP the state comes back as the answer, not as a push.
   return answered:next(function(state)
-    if self.gen ~= gen or type(state) ~= "table" or state.seg == nil then
-      return state
-    end
-    if not self.socketUp then
-      self:setMode("http")
-    end
-    if self.writes == writes then
-      guarded(self.onState, "WLED.Answer")(state, nil)
+    if type(state) == "table" and state.seg ~= nil then
+      report(self, gen, writes, state, nil, "WLED.Answer")
     end
     return state
   end)
