@@ -1129,7 +1129,12 @@ local function licenseChanged(licensed)
     gSegmentsTold = false
     gSegmentSent = {}
     for _, binding in pairs(bindings:getDynamicBindings(SEGMENTS)) do
-      SendToProxy(binding.bindingId, "UPDATE_DISCONNECT", { suspended = true }, "NOTIFY")
+      SendToProxy(
+        binding.bindingId,
+        "UPDATE_DISCONNECT",
+        { status = drivercentral.UNLICENSED_STATUS, suspended = true },
+        "NOTIFY"
+      )
     end
   end
 end

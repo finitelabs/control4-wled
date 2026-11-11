@@ -187,6 +187,11 @@ Displays the state of the segment:
   preset that removed it is replaced by one that has it.
 - `Bind this light to a WLED driver's segment connection`: the **WLED
   Controller** connection is not bound.
+  <!-- #ifdef DRIVERCENTRAL -->
+- `No active license`: the **WLED** driver has no active DriverCentral license,
+  so the light drives nothing and stays at the level it had until a license is
+  active.
+  <!-- #endif -->
 
 #### Driver Version (read-only)
 

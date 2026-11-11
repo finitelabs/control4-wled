@@ -269,8 +269,7 @@ for setting it up.
    driver in the "System Design" tab and running its "Check Drivers" action.
    <br><img alt="Check Drivers" src="./images/check-drivers.png" width="300"/>
 
-1. Pick the WLED controller in
-   [`Found Controllers`](#found-controllers--select--found-controllers-), or set
+1. Pick the WLED controller in [`Found Controllers`](#found-controllers), or set
    [`IP Address`](#ip-address) to its address.
 
 1. After a few moments [`Driver Status`](#driver-status-read-only) shows
@@ -288,8 +287,7 @@ for setting it up.
 1. Use the "Search" tab to find the "WLED" driver and add it to the room the
    LEDs light.
 
-1. Pick the WLED controller in
-   [`Found Controllers`](#found-controllers--select--found-controllers-), or set
+1. Pick the WLED controller in [`Found Controllers`](#found-controllers), or set
    [`IP Address`](#ip-address) to its address.
 
 1. After a few moments [`Driver Status`](#driver-status-read-only) shows
@@ -351,6 +349,13 @@ Displays the state of the connection:
 - `Set the IP Address ...`: no address is set.
 - `A different WLED controller ... answers at this address`: see
   [Reset Driver](#reset-driver).
+  <!-- #ifdef DRIVERCENTRAL -->
+- `No active license`: the driver has had no active DriverCentral license for
+  five minutes, so it has disconnected from the controller and shows its light
+  and segment lights offline at the level they had. Check `Cloud Status`, and
+  refresh the license with the **DriverCentral Cloud** driver's **Check
+  Drivers** action. The driver connects again once a license is active.
+  <!-- #endif -->
 
 ##### Driver Version (read-only)
 
@@ -413,7 +418,7 @@ answered there, and it keeps a host name you typed.
 
 Sets WLED's web port. Leave it at `80` unless it was changed in WLED.
 
-##### Found Controllers \[ **_(Select)_** | _found controllers..._ \]
+##### Found Controllers
 
 Shown only while the last search found a controller. Lists the WLED controllers
 the driver finds on the network as `name (address)`, with the port after the
@@ -501,7 +506,7 @@ driver, regardless of the current version.
 #### Find Controllers
 
 Looks for WLED controllers on the network again and lists them in
-[`Found Controllers`](#found-controllers--select--found-controllers-).
+[`Found Controllers`](#found-controllers).
 
 #### Reset Driver
 
@@ -514,8 +519,8 @@ gives the address to another device, the driver does not drive it. It looks for
 its own controller on the network and follows it (see
 [IP Address](#ip-address)), and until then `Driver Status` names the other one.
 When the controller was replaced on purpose, pick the new one in
-[`Found Controllers`](#found-controllers--select--found-controllers-), or run
-Reset Driver with `Yes`: the driver forgets the old one and takes the new one.
+[`Found Controllers`](#found-controllers), or run Reset Driver with `Yes`: the
+driver forgets the old one and takes the new one.
 
 Reset Driver returns the driver to a fresh install. It keeps the `IP Address`
 and `Port`, and the programming that uses the driver. It unwires every keypad
@@ -616,7 +621,7 @@ little longer while the driver is sending other requests.
 Preset Is lists the controller's presets as programming shows them, for example
 `Movie Night (4)`, and follows the controller as presets are saved, renamed and
 deleted. It tests by the preset's id, so programming keeps working after a
-rename in WLED.
+rename in WLED. It appears once the controller has a preset.
 
 ## Connections
 
