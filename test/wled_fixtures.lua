@@ -192,6 +192,9 @@ local byAddress = {}
 
 local LATENCY_MS = 5
 
+--- WLED's least time between two pushes (const.h INTERFACE_UPDATE_COOLDOWN).
+local PUSH_COOLDOWN_MS = 1000
+
 --- @param profile string A folder under test/fixtures/wled.
 --- @param opts table|nil {ip, port}
 --- @return WledFake
@@ -496,14 +499,25 @@ function Fake:answer(method, path, body)
     if method == "POST" then
       self.wire[#self.wire + 1] = body
       local cmd = JSON:decode(body)
+      if cmd.v == true then
+        -- The answer holds the next push back a full second (wled_server.cpp).
+        self.lastPushAt = C4:GetTime()
+      end
       self:handle(cmd)
+      local answer = { code = 200, body = { success = true } }
       if cmd.v == true then
         -- With "v" WLED answers with the state and sends its socket clients a push too.
         self:schedulePush()
-        d:resolve({ code = 200, body = copy(self.si.state) })
-        return
+        answer.body = copy(self.si.state)
       end
-      d:resolve({ code = 200, body = { success = true } })
+      -- slowPostMs: the command is taken on arrival and its answer delivered that much later.
+      if self.slowPostMs then
+        self:after(self.slowPostMs, function()
+          d:resolve(answer)
+        end)
+      else
+        d:resolve(answer)
+      end
       return
     end
     local entry = self.files[path]
@@ -573,14 +587,17 @@ function Fake:pushNow()
   self:sendText(JSON:encode(self.si))
 end
 
---- WLED sends at most one push a second, carrying the latest state.
+--- WLED pushes the latest state on its next loop once a second has passed since its last push,
+--- and otherwise when that second ends (led.cpp updateInterfaces, INTERFACE_UPDATE_COOLDOWN).
 function Fake:schedulePush()
   if self.pushDue then
     return
   end
   self.pushDue = true
-  self:after(1000, function()
+  local wait = math.max(LATENCY_MS, (self.lastPushAt or -PUSH_COOLDOWN_MS) + PUSH_COOLDOWN_MS - C4:GetTime())
+  self:after(wait, function()
     if self.pushDue then
+      self.lastPushAt = C4:GetTime()
       self:pushNow()
     end
   end)
@@ -678,7 +695,8 @@ function Fake:onSend(data)
           end)
         end
       elseif self.frameLimit and #frame.payload > self.frameLimit then
-        -- frameLimit: WLED refuses a frame longer than its buffer with error 9 and takes nothing.
+        -- frameLimit: a longer frame reaches WLED in more than one TCP packet, which it answers
+        -- with error 9 and does not read (ws.cpp's multipart branch).
         self:after(LATENCY_MS, function()
           self:sendText('{"error":9}')
         end)

@@ -107,6 +107,8 @@ end
 --- @field pushes integer States pushed on the socket so far; a poll answer asked for before the latest is stale.
 --- @field recent table[] WebSocket commands sent within the busy window, oldest first.
 --- @field replaying boolean|nil Whether a busy resend waits to go out.
+--- @field owed table[]|nil The commands a waiting busy resend sends again, oldest first.
+--- @field replayToken integer|nil Bumped when a busy resend is taken or called off; an older one does nothing.
 local Client = {}
 Client.__index = Client
 
@@ -264,7 +266,7 @@ function Client:stop()
     CancelTimer(id)
   end
   self.timers = {}
-  self.recent, self.replaying = {}, false
+  self.recent, self.replaying, self.owed = {}, false, nil
   self.socketUp = false
   self.pollToken = (self.pollToken or 0) + 1
   self:closeSocket()
@@ -401,18 +403,18 @@ function Client:socketPoll(gen, socketGen, ms)
       self:socketPoll(gen, socketGen, SOCKET_POLL_RETRY_MS)
       return
     end
-    local writes, pushes = self.writes, self.pushes
+    local writes = self.writes
     -- A stop or a new socket rejects or outdates the request; its loop ends there.
     local function again()
       if self.gen == gen and self.socketGen == socketGen then
         self:socketPoll(gen, socketGen)
       end
     end
-    self
-      :enqueue("GET", "/json/si")
+    local answer, job = self:enqueue("GET", "/json/si")
+    answer
       :next(function(si)
         if type(si) == "table" then
-          report(self, gen, writes, pushes, si.state, si.info, "WLED.SocketPoll")
+          report(self, gen, writes, job.pushes, si.state, si.info, "WLED.SocketPoll")
         end
       end)
       :next(again, again)
@@ -480,40 +482,51 @@ function Client:recentFrames()
   return kept
 end
 
---- A WebSocket command came back busy (3) or too big for a frame (9). The answer does not say
---- which command, so a busy answer sends every recent one again, in order: each carries whole
---- values, so a second copy changes nothing. A frame too big goes over HTTP, and the frames sent
---- after it, which the controller already took, go again behind it, so the newest lands last.
+--- POST a command the socket did not take; if that fails too, ask for the state.
+--- @param frame table A frame from sendFrame.
+function Client:postFrame(frame)
+  self:enqueue("POST", "/json/state", frame.cmd):next(nil, function(err)
+    if type(err) == "table" and err.error == "stopped" then
+      return
+    end
+    log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
+    self:refresh()
+  end)
+end
+
+--- Take what a busy resend owes, oldest first: the commands answered busy, then every one sent
+--- during the wait. The resend is called off.
+--- @return table[] frames
+function Client:takeOwed()
+  local owed, seen = {}, {}
+  for _, list in ipairs({ self.owed or {}, self.recent }) do
+    for _, frame in ipairs(list) do
+      if not seen[frame] then
+        seen[frame] = true
+        owed[#owed + 1] = frame
+      end
+    end
+  end
+  self.owed, self.recent, self.replaying = nil, {}, false
+  self.replayToken = (self.replayToken or 0) + 1
+  return owed
+end
+
+--- A WebSocket command came back busy (3) or not taken (9, a frame WLED could not read whole).
+--- The answer does not say which command, so every recent one goes again, in order: each carries
+--- whole values, so a second copy changes nothing. A busy answer resends them on the socket after
+--- a wait; a 9 sends them over HTTP, so the one not taken lands and the newest still lands last.
 --- @param code any The error number WLED sent.
 function Client:onSocketError(code)
   local frames = self:recentFrames()
-  if #frames == 0 then
+  if #frames == 0 and not self.replaying then
     return
   end
   if code == 9 then
-    -- Only a frame longer than the smallest controller's limit can be the one refused.
-    local refused = #frames
-    for i = #frames, 1, -1 do
-      if #frames[i].body > FRAME_LIMIT.esp8266 then
-        refused = i
-        break
-      end
-    end
-    local resend = {}
-    for i = refused, #frames do
-      resend[#resend + 1] = frames[i]
-    end
-    for i = #frames, refused, -1 do
-      table.remove(self.recent, i)
-    end
+    local resend = self.replaying and self:takeOwed() or frames
+    self.recent = {}
     for _, frame in ipairs(resend) do
-      self:enqueue("POST", "/json/state", frame.cmd):next(nil, function(err)
-        if type(err) == "table" and err.error == "stopped" then
-          return
-        end
-        log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
-        self:refresh()
-      end)
+      self:postFrame(frame)
     end
     return
   end
@@ -530,22 +543,20 @@ function Client:onSocketError(code)
     self:refresh()
     return
   end
-  self.replaying = true
+  self.replaying, self.owed = true, frames
+  self.replayToken = (self.replayToken or 0) + 1
+  local token = self.replayToken
   self:after(self.gen, BUSY_FIRST_MS * 2 ^ tries, function()
-    self.replaying = false
-    if not (self.socketUp and self.ws) then
+    if self.replayToken ~= token then
       return
     end
-    -- Then every command sent during the wait, so the latest still comes last; one refused
-    -- while this waited is sent again here too.
-    local replay, seen = {}, {}
-    for _, list in ipairs({ frames, self.recent }) do
-      for _, frame in ipairs(list) do
-        if not seen[frame] then
-          seen[frame] = true
-          replay[#replay + 1] = frame
-        end
+    -- One refused while this waited is sent again here too, and the latest still comes last.
+    local replay = self:takeOwed()
+    if not (self.socketUp and self.ws) then
+      for _, frame in ipairs(replay) do
+        self:postFrame(frame)
       end
+      return
     end
     self.recent = replay
     for _, frame in ipairs(replay) do
@@ -575,10 +586,11 @@ end
 
 --- Ask the controller for its state and report it, for a command it may not have taken.
 function Client:refresh()
-  local gen, writes, pushes = self.gen, self.writes, self.pushes
-  self:enqueue("GET", "/json/si"):next(function(si)
+  local gen, writes = self.gen, self.writes
+  local answer, job = self:enqueue("GET", "/json/si")
+  answer:next(function(si)
     if type(si) == "table" then
-      report(self, gen, writes, pushes, si.state, si.info, "WLED.Refresh")
+      report(self, gen, writes, job.pushes, si.state, si.info, "WLED.Refresh")
     end
   end, function() end)
 end
@@ -647,14 +659,16 @@ end
 --- @param path string The path on the controller, e.g. /json/si.
 --- @param body table|nil The JSON body of a POST.
 --- @return Deferred answer Resolves with the decoded answer, or rejects.
+--- @return table|nil job The request; its pushes field is the push count when it last went out.
 function Client:enqueue(method, path, body)
   local d = deferred.new()
   if not self.host then
-    return d:reject({ error = "not started" })
+    return d:reject({ error = "not started" }), nil
   end
-  self.queue[#self.queue + 1] = { method = method, path = path, body = body, d = d, tries = 0 }
+  local job = { method = method, path = path, body = body, d = d, tries = 0 }
+  self.queue[#self.queue + 1] = job
   self:pump()
-  return d
+  return d, job
 end
 
 --- Send the next queued HTTP request when none is in flight.
@@ -667,10 +681,12 @@ function Client:pump()
   self:request(job)
 end
 
---- Send one HTTP request and settle its job; a busy answer is retried in the slot.
---- @param job table {method, path, body, d = its deferred, tries}
+--- Send one HTTP request and settle its job; a busy answer is retried in the slot. WLED builds
+--- the answer when the request arrives, so a push after this one is newer than it.
+--- @param job table {method, path, body, d = its deferred, tries, pushes}
 function Client:request(job)
   local gen = self.gen
+  job.pushes = self.pushes
   local url = string.format("http://%s:%d%s", self.host, self.port, job.path)
   local req
   if job.method == "POST" then
@@ -754,15 +770,21 @@ function Client:send(cmd)
   if #body <= limit and not self:postPending() and self:sendFrame({ body = body, cmd = cmd, tries = 0 }) then
     return deferred.new():resolve(true)
   end
-  local gen, writes, pushes = self.gen, self.writes, self.pushes
-  local answered = self:enqueue("POST", "/json/state", cmd)
+  local gen, writes = self.gen, self.writes
+  -- What a busy resend owes was sent first, so it goes ahead of this.
+  if self.replaying then
+    for _, frame in ipairs(self:takeOwed()) do
+      self:postFrame(frame)
+    end
+  end
+  local answered, job = self:enqueue("POST", "/json/state", cmd)
   if cmd.v ~= true then
     return answered
   end
   -- Over HTTP the state comes back as the answer, not as a push.
   return answered:next(function(state)
     if type(state) == "table" and state.seg ~= nil then
-      report(self, gen, writes, pushes, state, nil, "WLED.Answer")
+      report(self, gen, writes, job.pushes, state, nil, "WLED.Answer")
     end
     return state
   end)

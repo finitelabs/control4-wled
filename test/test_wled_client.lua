@@ -560,10 +560,11 @@ do
 end
 
 --- Sixteen segments' colors, too long for one ESP8266 frame.
-local function sixteenSegments()
+--- @param col integer[]|nil The color; orange when nil.
+local function sixteenSegments(col)
   local seg = {}
   for i = 0, 15 do
-    seg[#seg + 1] = { id = i, col = { { 255, 128, 0 }, { 0, 0, 0 }, { 0, 0, 0 } } }
+    seg[#seg + 1] = { id = i, col = { col or { 255, 128, 0 }, { 0, 0, 0 }, { 0, 0, 0 } } }
   end
   return seg
 end
@@ -588,21 +589,109 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A frame the controller refuses as too big goes over HTTP, and the frames after it follow")
+T.section("A frame WLED could not read goes over HTTP with every recent one, so the newest lands last")
 --------------------------------------------------------------------------------
 do
   local client, fake = newClient()
   client:start(fake.ip, fake.port)
   W.run(100)
-  -- The controller's buffer is smaller than the frame the client takes for its chip.
+  -- A frame this long reaches the controller in more than one TCP packet, which it answers with
+  -- 9 and does not read.
   fake.frameLimit = 600
   client:send({ bri = 10, seg = sixteenSegments() })
   client:send({ bri = 200 })
   W.run(200)
-  T.eq("the refused command landed", fake.si.state.seg[1].col[1], { 255, 128, 0 })
+  T.eq("the unread command landed", fake.si.state.seg[1].col[1], { 255, 128, 0 })
   T.eq("the later one went again after it, so it lands last", fake.si.state.bri, 200)
   T.eq("each over HTTP once", posts(fake), 2)
   client:stop()
+
+  -- Two unread: WLED answers 9 to each, in order, without saying which.
+  local two, twoFake = newClient()
+  two:start(twoFake.ip, twoFake.port)
+  W.run(100)
+  twoFake.frameLimit = 600
+  two:send({ bri = 10, seg = sixteenSegments({ 255, 0, 0 }) })
+  two:send({ bri = 20 })
+  two:send({ bri = 30, seg = sixteenSegments({ 0, 0, 255 }) })
+  two:send({ bri = 40 })
+  W.run(300)
+  T.eq("two unread: the later color landed", twoFake.si.state.seg[1].col[1], { 0, 0, 255 })
+  T.eq("and the newest level last", twoFake.si.state.bri, 40)
+  T.eq("each over HTTP once, the second 9 finding nothing left", posts(twoFake), 4)
+  two:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A busy resend owed when a command goes over HTTP goes over HTTP ahead of it")
+--------------------------------------------------------------------------------
+do
+  local client, fake = newClient("esp8266-ws2812b-015")
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  fake.wsBusy = 1
+  client:send({ bri = 50 })
+  -- Busy: its resend is due 250 ms later. A long command goes by POST meanwhile.
+  W.run(20)
+  client:send({ bri = 90, seg = sixteenSegments() })
+  W.run(1000)
+  T.eq("the newer command lands last", fake.si.state.bri, 90)
+  T.eq("the owed one went over HTTP first", posts(fake), 2)
+
+  -- The socket closes while a resend waits: what it owes goes over HTTP.
+  local down, downFake = newClient()
+  down:start(downFake.ip, downFake.port)
+  W.run(100)
+  downFake.wsBusy = 1
+  down:send({ bri = 60 })
+  W.run(20)
+  downFake.socketOpen = false
+  downFake:close(1001)
+  W.run(1000)
+  T.eq("the socket went down during the wait", down.socketUp, false)
+  T.eq("the owed command still lands", downFake.si.state.bri, 60)
+  down:stop()
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
+T.section("A command's own HTTP answer that a push overtook is not reported")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient("esp8266-ws2812b-015")
+  client:start(fake.ip, fake.port)
+  W.run(2000)
+  -- Taken on arrival and answered 3 s later, after another client's change is pushed.
+  fake.slowPostMs = 3000
+  client:send({ bri = 10, seg = sixteenSegments(), v = true })
+  W.run(100)
+  fake:change({ bri = 77 })
+  W.run(4000)
+  T.eq("the push stands", log.states[#log.states].state.bri, 77)
+  client:stop()
+
+  -- A command held behind a long POST asks for its state back; a push arrives before it goes out.
+  local held, heldFake, heldLog = newClient("esp8266-ws2812b-015")
+  heldFake.si.state.pl = 3
+  held:start(heldFake.ip, heldFake.port)
+  W.run(2000)
+  heldFake.slowPostMs = 1500
+  held:send({ bri = 10, seg = sixteenSegments() })
+  W.run(10)
+  heldFake.slowPostMs = nil
+  local main = heldFake.si.state.seg[1]
+  held:send({ seg = { { id = main.id, fx = "~0" } }, v = true })
+  W.run(100)
+  heldFake:change({ bri = 77 })
+  W.run(1500)
+  local ended = 0
+  for _, s in ipairs(heldLog.states) do
+    if s.state and s.state.pl == -1 then
+      ended = ended + 1
+    end
+  end
+  T.eq("its answer, built after that push, is reported", ended > 0, true)
+  held:stop()
 end
 
 --------------------------------------------------------------------------------
