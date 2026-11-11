@@ -638,6 +638,18 @@ do
   T.eq("the newer command lands last", fake.si.state.bri, 90)
   T.eq("the owed one went over HTTP first", posts(fake), 2)
 
+  -- The long command goes out before the busy answer arrives: the busy frame goes over HTTP
+  -- after it, and it again, so it still lands last.
+  local early, earlyFake = newClient("esp8266-ws2812b-015")
+  early:start(earlyFake.ip, earlyFake.port)
+  W.run(100)
+  earlyFake.wsBusy = 1
+  early:send({ bri = 50 })
+  early:send({ bri = 10, seg = sixteenSegments() })
+  W.run(1000)
+  T.eq("posted before the busy answer, the newer command still lands last", earlyFake.si.state.bri, 10)
+  early:stop()
+
   -- The socket closes while a resend waits: what it owes goes over HTTP.
   local down, downFake = newClient()
   down:start(downFake.ip, downFake.port)

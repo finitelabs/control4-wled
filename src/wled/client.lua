@@ -105,7 +105,7 @@ end
 --- @field timerCount integer Timers set so far, for unique names.
 --- @field writes integer Writes sent so far; an HTTP answer asked for before the latest is stale.
 --- @field pushes integer States pushed on the socket so far; a poll answer asked for before the latest is stale.
---- @field recent table[] WebSocket commands sent within the busy window, oldest first.
+--- @field recent table[] Commands sent within the busy window, oldest first; those sent over HTTP are marked posted.
 --- @field replaying boolean|nil Whether a busy resend waits to go out.
 --- @field owed table[]|nil The commands a waiting busy resend sends again, oldest first.
 --- @field replayToken integer|nil Bumped when a busy resend is taken or called off; an older one does nothing.
@@ -494,6 +494,31 @@ function Client:postFrame(frame)
   end)
 end
 
+--- POST a window of commands from its oldest socket frame on, oldest first; the commands before
+--- that went over HTTP already and land in order.
+--- @param frames table[] Recent commands, oldest first.
+function Client:postWindow(frames)
+  local started = false
+  for _, frame in ipairs(frames) do
+    started = started or not frame.posted
+    if started then
+      self:postFrame(frame)
+    end
+  end
+end
+
+--- Whether a command in a window went over HTTP.
+--- @param frames table[]
+--- @return boolean
+local function anyPosted(frames)
+  for _, frame in ipairs(frames) do
+    if frame.posted then
+      return true
+    end
+  end
+  return false
+end
+
 --- Take what a busy resend owes, oldest first: the commands answered busy, then every one sent
 --- during the wait. The resend is called off.
 --- @return table[] frames
@@ -515,7 +540,8 @@ end
 --- A WebSocket command came back busy (3) or not taken (9, a frame WLED could not read whole).
 --- The answer does not say which command, so every recent one goes again, in order: each carries
 --- whole values, so a second copy changes nothing. A busy answer resends them on the socket after
---- a wait; a 9 sends them over HTTP, so the one not taken lands and the newest still lands last.
+--- a wait, or over HTTP when one in the window already went that way, so it can't land first; a 9
+--- sends them over HTTP, so the one not taken lands and the newest still lands last.
 --- @param code any The error number WLED sent.
 function Client:onSocketError(code)
   local frames = self:recentFrames()
@@ -525,12 +551,15 @@ function Client:onSocketError(code)
   if code == 9 then
     local resend = self.replaying and self:takeOwed() or frames
     self.recent = {}
-    for _, frame in ipairs(resend) do
-      self:postFrame(frame)
-    end
+    self:postWindow(resend)
     return
   end
   if code ~= 3 or self.replaying then
+    return
+  end
+  if anyPosted(frames) then
+    self.recent = {}
+    self:postWindow(frames)
     return
   end
   local tries = 0
@@ -553,9 +582,7 @@ function Client:onSocketError(code)
     -- One refused while this waited is sent again here too, and the latest still comes last.
     local replay = self:takeOwed()
     if not (self.socketUp and self.ws) then
-      for _, frame in ipairs(replay) do
-        self:postFrame(frame)
-      end
+      self:postWindow(replay)
       return
     end
     self.recent = replay
@@ -773,11 +800,13 @@ function Client:send(cmd)
   local gen, writes = self.gen, self.writes
   -- What a busy resend owes was sent first, so it goes ahead of this.
   if self.replaying then
-    for _, frame in ipairs(self:takeOwed()) do
-      self:postFrame(frame)
-    end
+    self:postWindow(self:takeOwed())
   end
   local answered, job = self:enqueue("POST", "/json/state", cmd)
+  -- Kept in the window, so a busy answer arriving after it for an earlier frame resends that
+  -- frame behind it.
+  self:recentFrames()
+  self.recent[#self.recent + 1] = { cmd = cmd, posted = true, at = now(), tries = 0 }
   if cmd.v ~= true then
     return answered
   end
@@ -794,7 +823,7 @@ end
 --- @param path string The path on the controller.
 --- @return Deferred answer Resolves with the decoded answer, or rejects.
 function Client:get(path)
-  return self:enqueue("GET", path)
+  return (self:enqueue("GET", path))
 end
 
 Client.PING_MS = PING_MS
