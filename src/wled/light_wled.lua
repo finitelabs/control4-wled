@@ -485,7 +485,8 @@ end
 --- @param lightAll boolean Whether the first leg turns every segment on.
 function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now, lightAll)
   local n = math.ceil(ms / LEG_MS)
-  local legMs = ms / n
+  -- The gaps come out of the legs, so the fade still ends ms after it starts.
+  local legMs = (ms - (n - 1) * LEG_GAP_MS) / n
   local fromCol = self.lastCol or toCol
   local gen = self.legGen
   local finalOn = json.on
@@ -541,7 +542,7 @@ function Adapter:startLegs(json, ms, fromBri, toBri, toCol, now, lightAll)
       end)
     end
   end
-  self.out = { from = fromBri, to = toBri, t0 = now, ms = ms + (n - 1) * LEG_GAP_MS }
+  self.out = { from = fromBri, to = toBri, t0 = now, ms = ms }
   leg(1)
 end
 

@@ -288,9 +288,9 @@ do
     end
   end
   T.eq(
-    "four legs of 50 s, along one line from 128 to 255",
+    "four legs of 49.8 s and three 0.25 s gaps, along one line from 128 to 255",
     { bris, tts },
-    { { 160, 192, 223, 255 }, { 500, 500, 500, 500 } }
+    { { 160, 192, 223, 255 }, { 498, 498, 498, 498 } }
   )
   T.eq("told one change at the start", #toldOf("LIGHT_BRIGHTNESS_CHANGING"), 1)
   T.eq("and its end", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 100 })
@@ -322,16 +322,19 @@ do
   mark()
   local snaps = fake.snaps
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "20", RATE = "70000" })
-  T.eq("two legs of 35 s: the first at once", #legs(), 1)
+  T.eq("two legs, the gap taken out of them: the first at once", #legs(), 1)
   W.run(35000)
-  T.eq("the second not at the first one's end", #legs(), 1)
-  W.run(249)
-  T.eq("nor just before 0.25 s past it", #legs(), 1)
+  T.eq("the second not at 35 s", #legs(), 1)
+  W.run(124)
+  T.eq("nor just before 0.25 s past the first one's end", #legs(), 1)
   W.run(1)
   T.eq("but 0.25 s after it", #legs(), 2)
+  T.eq("each leg 34.9 s", { legs()[1].tt, legs()[2].tt }, { 349, 349 })
   T.eq("so no leg reaches the controller while one runs", fake.snaps - snaps, 0)
-  W.run(36000)
-  T.eq("told the fade's end", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 20 })
+  W.run(34874)
+  T.eq("no level told before 70 s", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), {})
+  W.run(1)
+  T.eq("and the fade's end told at 70 s", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 20 })
 
   -- A stop in the gap holds where the first leg ended, and the second leg never goes.
   proxy("SET_LEVEL", { LEVEL = "10" })
@@ -339,7 +342,7 @@ do
   mark()
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "20", RATE = "70000" })
   local first = legs()[1]
-  W.run(35100)
+  W.run(35000)
   proxy("SET_BRIGHTNESS_STOP")
   local stop = legs()[2]
   T.truthy("a stop in the gap is sent at once", stop and stop.tt == 0)
