@@ -24,7 +24,7 @@ DATA_DIR = ROOT / "data"
 # on the boot segment, colPri's default (wled.h), as a dig2go showed on both releases.
 FIRMWARE = {
     "16.0.1": {
-        "vid": 2605010,
+        "vid": 2606300,
         "cn": "Niji",
         "default_color": 0xFFA000,
         "boot_color": 0xFFA000,
@@ -65,6 +65,7 @@ NL_MODE_SET, NL_MODE_FADE, NL_MODE_COLORFADE, NL_MODE_SUN = 0, 1, 2, 3
 INTERFACE_UPDATE_COOLDOWN = 1000  # const.h
 JSON_LOCK_WAIT = 250  # util.cpp requestJSONBufferLock
 REALTIME_TIMEOUT_DEFAULT = 2500  # wled.h realtimeTimeoutMs
+DOUBLE_PRESS_GAP = 300  # a double press's second release, roughly as a hand makes it
 UINT32_MAX = 0xFFFFFFFF
 INT32_MAX = 0x7FFFFFFF
 ULTRAWHITE = 0xFFFFFFFF
@@ -560,6 +561,8 @@ class Device:
         self.realtime_timeout = 0
         self.realtime_stop_at = None
         self.output_bri_override = None
+        self.second_toggle_at = None
+        self.bus_change_pending = False
 
         self.error_flag = ERR_NONE
         self.do_reboot = False
@@ -582,6 +585,9 @@ class Device:
         self.profile["buses"][index]["rgbwm"] = rgbwm
         if not at_restart:
             self.buses[index].rgbwm = rgbwm
+        elif rgbwm != self.buses[index].rgbwm:
+            # Until the restart a dig2go on 0.15.4 read info.leds.rgbw false, bits unchanged.
+            self.bus_change_pending = True
 
     def set_white(self, rgbwm=None, correct_wb=None, cct_from_rgb=None, at_restart=False):
         white = dict(self.profile.get("white", {}))
@@ -649,6 +655,8 @@ class Device:
         return any(bus_has_white(b.type) for b in self.buses)
 
     def has_rgbw_bus(self):
+        if self.bus_change_pending:
+            return False
         return any(bus_has_rgb(b.type) and bus_has_white(b.type) for b in self.buses)
 
     def mode_count(self):
@@ -1577,7 +1585,7 @@ class Device:
         not_running = self.pl_index < 0 and self.pl_repeat > 0
         pl["repeat"] = self.pl_repeat - 1 if not_running else self.pl_repeat
         pl["end"] = 255 if self.pl_options & PL_OPTION_RESTORE else self.pl_end_preset
-        pl["r"] = bool(self.pl_options & PL_OPTION_SHUFFLE)
+        pl["r"] = self.pl_options & PL_OPTION_SHUFFLE
         for e in self.pl_entries:
             pl["ps"].append(e.preset)
             pl["dur"].append(e.dur // 100 if self.v16 else e.dur)
@@ -1667,21 +1675,22 @@ class Device:
 
     def press_button(self, preset=0, kind="short"):
         """button.cpp for button 0 with no macros: a short press toggles, a long press picks a
-        random color (setRandomColor), and with no double-press macro WLED does not wait for a
-        second press, so a double press is two short ones."""
+        random color (setRandomColor, white kept), and with no double-press macro WLED does not
+        wait for a second press, so a double press is two short ones about 300 ms apart."""
         if preset:
             self.apply_preset(preset, CALL_MODE_BUTTON_PRESET)
         elif kind == "long":
             r, g, b = hue_to_rgb(random.randrange(256))
             for seg in self.segments:
                 if seg.is_active() and seg.selected:
-                    seg.colors[0] = rgbw32(r, g, b, 0)
+                    seg.colors[0] = rgbw32(r, g, b, channels(seg.colors[0])[3])
             self.state_changed = True
             self.state_updated(CALL_MODE_BUTTON)
         else:
-            for _ in range(2 if kind == "double" else 1):
-                self.toggle_on_off()
-                self.state_updated(CALL_MODE_BUTTON)
+            self.toggle_on_off()
+            self.state_updated(CALL_MODE_BUTTON)
+            if kind == "double":
+                self.second_toggle_at = self.now() + DOUBLE_PRESS_GAP
 
     # ---- the loop ----------------------------------------------------------------------------
 
@@ -1762,6 +1771,10 @@ class Device:
     def tick(self):
         """One pass of WLED's main loop. Sets push_due when a WebSocket push is due."""
         now = self.now()
+        if self.second_toggle_at is not None and now >= self.second_toggle_at:
+            self.second_toggle_at = None
+            self.toggle_on_off()
+            self.state_updated(CALL_MODE_BUTTON)
         if self.realtime_stop_at is not None and now >= self.realtime_stop_at:
             self.realtime_stop_at = None
             self.exit_realtime()

@@ -85,11 +85,20 @@ def test_white_mode_sets_the_capability_bits(device, clock, name, rgbwm, lc):
 
 
 def test_white_mode_saved_in_settings_takes_effect_at_the_next_restart(device, clock):
-    d = device("dig2go-rgbw-16")
+    # Measured on 0.15.4 over /json/cfg.
+    d = device("dig2go-rgbw-015")
     d.set_bus(0, 2, at_restart=True)
-    assert d.serialize_info()["leds"]["lc"] == 3
+    leds = d.serialize_info()["leds"]
+    assert leds["lc"] == 3 and leds["rgbw"] is False
     d.boot()
-    assert d.serialize_info()["leds"]["lc"] == 1
+    leds = d.serialize_info()["leds"]
+    assert leds["lc"] == 1 and leds["rgbw"] is True
+
+
+def test_saving_the_same_white_mode_leaves_the_rgbw_flag_alone(device):
+    d = device("dig2go-rgbw-015")
+    d.set_bus(0, 0, at_restart=True)
+    assert d.serialize_info()["leds"]["rgbw"] is True
 
 
 def test_white_mode_change_survives_a_restart(device, clock):
@@ -156,7 +165,10 @@ def test_psave_with_o_stores_the_playlist_and_without_o_the_look(device, clock):
     pl = {"ps": [1, 2], "dur": [80, 80]}
     d.deserialize_state({"psave": 7, "n": "Mock List", "o": True, "playlist": pl})
     settle(d, clock, 200)
-    assert d.presets["7"]["playlist"]["ps"] == [1, 2]
+    stored = d.presets["7"]["playlist"]
+    assert stored["ps"] == [1, 2]
+    # Written by the save path, not posted: a dig2go stored "r": 0 as a number.
+    assert stored["end"] == 0 and stored["r"] == 0 and not isinstance(stored["r"], bool)
     d.deserialize_state({"psave": 8, "n": "Mock Look", "on": True, "playlist": pl})
     settle(d, clock, 200)
     assert "playlist" not in d.presets["8"] and "seg" in d.presets["8"]
@@ -306,24 +318,30 @@ async def test_json_live_is_not_in_release_builds(mock):
     assert await (await client.get("/json/live")).json() == {"error": 4}
 
 
-# ---- the button ------------------------------------------------------------------------------
+# ---- the button (measured on 0.15.4) ------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", DIG2GO)
-def test_long_press_picks_a_new_color_and_leaves_power_alone(device, clock, name):
-    d = device(name)
-    d.deserialize_state({"on": False})
+def test_long_press_picks_a_new_color_keeps_white_and_leaves_power_alone(device, clock):
+    d = device("dig2go-rgbw-015")
+    d.deserialize_state({"on": False, "seg": [{"id": 0, "col": [[10, 20, 30, 200]]}]})
     settle(d, clock)
-    before = d.serialize_state()["seg"][0]["col"][0]
     d.press_button(kind="long")
     settle(d, clock)
     st = d.serialize_state()
-    assert st["on"] is False and st["seg"][0]["col"][0] != before
+    col = st["seg"][0]["col"][0]
+    assert st["on"] is False and col[:3] != [10, 20, 30] and col[3] == 200
 
 
-@pytest.mark.parametrize("name", DIG2GO)
-def test_double_press_toggles_twice_with_no_macro(device, clock, name):
-    d = device(name)
-    d.press_button(kind="double")
-    settle(d, clock)
-    assert d.serialize_state()["on"] is True
+async def test_double_press_toggles_twice_and_pushes_each_a_second_apart(mock, clock):
+    inst, client = await mock("dig2go-rgbw-015")
+    await post(client, {"on": False})
+    await advance(inst, clock, 1500)
+    ws = await client.ws_connect("/ws")
+    await receive_json(ws)
+    await client.post("/_mock/button", data=json.dumps({"kind": "double"}))
+    await advance(inst, clock, 60)
+    assert (await receive_json(ws))["state"]["on"] is True
+    await advance(inst, clock, 700)
+    assert await nothing(ws)
+    await advance(inst, clock, 400)
+    assert (await receive_json(ws))["state"]["on"] is False
