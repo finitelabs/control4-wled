@@ -79,7 +79,7 @@ def run(d, clock, ms):
 
 @pytest.mark.parametrize("name", DIG2GO)
 def test_a_fade_sent_while_one_runs_jumps_on_16(device, clock, name):
-    # Measured 2026-11-11 on camera: a 5 s fade sent as another ends, or a second before, jumps.
+    # Measured 2026-11-11 on camera: a 5 s fade sent a second before another ends jumps on 16.0.1.
     d = device(name)
     d.deserialize_state({"on": True, "bri": 5, "tt": 0})
     run(d, clock, 100)
@@ -91,6 +91,17 @@ def test_a_fade_sent_while_one_runs_jumps_on_16(device, clock, name):
         assert d.output()["bri"] == 51
     else:
         assert 20 < d.output()["bri"] < 30
+
+
+def test_a_change_without_bri_or_tt_mid_fade_leaves_the_fade_running_on_16(device, clock):
+    d = device("dig2go-rgbw-16")
+    d.deserialize_state({"on": True, "bri": 5, "tt": 0})
+    run(d, clock, 100)
+    d.deserialize_state({"bri": 51, "tt": 50})
+    run(d, clock, 2000)
+    d.deserialize_state({"seg": [{"id": 0, "fx": 9}]})
+    run(d, clock, 10)
+    assert 15 < d.output()["bri"] < 35
 
 
 def test_a_fade_sent_after_one_ends_fades_on_16(device, clock):
