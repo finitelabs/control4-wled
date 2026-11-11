@@ -26,8 +26,8 @@ local CM = light.ColorMode
 
 local TT_MAX = 655
 local LEG_MS = TT_MAX * 100
---- How long after one leg's end the next is sent; a leg sent at the end jumps on 16.x. It also
---- covers a leg replayed after one busy answer, 250 ms late.
+--- How long after one leg's end the next is sent; enough for a leg replayed after a busy answer,
+--- which goes 250 ms late.
 local LEG_GAP_MS = 500
 --- How long a level or color sent waits for the controller's report of it before the light
 --- model takes the report it has; WLED pushes at most once a second.
