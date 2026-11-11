@@ -809,4 +809,41 @@ do
   T.eq("not after a stop", siRequests(stoppedFake), 0)
 end
 
+--------------------------------------------------------------------------------
+T.section("A command asking for the state back gets it, though WLED pushes the change to no one")
+--------------------------------------------------------------------------------
+do
+  local client, fake, log = newClient()
+  fake.si.state.pl = 3
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local main = fake.si.state.seg[1]
+  local seen = #log.states
+  client:send({ seg = { { id = main.id, fx = main.fx } } })
+  W.run(2000)
+  T.eq("a playlist ended by its own effect is pushed to no one", #log.states, seen)
+  T.eq("though it ended", fake.si.state.pl, -1)
+
+  fake.si.state.pl = 3
+  client:send({ seg = { { id = main.id, fx = main.fx } }, v = true })
+  W.run(50)
+  T.eq("with v the socket answers at once", #log.states, seen + 1)
+  T.eq("with the ended playlist", log.states[#log.states].state.pl, -1)
+  client:stop()
+
+  local http, httpFake, httpLog = newClient()
+  httpFake.socketOpen = false
+  httpFake.si.state.pl = 3
+  http:start(httpFake.ip, httpFake.port)
+  W.run(Client.OPEN_GRACE_MS + 100)
+  T.eq("reached over HTTP", http.mode, "http")
+  local polled = #httpLog.states
+  http:send({ seg = { { id = main.id, fx = main.fx } }, v = true })
+  W.run(50)
+  T.eq("over HTTP the answer is the state, before the next poll", #httpLog.states, polled + 1)
+  local last = httpLog.states[#httpLog.states]
+  T.eq("with the ended playlist, and no info", { last.state.pl, last.info == nil }, { -1, true })
+  http:stop()
+end
+
 T.finish()

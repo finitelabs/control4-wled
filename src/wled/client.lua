@@ -653,7 +653,7 @@ end
 
 --- Send a state command: over the socket when it is open and the command fits one frame,
 --- otherwise POST /json/state. Resolves once sent (socket) or answered (HTTP); the new state
---- arrives through onState.
+--- arrives through onState. A command with v = true gets the state back on either path.
 --- @param cmd table The state command, e.g. { on = true, bri = 128 }.
 --- @return Deferred sent Resolves once sent or answered.
 function Client:send(cmd)
@@ -663,7 +663,17 @@ function Client:send(cmd)
   if #body <= limit and self:sendFrame({ body = body, cmd = cmd, tries = 0 }) then
     return deferred.new():resolve(true)
   end
-  return self:enqueue("POST", "/json/state", cmd)
+  local answered = self:enqueue("POST", "/json/state", cmd)
+  if cmd.v ~= true then
+    return answered
+  end
+  -- Over HTTP the state comes back as the answer, not as a push.
+  return answered:next(function(state)
+    if type(state) == "table" and state.seg ~= nil then
+      guarded(self.onState, "WLED.Answer")(state, nil)
+    end
+    return state
+  end)
 end
 
 --- GET a path from the controller (for example /json/eff or /presets.json).

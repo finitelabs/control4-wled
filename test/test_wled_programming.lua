@@ -305,10 +305,15 @@ do
   T.eq("Apply Preset: ps", lastCommand(fake), { ps = 2 })
 
   ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
-  T.eq("Start Playlist: ps", lastCommand(fake), { ps = 3 })
+  T.eq("Start Playlist: ps, asking for the state back", lastCommand(fake), { ps = 3, v = true })
 
+  local main = fake.si.state.seg[1]
   ExecuteCommand("Stop Playlist", {})
-  T.eq("Stop Playlist: an empty playlist object", fake.wire[#fake.wire], '{"playlist":{}}')
+  T.eq(
+    "Stop Playlist: the running effect again, asking for the state back",
+    lastCommand(fake),
+    { seg = { { id = main.id, fx = main.fx } }, v = true }
+  )
 
   local sent = #fake.commands
   ExecuteCommand("Set Effect", { Effect = "No Such Effect" })
@@ -372,7 +377,7 @@ do
   ExecuteCommand("Apply Preset", { Preset = "Mock Rainbow (2)" })
   T.eq("a choice made before the rename still applies", lastCommand(fake), { ps = 2 })
   ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
-  T.eq("a playlist choice made before the rename still starts", lastCommand(fake), { ps = 3 })
+  T.eq("a playlist choice made before the rename still starts", lastCommand(fake), { ps = 3, v = true })
   ExecuteCommand("Apply Preset", { Preset = "Evening" })
   T.eq("a bare name resolves too", lastCommand(fake), { ps = 2 })
 end
@@ -493,6 +498,39 @@ do
   W.run(1500)
   T.eq("an effect outside a preset ends the playlist", eventCount(PLAYLIST_ENDED), 1)
   T.eq("and leaves the preset", Variables["Preset"], "")
+end
+
+--------------------------------------------------------------------------------
+T.section("Start and Stop Playlist show at once on 0.15 and 16.x, where WLED pushes neither")
+--------------------------------------------------------------------------------
+for _, profile in ipairs({ "esp32-rgbw-015", "esp32-rgbw-pwm-16" }) do
+  local fake = fresh(profile, function(f)
+    -- The 0.15.4 capture has no presets; both get the same ones.
+    f.files["/presets.json"] = W.fixture("esp32-rgbw-pwm-16", "presets.json")
+  end)
+  W.run(500)
+  ExecuteCommand("Apply Preset", { Preset = "Mock Warm Glow (1)" })
+  W.run(1500)
+
+  mark()
+  ExecuteCommand("Start Playlist", { Playlist = "Mock Cycle (3)" })
+  W.run(100)
+  T.eq(
+    "its first preset already showing, Playlist Started at once (" .. profile .. ")",
+    eventCount(PLAYLIST_STARTED),
+    1
+  )
+  T.eq("Playlist variable (" .. profile .. ")", Variables["Playlist"], "Mock Cycle")
+
+  mark()
+  ExecuteCommand("Stop Playlist", {})
+  W.run(100)
+  T.eq("Playlist Ended at once (" .. profile .. ")", eventCount(PLAYLIST_ENDED), 1)
+  T.eq("Playlist variable cleared (" .. profile .. ")", Variables["Playlist"], "")
+  T.eq("the controller's playlist unloaded (" .. profile .. ")", fake.si.state.pl, -1)
+  T.eq("the look stays (" .. profile .. ")", { fake.si.state.ps, Variables["Preset"] }, { 1, "Mock Warm Glow" })
+  W.run(10000)
+  T.eq("and nothing more (" .. profile .. ")", programmingEvents(), 1)
 end
 
 --------------------------------------------------------------------------------

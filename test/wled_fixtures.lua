@@ -259,7 +259,8 @@ function Fake:presetsFile()
 end
 
 --- Apply state fields to the fake's state. A segment field other than power and brightness
---- leaves the current preset, and an effect sent outside a preset unloads a playlist.
+--- leaves the current preset, and an effect sent outside a preset unloads a playlist, even the
+--- effect already running (json.cpp unloads on any fx it is given).
 --- @param cmd table
 --- @param fromPreset boolean|nil
 function Fake:applyFields(cmd, fromPreset)
@@ -277,7 +278,7 @@ function Fake:applyFields(cmd, fromPreset)
       state.on = true
     end
   end
-  local changed, fxChanged = false, false
+  local changed, fxSent = false, false
   -- An array names segments by id; an object applies to every segment.
   if type(cmd.seg) == "table" then
     local list = cmd.seg[1] and cmd.seg or { cmd.seg }
@@ -290,14 +291,15 @@ function Fake:applyFields(cmd, fromPreset)
             changed = true
           end
           if s.fx ~= nil then
+            fxSent = true
+            -- The effect already running changes nothing, so the preset still shows.
             if seg.fx ~= s.fx then
-              fxChanged = true
               seg.fx = s.fx
               if s.fxdef then
                 self:effectDefaults(seg)
               end
+              changed = true
             end
-            changed = true
           end
           -- After the effect, so a field sent with it overrides the effect's default.
           for _, key in ipairs({ "cct", "sx", "ix", "pal", "c1", "c2", "o1", "o2", "o3", "on", "bri" }) do
@@ -319,7 +321,7 @@ function Fake:applyFields(cmd, fromPreset)
     if changed then
       state.ps = -1
     end
-    if fxChanged then
+    if fxSent then
       state.pl = -1
     end
   end
@@ -378,11 +380,49 @@ function Fake:apply(cmd)
   self.commands[#self.commands + 1] = cmd
   self:applyFields(cmd)
   if type(cmd.playlist) == "table" and next(cmd.playlist) == nil then
-    self.si.state.pl = -1
+    -- 16.x takes an empty playlist sent during one as a nested playlist, and the running one
+    -- carries on (playlist.cpp@v16.0.1); 0.15 unloads it.
+    if not (self:isV16() and (self.si.state.pl or -1) >= 0) then
+      self.si.state.pl = -1
+    end
   end
   if cmd.ps ~= nil then
     self:applyPreset(cmd.ps)
   end
+end
+
+--- Whether two values are equal all the way down, leaving out the top-level keys given.
+local function same(a, b, skip)
+  if type(a) ~= "table" or type(b) ~= "table" then
+    return a == b
+  end
+  for k, v in pairs(a) do
+    if not (skip and skip[k]) and not same(v, b[k]) then
+      return false
+    end
+  end
+  for k in pairs(b) do
+    if not (skip and skip[k]) and a[k] == nil then
+      return false
+    end
+  end
+  return true
+end
+
+--- Apply a command from a client and tell the clients as WLED does. A change that moves only the
+--- playlist is pushed to no one (measured on 0.15.4 and 16.0.1), and "v" answers the sender
+--- with the state unless a push is already on its way (ws.cpp).
+--- @param cmd table
+--- @return boolean answer Whether the sender gets the state back on its own.
+function Fake:handle(cmd)
+  local before = copy(self.si.state)
+  self:apply(cmd)
+  local state = self.si.state
+  local plOnly = before.pl ~= state.pl and same(before, state, { pl = true })
+  if not plOnly then
+    self:schedulePush()
+  end
+  return cmd.v == true and not self.pushDue
 end
 
 -- HTTP, shaped like lib.http.
@@ -404,8 +444,14 @@ function Fake:answer(method, path, body)
     end
     if method == "POST" then
       self.wire[#self.wire + 1] = body
-      self:apply(JSON:decode(body))
-      self:schedulePush()
+      local cmd = JSON:decode(body)
+      self:handle(cmd)
+      if cmd.v == true then
+        -- With "v" WLED answers with the state and sends its socket clients a push too.
+        self:schedulePush()
+        d:resolve({ code = 200, body = copy(self.si.state) })
+        return
+      end
       d:resolve({ code = 200, body = { success = true } })
       return
     end
@@ -575,9 +621,10 @@ function Fake:onSend(data)
       else
         local ok, cmd = pcall(JSON.decode, JSON, frame.payload)
         self.wire[#self.wire + 1] = frame.payload
-        if ok and type(cmd) == "table" then
-          self:apply(cmd)
-          self:schedulePush()
+        if ok and type(cmd) == "table" and self:handle(cmd) then
+          self:after(LATENCY_MS, function()
+            self:sendText(JSON:encode(self.si))
+          end)
         end
       end
     elseif frame.opcode == 9 then
