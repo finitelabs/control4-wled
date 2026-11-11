@@ -107,6 +107,10 @@ local gConnected = false
 --- @type string|nil
 local gWrongMac = nil
 
+--- Whether the next answer carrying a MAC is checked, though the MAC matches the last one seen:
+--- after each connect, the controller at the address may be another.
+local gCheckMac = false
+
 local device = Device:new()
 
 --- @type WledClient
@@ -890,6 +894,7 @@ local function connect()
   wantAllLists()
   client:stop()
   gWrongMac = nil
+  gCheckMac = true
   if ip == "" then
     setConnected(false, "Set the IP Address to the WLED controller's address")
     return
@@ -1011,7 +1016,9 @@ end
 --- @param info table|nil
 local function onState(state, info)
   local changes = device:update(state, info)
-  if changes.mac or gWrongMac then
+  local recheck = gCheckMac and Select(info, "mac") ~= nil
+  if changes.mac or gWrongMac or recheck then
+    gCheckMac = false
     if not isOurController() then
       gWrongMac = device.mac
       setConnected(

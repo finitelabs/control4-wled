@@ -637,6 +637,44 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("Every connect checks the controller that answers, even one seen before")
+--------------------------------------------------------------------------------
+do
+  -- A pick takes the MAC its entry listed, not whatever answers at the address.
+  local fakes = fresh({ { profile = RGBW, ip = "192.0.2.41" }, { profile = STRIP, ip = "192.0.2.42" } })
+  W.run(3000)
+  -- The listed controller leaves the address and another one takes it before the pick.
+  fakes[2].si.info.mac = "02a1b2c3d4cc"
+  pick("wled-c3d401 (192.0.2.42)")
+  W.run(5000)
+  T.contains("another controller at the picked address is named", Properties["Driver Status"], "02:A1:B2:C3:D4:CC")
+  T.eq("and not driven", Variables["Connected"], "0")
+
+  -- An entry with no MAC, for the controller already driven: its next answer is remembered.
+  local here = fresh({ { profile = RGBW, ip = "192.0.2.41" } })[1]
+  W.run(3000)
+  here.mdnsWithoutTxt = true
+  EC.Find_Controllers()
+  W.run(3000)
+  pick("wled-c3d402 (192.0.2.41)")
+  -- The fake never answers a close frame, so the socket to the same address takes up to 30 s.
+  W.run(35000)
+  T.eq("still driven", Properties["Driver Status"], "Connected")
+  T.eq("its MAC remembered again", require("lib.persist"):get("WledControllerMac"), "02a1b2c3d402")
+  -- So another controller taking the address is not adopted.
+  here.si.info.mac = "02a1b2c3d4ee"
+  here:drop()
+  W.run(5000)
+  T.contains("another controller at the address is named", Properties["Driver Status"], "02:A1:B2:C3:D4:EE")
+
+  -- Typing the same address again while another controller answers there keeps the check.
+  set("IP Address", "192.0.2.41")
+  W.run(35000)
+  T.contains("still named after the address is typed again", Properties["Driver Status"], "02:A1:B2:C3:D4:EE")
+  T.eq("still not driven", Variables["Connected"], "0")
+end
+
+--------------------------------------------------------------------------------
 T.section("A controller that answers is never moved")
 --------------------------------------------------------------------------------
 do
