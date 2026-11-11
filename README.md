@@ -245,7 +245,8 @@ Displays the state of the connection:
 - `...; live data ... is in control`: another system is sending the controller
   live lighting data, which WLED shows in place of its own state, so Control4's
   commands show once it stops. The line names the sender's address and protocol
-  when WLED reports them.
+  when WLED reports them. It doesn't show while WLED's live override is on,
+  since WLED then shows its own state.
 - `...; WLED ... is older than 0.15, update WLED`: the controller's firmware is
   older than the driver supports. Update it in WLED's settings.
 - `Connecting`: the driver is reaching the controller.
@@ -457,7 +458,8 @@ Each variable is set before its event fires.
 WLED tells the driver at once about most changes, but not about a preset saved,
 renamed or deleted, a playlist stopped in the WLED app, or live data starting or
 ending. The driver also asks the controller every 15 seconds, so these show in
-the lists, variables, events and `Driver Status` within that time.
+the lists, variables, events and `Driver Status` within about 15 seconds, a
+little longer while the driver is sending other requests.
 
 ### Conditionals
 
