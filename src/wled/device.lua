@@ -87,6 +87,17 @@ function Device.isV16(ver)
   return major ~= nil and major >= 16
 end
 
+--- The oldest WLED line the driver supports.
+Device.OLDEST_SUPPORTED = "0.15"
+
+--- Whether a version string is older than 0.15.
+--- @param ver string|nil A firmware version, for example "0.14.0".
+--- @return boolean older False for a version that cannot be read.
+function Device.isUnsupported(ver)
+  local major, minor = tostring(ver or ""):match("^(%d+)%.(%d+)")
+  return tonumber(major) == 0 and tonumber(minor) < 15
+end
+
 local function str(v)
   if type(v) ~= "string" or v == "" then
     return nil

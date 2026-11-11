@@ -272,6 +272,26 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A controller on firmware older than 0.15 is driven, and the status says to update it")
+--------------------------------------------------------------------------------
+do
+  -- Some controllers ship with 0.14 installed; the 0.15 profile reports it as 0.14.0 here.
+  local fake = fresh("esp32-rgbw-015")
+  fake.si.info.ver, fake.si.info.vid = "0.14.0", 2310130
+  W.run(200)
+  T.eq("status", Properties["Driver Status"], "Connected; WLED 0.14.0 is older than 0.15, update WLED")
+  T.eq("Connected variable", Variables["Connected"], "1")
+  T.eq("proxy online", lastOnline(), true)
+  T.eq("Firmware Version", Properties["Firmware Version"], "0.14.0")
+
+  -- WLED updated in place: it restarts and comes back on 0.15.
+  fake.si.info.ver, fake.si.info.vid = "0.15.4", 2508020
+  fake:drop()
+  W.run(5000)
+  T.eq("status after the update", Properties["Driver Status"], "Connected")
+end
+
+--------------------------------------------------------------------------------
 T.section("A start tells the light its level and color once and its capabilities where driver.xml differs")
 --------------------------------------------------------------------------------
 -- A controller start puts the proxy back on driver.xml's capabilities: a color light differs in
