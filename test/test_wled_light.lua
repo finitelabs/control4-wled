@@ -738,6 +738,24 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("Crossfade turned off on a 0.15.4 controller is seen at the next slow poll, without a reconnect")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-015")
+  T.eq("Crossfade on: the light fades and offers its stops", lastCaps() and lastCaps().supports_brightness_stop, true)
+  mark()
+  -- As WLED's settings page does, through /json/cfg: no push, no reconnect.
+  fake.files["/json/cfg"].light.tr.mode = false
+  fake.crossfade = false
+  W.run(20000)
+  T.eq("the next slow poll sees it: no stops now", lastCaps() and lastCaps().supports_brightness_stop, false)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "30", RATE = "3000" })
+  W.run(50)
+  T.eq("and a timed level goes at once", sent()[1] and sent()[1].tt, 0)
+end
+
+--------------------------------------------------------------------------------
 T.section("a click sends the controller only the click's level, as one with Crossfade off needs")
 --------------------------------------------------------------------------------
 do

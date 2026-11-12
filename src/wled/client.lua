@@ -85,6 +85,7 @@ end
 --- @field onState fun(state: table|nil, info: table|nil) Told every state the controller reports.
 --- @field onOnline fun() Told when the controller can be reached again.
 --- @field onOffline fun(reason: string) Told when it cannot.
+--- @field onPoll fun() Told after each slow poll's answer, for what the driver reads on that cadence.
 --- @field http table The HTTP object requests go through.
 --- @field WebSocket table The WebSocket class sockets are made from.
 --- @field gen integer Bumped at every start and stop; callbacks from an older one do nothing.
@@ -121,6 +122,7 @@ Client.__index = Client
 --- @field onState fun(state: table|nil, info: table|nil)|nil Told every state the controller reports; does nothing when nil.
 --- @field onOnline fun()|nil Told when the controller can be reached again; does nothing when nil.
 --- @field onOffline fun(reason: string)|nil Told when it cannot; does nothing when nil.
+--- @field onPoll fun()|nil Told after each slow poll's answer; does nothing when nil.
 --- @field http table|nil An object with get(url, headers, options) and post(url, data, headers, options); lib.http by default.
 --- @field WebSocket table|nil The WebSocket class; the vendored module by default.
 
@@ -133,6 +135,7 @@ function Client:new(opts)
   instance.onState = opts.onState or function() end
   instance.onOnline = opts.onOnline or function() end
   instance.onOffline = opts.onOffline or function() end
+  instance.onPoll = opts.onPoll or function() end
   instance.http = opts.http or http
   instance.WebSocket = opts.WebSocket or WebSocket
   instance.gen = 0
@@ -425,6 +428,7 @@ function Client:socketPoll(gen, socketGen, ms)
       :next(function(si)
         if type(si) == "table" then
           report(self, gen, writes, job.pushes, si.state, si.info, "WLED.SocketPoll")
+          guarded(self.onPoll, "WLED.Poll")()
         end
       end)
       :next(again, again)
@@ -743,6 +747,7 @@ function Client:poll(gen, token)
           return
         end
         guarded(self.onState, "WLED.PollState")(si.state, si.info)
+        guarded(self.onPoll, "WLED.Poll")()
       end
     end, function(err)
       if self.gen ~= gen or self.socketUp or (type(err) == "table" and err.error == "stopped") then

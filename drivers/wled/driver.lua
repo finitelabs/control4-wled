@@ -1160,7 +1160,14 @@ local function onOffline(reason)
   startFollowing()
 end
 
-client = Client:new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
+--- The slow poll reads 0.15.x's Crossfade switch again, which WLED's settings page changes with no push.
+local function onPoll()
+  if device.ver and not Device.isV16(device.ver) then
+    readCrossfade()
+  end
+end
+
+client = Client:new({ onState = onState, onOnline = onOnline, onOffline = onOffline, onPoll = onPoll })
 
 --#ifdef DRIVERCENTRAL
 --- DriverCentral's license gate. Without a license the driver drops the connection and stops
