@@ -202,6 +202,48 @@ def test_a_freeze_then_a_fade_shows_no_jump_on_16(device, clock):
     assert d.color_jumps == 0
 
 
+def test_crossfade_off_on_015_makes_every_change_at_once(device, clock):
+    # 0.15.4's LED settings switch "Crossfade" off: tt is ignored, colors and brightness alike.
+    d = device("esp8266-ws2812b-015-nofade")
+    assert d.serialize_cfg()["light"]["tr"]["mode"] is False
+    d.deserialize_state({"on": True, "bri": 255, "seg": [{"id": 0, "col": [[255, 0, 0]]}], "tt": 0})
+    run(d, clock, 100)
+    d.deserialize_state({"bri": 50, "seg": [{"id": 0, "col": [[0, 0, 255]]}], "tt": 50})
+    run(d, clock, 10)
+    assert d.output()["bri"] == 50
+    assert color(d)[:3] == [0, 0, 255]
+
+
+def test_16_has_no_crossfade_switch(device):
+    assert "mode" not in device("dig2go-rgbw-16").serialize_cfg()["light"]["tr"]
+
+
+def test_a_fade_from_white_leds_to_rgb_lands_at_once_on_16(device, clock):
+    # Measured 2026-11-12, identical on main and the light library's branch: on 16.0.1 [0,0,0,255]
+    # to [255,0,0,0] at tt 30 lands within a frame; 0.15.4 fades it.
+    for name, v16 in (("dig2go-rgbw-16", True), ("dig2go-rgbw-015", False)):
+        d = device(name)
+        d.deserialize_state(
+            {"on": True, "bri": 255, "seg": [{"id": 0, "col": [[0, 0, 0, 255]]}], "tt": 0}
+        )
+        run(d, clock, 100)
+        d.deserialize_state({"seg": [{"id": 0, "col": [[255, 0, 0, 0]]}], "tt": 30})
+        run(d, clock, 50)
+        if v16:
+            assert color(d) == [255, 0, 0, 0]
+        else:
+            assert 0 < color(d)[0] < 255
+    # Red to the white LEDs still fades on 16.
+    d = device("dig2go-rgbw-16")
+    d.deserialize_state(
+        {"on": True, "bri": 255, "seg": [{"id": 0, "col": [[255, 0, 0, 0]]}], "tt": 0}
+    )
+    run(d, clock, 100)
+    d.deserialize_state({"seg": [{"id": 0, "col": [[0, 0, 0, 255]]}], "tt": 30})
+    run(d, clock, 1500)
+    assert 0 < color(d)[3] < 255
+
+
 # ---- white modes -----------------------------------------------------------------------------
 
 

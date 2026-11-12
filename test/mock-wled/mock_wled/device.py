@@ -766,7 +766,7 @@ class Device:
                 return
             if slot == 1 and c != 0:
                 return
-        self.start_color_transition(seg)
+        self.start_color_transition(seg, slot, c)
         seg.colors[slot] = c
         self.state_changed = True
 
@@ -785,7 +785,7 @@ class Device:
         fr = channels(seg.t_from[slot])
         return [int(fr[i] + (to[i] - fr[i]) * p) for i in range(4)]
 
-    def start_color_transition(self, seg):
+    def start_color_transition(self, seg, slot=0, c=None):
         """FX_fcn.cpp Segment::startTransition, called before a color changes. 16.x captures where a
         running transition has got to and restarts it; 0.15.4 leaves a running one its start values
         and timer, so the new color is reached on the old schedule (FX_fcn.cpp:271@v0.15.4).
@@ -794,6 +794,13 @@ class Device:
         if dur <= 0:
             seg.t_from = None
             return
+        if self.v16 and slot == 0 and c is not None:
+            # Measured on the dig2go, 2026-11-12: on 16.0.1 a fade from the white LEDs alone to an RGB
+            # color alone ([0,0,0,255] to [255,0,0,0], tt 30) lands within a frame.
+            fr, to = channels(seg.colors[0]), channels(c)
+            if fr[:3] == [0, 0, 0] and fr[3] > 0 and to[3] == 0 and max(to[:3]) > 0:
+                seg.t_from = None
+                return
         running = self.color_progress(seg) < 1.0
         if running and not self.v16:
             return

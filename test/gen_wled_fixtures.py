@@ -34,6 +34,7 @@ def answers(profile):
         "pal.json": list(device.pal),
         "fxdata.json": list(device.fxdata),
         "presets.json": device.presets,
+        "cfg.json": device.serialize_cfg(),
     }
 
 

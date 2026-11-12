@@ -527,6 +527,33 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("the fake makes 0.15.4's changes at once with Crossfade off, and 16.x a white-LED to RGB fade")
+--------------------------------------------------------------------------------
+do
+  W.reset()
+  local f = W.Fake.new("esp8266-ws2812b-015-nofade")
+  T.eq("its LED settings have Crossfade off", f.files["/json/cfg"].light.tr.mode, false)
+  f:apply({ on = true, bri = 255, seg = { { id = 0, col = { { 255, 0, 0 } } } }, tt = 0 })
+  f:apply({ bri = 50, seg = { { id = 0, col = { { 0, 0, 255 } } } }, tt = 50 })
+  W.run(10)
+  T.eq("a level and a color land at once", { f:output().bri, f:output().seg[0].col }, { 50, { 0, 0, 255 } })
+  W.reset()
+  f = W.Fake.new("dig2go-rgbw-16")
+  T.eq("16.x has no Crossfade switch", f.files["/json/cfg"].light.tr.mode, nil)
+  f:apply({ on = true, bri = 255, seg = { { id = 0, col = { { 0, 0, 0, 255 } } } }, tt = 0 })
+  f:apply({ seg = { { id = 0, col = { { 255, 0, 0, 0 } } } }, tt = 30 })
+  W.run(50)
+  T.eq("16.x: the white LEDs to red land within a frame", f:output().seg[0].col, { 255, 0, 0, 0 })
+  W.reset()
+  f = W.Fake.new("dig2go-rgbw-015")
+  f:apply({ on = true, bri = 255, seg = { { id = 0, col = { { 0, 0, 0, 255 } } } }, tt = 0 })
+  f:apply({ seg = { { id = 0, col = { { 255, 0, 0, 0 } } } }, tt = 30 })
+  W.run(1500)
+  local red = f:output().seg[0].col[1]
+  T.truthy("0.15.4 fades it", red > 0 and red < 255, red)
+end
+
+--------------------------------------------------------------------------------
 T.section("a level mid color fade holds the color first, so the strip shows no jump")
 --------------------------------------------------------------------------------
 do

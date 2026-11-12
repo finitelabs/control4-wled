@@ -1,0 +1,35 @@
+{
+ "rev": [
+  1,
+  0
+ ],
+ "vid": 2508020,
+ "id": {
+  "mdns": "wled-c3d401",
+  "name": "Mock Hallway Strip"
+ },
+ "hw": {
+  "led": {
+   "total": 60,
+   "cct": false,
+   "cr": false,
+   "cb": 0,
+   "rgbwm": 255,
+   "ins": [
+    {
+     "start": 0,
+     "len": 60,
+     "type": 22,
+     "order": 0,
+     "rgbwm": 0
+    }
+   ]
+  }
+ },
+ "light": {
+  "tr": {
+   "dur": 7,
+   "mode": true
+  }
+ }
+}

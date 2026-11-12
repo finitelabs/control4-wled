@@ -219,7 +219,11 @@ function Fake.new(profile, opts)
     ["/json/pal"] = M.fixture(profile, "pal.json"),
     ["/json/fxdata"] = M.fixture(profile, "fxdata.json"),
     ["/presets.json"] = M.fixture(profile, "presets.json"),
+    ["/json/cfg"] = M.fixture(profile, "cfg.json"),
   }
+  -- 0.15.4's LED settings switch "Crossfade": off, every change is at once. 16.x has no switch.
+  local light = self.files["/json/cfg"].light or {}
+  self.crossfade = (light.tr or {}).mode ~= false
   self.reachable = true
   self.socketOpen = true
   self.ignorePings = false
@@ -454,7 +458,7 @@ function Fake:moveOutput(cmd, before, running)
   local now = C4:GetTime()
   local state = self.si.state
   local tt = tonumber(cmd.tt) or 0
-  local ms = tt * 100
+  local ms = self.crossfade and tt * 100 or 0
   local fading = cmd.bri ~= nil or cmd.tt ~= nil
   local snap = self:isV16() and running and fading
   self.outSeg = self.outSeg or {}
@@ -477,7 +481,17 @@ function Fake:moveOutput(cmd, before, running)
         jumped = true
       end
     else
-      if apart(was.col, colTo) > 0 then
+      local whiteToRgb = (was.col[1] or 0) == 0
+        and (was.col[2] or 0) == 0
+        and (was.col[3] or 0) == 0
+        and (was.col[4] or 0) > 0
+        and (colTo[4] or 0) == 0
+        and math.max(colTo[1] or 0, colTo[2] or 0, colTo[3] or 0) > 0
+      if self:isV16() and whiteToRgb then
+        -- Measured on the dig2go, 2026-11-12: on 16.0.1 a fade from the white LEDs alone to an RGB
+        -- color alone ([0,0,0,255] to [255,0,0,0], tt 30) lands within a frame.
+        o.col = nil
+      elseif apart(was.col, colTo) > 0 then
         if colFading and not self:isV16() then
           -- 0.15.4: the segment keeps its transition's start and timer, now toward the new color.
           o.col = { from = o.col.from, to = colTo, t0 = o.col.t0, ms = o.col.ms }
