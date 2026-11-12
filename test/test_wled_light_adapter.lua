@@ -773,6 +773,58 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("the RGB and white LEDs lit together are reported as the color they add up to")
+--------------------------------------------------------------------------------
+do
+  -- The mix by hand: each part in XYZ by its luminance, summed, back to xy.
+  local function mix(r, g, b, w, k)
+    local rx, ry = Color.rgbToXY(r / 255, g / 255, b / 255)
+    local wx, wy = Color.kelvinToXY(k)
+    local parts = { { rx, ry, (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 }, { wx, wy, w / 255 } }
+    local X, Y, Z = 0, 0, 0
+    for _, p in ipairs(parts) do
+      X, Y, Z = X + p[1] / p[2] * p[3], Y + p[3], Z + (1 - p[1] - p[2]) / p[2] * p[3]
+    end
+    return X / (X + Y + Z), Y / (X + Y + Z)
+  end
+  local a = adapter(model(RGB + WHITE))
+  -- Measured live: a hold's release mid red to white held the strip at [167,0,0,88].
+  shows(a.device, { col = { 167, 0, 0, 88 } })
+  local c = a:report().color
+  local redX, redY = Color.rgbToXY(1, 0, 0)
+  local whiteX, whiteY = Color.kelvinToXY(6500)
+  local x, y = mix(167, 0, 0, 88, 6500)
+  T.eq("red plus the white LEDs is their sum, a full color", { c.x, c.y, c.mode }, { x, y, Color.FULL })
+  T.truthy("between red and the white, not red", c.x < redX and c.x > whiteX and c.y > redY, { c.x, c.y })
+  shows(a.device, { col = { 255, 0, 0, 0 } })
+  c = a:report().color
+  T.eq("red alone is red, as before", { c.x, c.y, c.mode }, { redX, redY, Color.FULL })
+  shows(a.device, { col = { 0, 0, 0, 255 } })
+  c = a:report().color
+  T.eq("the white LEDs alone are their white, as before", { c.mode, c.kelvin }, { Color.CCT, 6500 })
+
+  -- A stop mid red to white rests where the strip is, as that mix.
+  a = adapter(model(RGB + WHITE))
+  a:report()
+  a:send(cmd({ setsColor = true, color = RED }))
+  local red = sent[1].seg[1].col[1]
+  a:send(cmd({ setsColor = true, color = kelvin(4000), transitionMs = 10000, from = { level = 1, color = RED } }))
+  W.run(5000)
+  local rest = a:send(cmd({ kind = "stop", setsColor = true, color = xy(0.5, 0.4) }))
+  local held = sent[#sent].seg[1].col[1]
+  T.truthy("held part red, part white", held[1] > 0 and held[1] < red[1] and held[4] > 0, held)
+  x, y = mix(held[1], held[2], held[3], held[4], 4000)
+  T.eq("its rest is the mix", rest and { rest.color.x, rest.color.y, rest.color.mode }, { x, y, Color.FULL })
+
+  -- mixXY as lib.light.color will have it: no light gives nothing, and a part with no light is left out.
+  T.eq("mixXY of no light is nil, nil", { Adapter.mixXY({ { x = 0.3, y = 0.3, Y = 0 } }) }, {})
+  local ox, oy = Adapter.mixXY({ { x = 0.64, y = 0.33, Y = 0.5 }, { x = 0.15, y = 0.06, Y = 0 } })
+  T.eq("a part with Y 0 is left out", { ox, oy }, { 0.64, 0.33 })
+  ox, oy = Adapter.mixXY({ { x = 0.64, y = 0.33, Y = 0.5 }, { Y = 0 } })
+  T.eq("so is a dark part with no color at all", { ox, oy }, { 0.64, 0.33 })
+end
+
+--------------------------------------------------------------------------------
 T.section("forget ends the echo memo and the legs left, for a light lost or reset")
 --------------------------------------------------------------------------------
 do
