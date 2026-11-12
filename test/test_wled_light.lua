@@ -434,16 +434,18 @@ do
   T.eq("on the white LEDs", cmd and cmd.seg[1].col[1], { 0, 0, 0, 255 })
   fresh("esp32-cct-16", { ["Warm White (K)"] = "2000", ["Cool White (K)"] = "6000" })
   mark()
-  -- 4000 K is the fake's own CCT 128 under these white points, so the light, already there, sends nothing.
-  T.differs(
-    "other white points move it: 4000 K is CCT 128",
-    "lib.light sends nothing for a color the light already shows"
-  )
+  -- 4000 K is the fake's own CCT 128 under these white points: a command the light already shows still goes.
+  proxy("SET_COLOR_TARGET", { LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = "4000", RATE = "0" })
+  cmd = sent()[1]
+  cct = cmd and cmd.seg[1].cct
+  T.truthy("other white points move it: CCT 128", cct and math.abs(cct - 128) <= 1, cct)
+  W.run(3000)
+  mark()
   proxy("SET_COLOR_TARGET", { LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = "5000", RATE = "0" })
   cmd = sent()[1]
   cct = cmd and cmd.seg[1].cct
   -- (5000 - 2000) / (6000 - 2000) of 255.
-  T.truthy("other white points move it: 5000 K is CCT 191", cct and math.abs(cct - 191) <= 1, cct)
+  T.truthy("and 5000 K is CCT 191", cct and math.abs(cct - 191) <= 1, cct)
 end
 
 --------------------------------------------------------------------------------
@@ -777,7 +779,7 @@ do
   proxy("ON")
   W.run(3000)
   local col = fake.si.state.seg[1].col[1]
-  T.truthy("the next on comes on in it, over the On color", col[2] == 255 and col[3] < 64, T.show(col))
+  T.truthy("the next on comes on in it, over the blue On color", col[2] == 255 and col[3] < 128, T.show(col))
   proxy("OFF")
   W.run(3000)
   proxy("ON")

@@ -140,6 +140,10 @@ do
   a:send(cmd({ on = false, level = 0.8, setsColor = true, color = RED }))
   T.eq("a color while off stays off and only takes the color", { sent[6].on, sent[6].bri }, { nil, nil })
   T.truthy("and carries the color", sent[6].seg ~= nil)
+  -- Dim-To-Warm: an off fades to its Dim color as it goes dark.
+  a:send(cmd({ on = false, level = 0.8, setsLevel = true, setsColor = true, color = RED, transitionMs = 2000 }))
+  T.eq("an off with its Dim color goes off over its time", { sent[7].on, sent[7].bri, sent[7].tt }, { false, nil, 20 })
+  T.truthy("fading to that color as it goes", sent[7].seg ~= nil and sent[7].seg[1].col[1][1] == 255)
 end
 
 --------------------------------------------------------------------------------
@@ -210,12 +214,18 @@ do
   local x, y = C4:ColorCCTtoXY(4000)
   a:send(cmd({ setsColor = true, color = xy(x, y) }))
   T.eq("a full color on the locus", sent[1].seg[1].col[1], { 0, 0, 0, 255 })
-  a:send(cmd({ setsColor = true, color = xy(x + 0.02, y) }))
+  -- Offsets square to the locus near 4000 K, whose direction toward warm is about (0.897, 0.440) in xy.
+  local function off(d)
+    return xy(x - 0.440 * d, y + 0.897 * d)
+  end
+  a:send(cmd({ setsColor = true, color = off(0.03) }))
   T.eq("one off it shows in RGB", sent[2].seg[1].col[1][4], 0)
-  a:send(cmd({ setsColor = true, color = xy(x + 0.004, y) }))
+  a:send(cmd({ setsColor = true, color = off(0.004) }))
   T.eq("one near it is on it", sent[#sent].seg[1].col[1], { 0, 0, 0, 255 })
-  a:send(cmd({ setsColor = true, color = xy(x + 0.008, y) }))
+  a:send(cmd({ setsColor = true, color = off(0.010) }))
   T.eq("so is one inside the library's white band, past the old 0.005", sent[#sent].seg[1].col[1], { 0, 0, 0, 255 })
+  a:send(cmd({ setsColor = true, color = off(0.016) }))
+  T.eq("one just past the band shows in RGB", sent[#sent].seg[1].col[1][4], 0)
   x, y = C4:ColorCCTtoXY(9000)
   a:send(cmd({ setsColor = true, color = xy(x, y) }))
   T.eq("one past Cool White shows in RGB", sent[#sent].seg[1].col[1][4], 0)
@@ -318,6 +328,32 @@ do
   W.run(201000)
   T.eq("an off keeps the level it carries, not where the fade began", sent[4].bri, 204)
 
+  a = adapter(model(RGB + WHITE))
+  a:send(cmd({ setsColor = true, color = GREEN }))
+  a:send(cmd({ setsColor = true, color = RED }))
+  local green, red = sent[1].seg[1].col[1], sent[2].seg[1].col[1]
+  a = adapter(model(RGB + WHITE, { bri = 204 }))
+  a:send(cmd({ setsColor = true, color = GREEN }))
+  a:send(cmd({
+    on = false,
+    level = 0.8,
+    setsLevel = true,
+    setsColor = true,
+    color = RED,
+    transitionMs = 200000,
+    from = { level = 0.8, color = GREEN },
+  }))
+  W.run(201000)
+  local legs = { sent[2], sent[3], sent[4], sent[5] }
+  local first = legs[1].seg and legs[1].seg[1].col[1]
+  T.truthy(
+    "a long off with its Dim color steps the color with the level",
+    first and first[1] > green[1] and first[1] < red[1] and legs[2].bri < legs[1].bri,
+    T.show(legs)
+  )
+  T.eq("its legs leave the power", { legs[1].on, legs[2].on, legs[3].on }, { nil, nil, nil })
+  T.eq("and the last turns it off in the color", { legs[4].on, legs[4].seg[1].col[1] }, { false, red })
+
   a = adapter(model(RGB + WHITE, { on = false, bri = 128 }))
   a:send(cmd({ fromOff = true, level = 0.8, setsLevel = true, transitionMs = 70000, from = { level = 0.5 } }))
   T.eq("from off, the legs start from nothing", sent[1].bri, 102)
@@ -340,7 +376,7 @@ do
   local r = a:report()
   T.eq("an unasked push, on at the master's level", { r.kind, r.on, r.level }, { "push", true, 102 / 255 })
   T.eq("a full color", r.color and r.color.mode, "xy")
-  T.truthy("red", r.color and math.abs(r.color.x - 0.64) < 0.01, T.show(r.color))
+  T.truthy("red, as Control4 converts it", r.color and math.abs(r.color.x - 0.708) < 0.01, T.show(r.color))
   a.device.segments[1].on, a.device.segments[2].on = false, false
   T.eq("every segment off reads off", a:report().on, false)
   a.device.on = false
