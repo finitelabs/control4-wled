@@ -545,4 +545,21 @@ do
   T.eq("lost after a load, which told it offline: nothing more", onlines(), {})
 end
 
+--------------------------------------------------------------------------------
+T.section("a segment of a 0.15.4 controller with Crossfade off takes no fade time")
+--------------------------------------------------------------------------------
+do
+  fresh("esp8266-ws2812b-015-nofade", 0)
+  -- The WLED driver read the controller's LED settings and tells the segment with its state.
+  model.crossfade = false
+  mark()
+  report()
+  local caps = toldOf(PROXY, "DYNAMIC_CAPABILITIES_CHANGED")
+  T.eq("its light offers no stop", (caps[#caps] or {}).supports_brightness_stop, false)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "40", RATE = "2000" })
+  local cmds = commands()
+  T.eq("a timed level goes at once", cmds[1] and cmds[1].tt, 0)
+end
+
 T.finish()

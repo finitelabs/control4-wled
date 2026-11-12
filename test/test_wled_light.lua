@@ -706,6 +706,38 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("a 0.15.4 controller with Crossfade off takes no fade time: changes go and are told at once")
+--------------------------------------------------------------------------------
+do
+  fresh("esp8266-ws2812b-015-nofade")
+  T.eq("the light offers no stop, as it fades nothing", lastCaps() and lastCaps().supports_brightness_stop, false)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "80", RATE = "2000" })
+  W.run(50)
+  local cmds = sent()
+  T.eq("a timed level goes at once", cmds[1] and { cmds[1].bri, cmds[1].tt }, { 204, 0 })
+  T.eq("and is told at once", toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT"), { 80 })
+  T.eq("with no ramp", #toldOf("LIGHT_BRIGHTNESS_CHANGING"), 0)
+  W.run(3000)
+  mark()
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = "0.17", LIGHT_COLOR_TARGET_Y = "0.70", LIGHT_COLOR_TARGET_MODE = "0", RATE = "2000" }
+  )
+  W.run(100)
+  proxy("SET_COLOR_STOP", {})
+  proxy("SET_BRIGHTNESS_STOP", {})
+  W.run(3000)
+  cmds = sent()
+  T.eq("a timed color goes at once, and a stop sends nothing that moves the light", #cmds, 1)
+  T.eq("the color at once", cmds[1] and cmds[1].tt, 0)
+
+  -- A 16.x controller has no switch and still fades.
+  fresh("dig2go-rgbw-16")
+  T.eq("16.x offers its stops", lastCaps() and lastCaps().supports_brightness_stop, true)
+end
+
+--------------------------------------------------------------------------------
 T.section("a click sends the controller only the click's level, as one with Crossfade off needs")
 --------------------------------------------------------------------------------
 do

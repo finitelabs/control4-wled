@@ -141,7 +141,7 @@ function Segment.payload(device, id)
   end
   return {
     segment = out,
-    master = { on = device.on == true, bri = device.bri },
+    master = { on = device.on == true, bri = device.bri, crossfade = device.crossfade },
   }
 end
 
@@ -161,6 +161,7 @@ function Segment.view(payload)
     lc = tonumber(seg.lc) or 0,
     segments = { { id = seg.id, start = seg.start, stop = seg.stop, on = on, bri = seg.bri, lc = seg.lc } },
     state = { seg = { seg }, mainseg = seg.id },
+    crossfade = payload.master.crossfade,
   }
 end
 

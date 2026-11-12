@@ -54,6 +54,8 @@ local OLDEST_SUPPORTED = "0.15"
 --- @field liveMode string|nil How it arrives, as WLED names it, for example "E1.31".
 --- @field liveFrom string|nil The address it comes from.
 --- @field lor integer|nil Live override: above 0, WLED shows its own state over the live data.
+--- @field crossfade boolean|nil 0.15.x's LED settings switch "Crossfade" (light.tr.mode in /json/cfg); false makes
+---   every change at once. 16.x has no switch: nil.
 --- @field on boolean|nil Master power.
 --- @field bri integer|nil Master brightness.
 --- @field state table|nil The last state the controller sent, as sent.

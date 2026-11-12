@@ -153,7 +153,9 @@ function Adapter:lightDevice()
     cct = self:has(Device.CAP_CCT) and { minK = round(warm), maxK = round(cool) } or nil,
     colorWhileOff = "send",
     levelSteps = 255,
-    fade = { kind = "device", curve = "linear", preOn = true, retimes = true, maxMs = RATE_MAX },
+    -- 0.15.x with Crossfade off makes every change at once, whatever tt says.
+    fade = self.device.crossfade == false and { kind = "own", own = { onMs = 0, offMs = 0, changeMs = 0 } }
+      or { kind = "device", curve = "linear", preOn = true, retimes = true, maxMs = RATE_MAX },
     feedback = { shows = "target", waitMs = WAIT_MS, refresh = true },
   }
 end

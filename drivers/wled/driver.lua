@@ -1119,11 +1119,35 @@ local function onState(state, info)
   end
 end
 
+--- Read the controller's LED settings: on 0.15.x, Crossfade off makes every change at once, so the
+--- light takes no fade time. A change is declared, and told the segment lights.
+local function readCrossfade()
+  --#ifdef DRIVERCENTRAL
+  if not drivercentral:licensed() then
+    return
+  end
+  --#endif
+  client:get("/json/cfg"):next(function(cfg)
+    local crossfade = Select(cfg, "light", "tr", "mode") ~= false
+    if device.crossfade == crossfade then
+      return
+    end
+    device.crossfade = crossfade
+    if device.lc ~= nil then
+      light:declare(wledLight:lightDevice())
+      pushSegments()
+    end
+  end, function(err)
+    log:debug("WLED LED settings not read: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
+  end)
+end
+
 local function onOnline()
   -- Connected waits for the first state, which carries the MAC to check.
   setStatus("Connecting")
-  -- The controller may have changed its lists while it could not be reached.
+  -- The controller may have changed its lists, or its LED settings, while it could not be reached.
   wantAllLists()
+  readCrossfade()
 end
 
 --- @param reason string
