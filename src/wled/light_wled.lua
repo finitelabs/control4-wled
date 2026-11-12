@@ -940,6 +940,19 @@ function Adapter:report()
     -- Each aspect the leg carries is the command's when it shows the leg or the end; one that shows
     -- neither was moved by another client. An aspect the leg leaves is reported as shown.
     local leg, moved = legs.leg, false
+    if
+      legs.hold
+      and on == leg.on
+      and (not leg.bri or near(bri, leg.bri))
+      and (not leg.col or sameColor(col, cct, leg))
+    then
+      -- The freeze is the command's own frame, its first: every aspect it shows is the command's,
+      -- its power too, as a fade to off holds the light lit for the moment before the off goes.
+      report.on = last.cmd.on
+      report.level = report.level and last.cmd.level
+      report.color = report.color and last.cmd.color
+      return report
+    end
     if leg.bri then
       if on == leg.on and near(bri, leg.bri) or levelEnd then
         report.level = report.level and last.cmd.level

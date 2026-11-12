@@ -756,6 +756,27 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("a color mid a fade to off keeps the light off: its freeze is the command's own")
+--------------------------------------------------------------------------------
+do
+  fresh("dig2go-rgbw-16")
+  proxy("SET_LEVEL", { LEVEL = "20" })
+  W.run(3000)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "0", RATE = "3000" })
+  W.run(2000)
+  proxy("SET_COLOR_TARGET", { LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = "3000", RATE = "1000" })
+  W.run(5000)
+  local lit = false
+  for _, level in ipairs(toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT")) do
+    lit = lit or tonumber(level) > 0
+  end
+  T.eq("the proxy is never told the light on", lit, false)
+  T.eq("the strip ends off", fake.si.state.on, false)
+  T.truthy("in the new color", fake.si.state.seg[1].col[1][4] > 0, fake.si.state.seg[1].col[1])
+end
+
+--------------------------------------------------------------------------------
 T.section("a click sends the controller only the click's level, as one with Crossfade off needs")
 --------------------------------------------------------------------------------
 do
