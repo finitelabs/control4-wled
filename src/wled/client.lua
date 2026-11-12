@@ -109,6 +109,11 @@ end
 --- @field replaying boolean|nil Whether a busy resend waits to go out.
 --- @field owed table[]|nil The commands a waiting busy resend sends again, oldest first.
 --- @field replayToken integer|nil Bumped when a busy resend is taken or called off; an older one does nothing.
+--- @field gapUntil number|nil Until when no command may follow the last one that asked for a gap after it.
+--- @field held table[]|nil Commands waiting for a gap, a busy resend or a replay to finish, oldest first.
+--- @field flushing boolean|nil Whether a send of the held commands is due.
+--- @field seq table|nil A replay going out frame by frame: {frames, i}.
+--- @field pumpWaiting boolean|nil Whether the HTTP queue waits for a gap.
 local Client = {}
 Client.__index = Client
 
@@ -267,6 +272,11 @@ function Client:stop()
   end
   self.timers = {}
   self.recent, self.replaying, self.owed = {}, false, nil
+  local held = self.held or {}
+  self.held, self.flushing, self.seq, self.gapUntil, self.pumpWaiting = {}, false, nil, nil, false
+  for _, h in ipairs(held) do
+    h.d:reject({ error = "stopped" })
+  end
   self.socketUp = false
   self.pollToken = (self.pollToken or 0) + 1
   self:closeSocket()
@@ -485,7 +495,11 @@ end
 --- POST a command the socket did not take; if that fails too, ask for the state.
 --- @param frame table A frame from sendFrame.
 function Client:postFrame(frame)
-  self:enqueue("POST", "/json/state", frame.cmd):next(nil, function(err)
+  local answered, job = self:enqueue("POST", "/json/state", frame.cmd)
+  if job then
+    job.gapAfterMs = frame.gapAfterMs
+  end
+  answered:next(nil, function(err)
     if type(err) == "table" and err.error == "stopped" then
       return
     end
@@ -545,13 +559,35 @@ end
 --- @param code any The error number WLED sent.
 function Client:onSocketError(code)
   local frames = self:recentFrames()
+  local seq = self.seq
+  if seq and (code == 9 or code == 3) then
+    -- A replay going out stops here: its frames not yet sent go with the rest, still in order.
+    self.seq = nil
+    for i = seq.i, #seq.frames do
+      frames[#frames + 1] = seq.frames[i]
+    end
+  end
   if #frames == 0 and not self.replaying then
+    self:flushHeld()
     return
   end
   if code == 9 then
-    local resend = self.replaying and self:takeOwed() or frames
+    local resend = frames
+    if self.replaying then
+      resend = self:takeOwed()
+      local have = {}
+      for _, frame in ipairs(resend) do
+        have[frame] = true
+      end
+      for _, frame in ipairs(frames) do
+        if not have[frame] then
+          resend[#resend + 1] = frame
+        end
+      end
+    end
     self.recent = {}
     self:postWindow(resend)
+    self:flushHeld()
     return
   end
   if code ~= 3 or self.replaying then
@@ -560,6 +596,7 @@ function Client:onSocketError(code)
   if anyPosted(frames) then
     self.recent = {}
     self:postWindow(frames)
+    self:flushHeld()
     return
   end
   local tries = 0
@@ -570,6 +607,7 @@ function Client:onSocketError(code)
     log:warn("WLED controller stayed busy; %d command(s) dropped", #frames)
     self.recent = {}
     self:refresh()
+    self:flushHeld()
     return
   end
   self.replaying, self.owed = true, frames
@@ -581,17 +619,51 @@ function Client:onSocketError(code)
     end
     -- One refused while this waited is sent again here too, and the latest still comes last.
     local replay = self:takeOwed()
+    self.recent = {}
+    self:replayFrames(replay, 1)
+  end)
+end
+
+--- Send a replay frame by frame, keeping the gap a frame asked for before the next; then the commands
+--- held meanwhile. Over HTTP when the socket is down.
+--- @param frames table[]
+--- @param i integer The next frame to send.
+function Client:replayFrames(frames, i)
+  self.seq = { frames = frames, i = i }
+  while i <= #frames do
     if not (self.socketUp and self.ws) then
-      self:postWindow(replay)
+      self.seq = nil
+      local rest = {}
+      for k = i, #frames do
+        rest[#rest + 1] = frames[k]
+      end
+      self:postWindow(rest)
+      self:flushHeld()
       return
     end
-    self.recent = replay
-    for _, frame in ipairs(replay) do
-      frame.tries = frame.tries + 1
-      frame.at = now()
-      self.ws:Send(frame.body)
+    local wait = (self.gapUntil or 0) - now()
+    if wait > 0 then
+      local seq = self.seq
+      self:after(self.gen, wait, function()
+        if self.seq == seq then
+          self:replayFrames(frames, i)
+        end
+      end)
+      return
     end
-  end)
+    local frame = frames[i]
+    frame.tries = frame.tries + 1
+    frame.at = now()
+    self.recent[#self.recent + 1] = frame
+    self.ws:Send(frame.body)
+    if frame.gapAfterMs then
+      self.gapUntil = now() + frame.gapAfterMs
+    end
+    i = i + 1
+    self.seq.i = i
+  end
+  self.seq = nil
+  self:flushHeld()
 end
 
 --- Send a command over the socket, kept for a busy resend.
@@ -703,6 +775,17 @@ function Client:pump()
   if self.inFlight or #self.queue == 0 then
     return
   end
+  local wait = (self.gapUntil or 0) - now()
+  if self.queue[1].method == "POST" and wait > 0 then
+    if not self.pumpWaiting then
+      self.pumpWaiting = true
+      self:after(self.gen, wait, function()
+        self.pumpWaiting = false
+        self:pump()
+      end)
+    end
+    return
+  end
   local job = table.remove(self.queue, 1)
   self.inFlight = job
   self:request(job)
@@ -736,6 +819,9 @@ function Client:request(job)
       return
     end
     self.inFlight = nil
+    if job.gapAfterMs then
+      self.gapUntil = now() + job.gapAfterMs
+    end
     job.d:resolve(value)
     self:pump()
   end, function(err)
@@ -790,11 +876,78 @@ end
 --- v = true gets the state back on either path.
 --- @param cmd table The state command, e.g. { on = true, bri = 128 }.
 --- @return Deferred sent Resolves once sent or answered.
-function Client:send(cmd)
+function Client:send(cmd, opts)
+  local held = self.held or {}
+  self.held = held
+  local limit = FRAME_LIMIT[self.arch or ""] or FRAME_LIMIT_DEFAULT
+  local socket = self.socketUp and self.ws and #JSON:encode(cmd) <= limit and not self:postPending()
+  -- One that must go over HTTP takes what a busy resend owes over HTTP ahead of it (sendNow), and the
+  -- HTTP queue keeps a frame's gap.
+  if #held > 0 or self.seq or (socket and ((self.replaying and self:owesGap()) or (self.gapUntil or 0) > now())) then
+    -- Behind a busy resend, a replay or a gap a frame asked for: it goes after them, in order.
+    local d = deferred.new()
+    held[#held + 1] = { cmd = cmd, opts = opts, d = d }
+    self:flushHeld()
+    return d
+  end
+  return self:sendNow(cmd, opts)
+end
+
+--- Whether a waiting busy resend owes a frame that asked for a gap after it; the frames sent meanwhile
+--- wait for it then, so the replay keeps the gap. Without one, they go at once and the replay sends
+--- them again after it, as the newest must land last.
+--- @return boolean
+function Client:owesGap()
+  for _, list in ipairs({ self.owed or {}, self.recent }) do
+    for _, frame in ipairs(list) do
+      if frame.gapAfterMs then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+--- Send the held commands that may go now, oldest first; the rest wait for the gap or the resend.
+function Client:flushHeld()
+  local held = self.held or {}
+  while #held > 0 and not (self.replaying and self:owesGap()) and not self.seq do
+    local wait = (self.gapUntil or 0) - now()
+    if wait > 0 then
+      if not self.flushing then
+        self.flushing = true
+        self:after(self.gen, wait, function()
+          self.flushing = false
+          self:flushHeld()
+        end)
+      end
+      return
+    end
+    local h = table.remove(held, 1)
+    self:sendNow(h.cmd, h.opts):next(function(value)
+      h.d:resolve(value)
+    end, function(err)
+      h.d:reject(err)
+    end)
+  end
+end
+
+--- @param cmd table
+--- @param opts {gapAfterMs: number|nil}|nil
+--- @return Deferred
+function Client:sendNow(cmd, opts)
   self.writes = self.writes + 1
   local body = JSON:encode(cmd)
   local limit = FRAME_LIMIT[self.arch or ""] or FRAME_LIMIT_DEFAULT
-  if #body <= limit and not self:postPending() and self:sendFrame({ body = body, cmd = cmd, tries = 0 }) then
+  local gap = opts and tonumber(opts.gapAfterMs) or nil
+  if
+    #body <= limit
+    and not self:postPending()
+    and self:sendFrame({ body = body, cmd = cmd, tries = 0, gapAfterMs = gap })
+  then
+    if gap then
+      self.gapUntil = now() + gap
+    end
     return deferred.new():resolve(true)
   end
   local gen, writes = self.gen, self.writes
@@ -803,10 +956,13 @@ function Client:send(cmd)
     self:postWindow(self:takeOwed())
   end
   local answered, job = self:enqueue("POST", "/json/state", cmd)
+  if job then
+    job.gapAfterMs = gap
+  end
   -- Kept in the window, so a busy answer arriving after it for an earlier frame resends that
   -- frame behind it.
   self:recentFrames()
-  self.recent[#self.recent + 1] = { cmd = cmd, posted = true, at = now(), tries = 0 }
+  self.recent[#self.recent + 1] = { cmd = cmd, posted = true, at = now(), tries = 0, gapAfterMs = gap }
   if cmd.v ~= true then
     return answered
   end

@@ -126,7 +126,8 @@ local DEFAULT_WARM, DEFAULT_COOL = 2700, 6500
 --- Send a state command; its result arrives in the controller's next report. Nothing goes to a
 --- controller that is not the one this driver was set up with.
 --- @param json table
-local function send(json)
+--- @param opts {gapAfterMs: number|nil}|nil How long nothing may follow it on the wire.
+local function send(json, opts)
   --#ifdef DRIVERCENTRAL
   if not drivercentral:licensed() then
     log:warn("WLED command not sent: no active license")
@@ -137,7 +138,7 @@ local function send(json)
     log:warn("WLED command not sent: a different controller answers at this address")
     return
   end
-  client:send(json):next(nil, function(err)
+  client:send(json, opts):next(nil, function(err)
     log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
     -- The light shows what was asked; the controller's state puts it right.
     if Select(err, "error") ~= "stopped" then
@@ -152,6 +153,11 @@ local wledLight = LightAdapter:new({
   device = device,
   send = send,
   refresh = function()
+    --#ifdef DRIVERCENTRAL
+    if not drivercentral:licensed() then
+      return
+    end
+    --#endif
     client:refresh()
   end,
   warm = function()
@@ -786,7 +792,7 @@ local function registerSegmentLink(key, binding)
       -- The next report tells this light its segment even unchanged: a command the controller did
       -- not take is put right.
       gSegmentSent[idBinding] = nil
-      send(Segment.forward(intent, device))
+      send(Segment.forward(intent, device), { gapAfterMs = tonumber(Select(tParams, "gapAfterMs")) })
     end
   end
   OBC[binding.bindingId] = function(idBinding, strClass, isBound)

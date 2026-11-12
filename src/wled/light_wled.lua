@@ -314,30 +314,49 @@ function Adapter:took(cct, k)
   end
 end
 
---- Where a command leaves the controller, as it reports it. A command carries the whole state, and
---- the controller still shows a level or color sent earlier, so a carried value is matched too.
+--- Where a command leaves the controller, as it reports it. The aspects the command sets are its own
+--- wire form; one it only carries is the frame's carried target, else the bytes the controller last
+--- reported, since a color another client set need not be one this adapter would render.
 --- @param cmd LightCommand
+--- @param json table|nil The frame the command goes out as.
 --- @return WledWire wire
-function Adapter:wireOf(cmd)
+function Adapter:wireOf(cmd, json)
+  local rep = self.reported or {}
   local wire = { on = cmd.on == true }
-  if self:dims() and (tonumber(cmd.level) or 0) > 0 then
-    wire.bri = math.max(1, byte(cmd.level))
+  if self:dims() then
+    if cmd.setsLevel then
+      if (tonumber(cmd.level) or 0) > 0 then
+        wire.bri = math.max(1, byte(cmd.level))
+      end
+    elseif json and json.bri then
+      wire.bri = json.bri
+    else
+      wire.bri = rep.bri
+    end
   end
-  if cmd.color and (self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT)) then
-    wire.col, wire.cct = self:render(cmd.color)
+  if self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT) then
+    local seg = json and json.seg and (json.seg[1] or json.seg)
+    if cmd.setsColor and cmd.color then
+      wire.col, wire.cct = self:render(cmd.color)
+    elseif seg and seg.col then
+      wire.col, wire.cct = seg.col[1], seg.cct
+    else
+      wire.col, wire.cct = rep.col, rep.cct
+    end
   end
   return wire
 end
 
 --- Put one command on the wire. It never raises: one that fails is logged and dropped.
 --- @param cmd LightCommand
---- @return LightRest|nil rest Always nil: the controller rests where it is told.
+--- @return LightRest|nil rest Where a stop held an aspect, at its own wire fade's position.
 function Adapter:send(cmd)
-  local ok, err = pcall(self.put, self, cmd)
+  local ok, result = pcall(self.put, self, cmd)
   if not ok then
-    log:error("WLED light command not sent: %s", err)
+    log:error("WLED light command not sent: %s", result)
+    return nil
   end
-  return nil
+  return result
 end
 
 --- @class WledFade
@@ -346,6 +365,20 @@ end
 --- @field bri number[]|nil Master brightness (0-255) from and to; to is 0 for an off. Nil when it moves none.
 --- @field col integer[][]|nil The color (0-255 per channel) from and to; nil when it moves none.
 --- @field cct integer|nil The CCT that goes with the color.
+--- @field toLevel number|nil The level of the command the fade goes to, as the library holds it.
+--- @field toColor LightColor|nil Likewise the color.
+
+--- Where the controller is held from a freeze until the frame that follows it goes.
+--- @class WledFrozen
+--- @field at number When the freeze went out.
+--- @field bri number|nil The master brightness held (0-255); nil when the level was not moving.
+--- @field col integer[]|nil The color held; nil when the color was not moving.
+--- @field cct integer|nil
+--- @field toBri number|nil Where the level goes next (0 for an off); nil when it is not moving.
+--- @field toCol integer[]|nil Where the color goes next.
+--- @field toCct integer|nil
+--- @field toLevel number|nil The library's value for where the level goes: the command's own, not a stop's estimate.
+--- @field toColor LightColor|nil Likewise the color.
 
 --- Where the adapter's own wire fade has the controller now, with the fade's ends, while it runs.
 --- @param now number From C4:GetTime().
@@ -356,7 +389,7 @@ function Adapter:runningAt(now)
     return nil
   end
   local p = InRange((now - f.t0) / f.ms, 0, 1)
-  local at = { cct = f.cct }
+  local at = { cct = f.cct, cctTo = f.cct, toLevel = f.toLevel, toColor = f.toColor }
   if f.bri then
     at.bri, at.briTo = f.bri[1] + (f.bri[2] - f.bri[1]) * p, f.bri[2]
   end
@@ -367,6 +400,22 @@ function Adapter:runningAt(now)
     end
   end
   return at
+end
+
+--- The frozen state as runningAt shapes it: where the controller is held, and where it goes next.
+--- @param frozen WledFrozen
+--- @return table at
+local function heldAt(frozen)
+  return {
+    bri = frozen.bri,
+    briTo = frozen.toBri,
+    col = frozen.col,
+    colTo = frozen.toCol,
+    cct = frozen.cct,
+    cctTo = frozen.toCct or frozen.cct,
+    toLevel = frozen.toLevel,
+    toColor = frozen.toColor,
+  }
 end
 
 --- Put a master brightness on a frame: on at it, or off below 1. WLED keeps its level while off.
@@ -380,33 +429,36 @@ local function putBri(json, bri)
   end
 end
 
---- The frame that holds the controller where the adapter's own wire fade has it, as a leg the reports
---- of which are the command's; the command follows FREEZE_GAP_MS later.
---- @param at table From runningAt.
---- @param frame table The frame to send, changed in place: the aspects the fade moves where it is.
-function Adapter:freeze(at, frame)
-  if at.bri and frame.bri == nil and frame.on == nil then
-    putBri(frame, at.bri)
+--- The color a frame sends, and its CCT.
+--- @param json table
+--- @return integer[]|nil col, integer|nil cct
+local function frameCol(json)
+  local seg = json.seg and (json.seg[1] or json.seg)
+  if seg and seg.col then
+    return seg.col[1], seg.cct
   end
-  if at.col and frame.seg == nil then
-    frame.seg = self:colorSeg(at.col, at.cct)
-  end
+  return nil, nil
+end
+
+--- Send a 0 ms frame that holds the controller where it is, as a leg the reports of which are the
+--- command's. The client keeps FREEZE_GAP_MS after it before the next frame, a replay included.
+--- @param frame table Changed in place: tt 0.
+function Adapter:hold(frame)
   frame.tt = 0
   local isOn = self.device.on == true and anySegmentOn(self.device)
-  local legCol = frame.seg and (frame.seg[1] or frame.seg).col[1] or nil
   self.legs = {
     gen = self.legGen,
     hold = true,
-    leg = { on = frame.on == nil and isOn or frame.on == true, bri = frame.bri, col = legCol },
+    leg = { on = frame.on == nil and isOn or frame.on == true, bri = frame.bri, col = (frameCol(frame)) },
   }
-  self.sendJson(frame)
+  self.sendJson(frame, { gapAfterMs = FREEZE_GAP_MS })
 end
 
---- After a freeze, the aspects the command leaves at the ends the adapter's own fade was going to,
---- so every channel restarts over the command's time.
+--- The aspects a frame leaves, at the targets the held state was going to, so every channel restarts
+--- over the frame's time.
 --- @param cmd LightCommand
---- @param json table The command's frame, changed in place.
---- @param at table From runningAt.
+--- @param json table The frame, changed in place.
+--- @param at table From runningAt or heldAt.
 function Adapter:carry(cmd, json, at)
   if at.briTo and json.on == nil then
     putBri(json, at.briTo)
@@ -415,7 +467,7 @@ function Adapter:carry(cmd, json, at)
     end
   end
   if at.colTo and json.seg == nil then
-    json.seg = self:colorSeg(at.colTo, at.cct)
+    json.seg = self:colorSeg(at.colTo, at.cctTo)
   end
 end
 
@@ -455,24 +507,38 @@ function Adapter:keepShown(last)
   end
 end
 
+--- Remember a command and the frame it goes as, for the reports that show it.
 --- @param cmd LightCommand
+--- @param json table
+function Adapter:remember(cmd, json)
+  self.last = { cmd = cmd, wire = self:wireOf(cmd, json) }
+  self:keepShown(self.last)
+end
+
+--- @param cmd LightCommand
+--- @return LightRest|nil
 function Adapter:put(cmd)
   self.legGen = self.legGen + 1
   self.legs = nil
-  local at = self:runningAt(C4:GetTime())
+  local now = C4:GetTime()
+  local frozen = self.frozen
+  local at = frozen and heldAt(frozen) or self:runningAt(now)
   self.fade = nil
   local color = cmd.setsColor and cmd.color or nil
   if cmd.kind == "preOn" then
     -- The controller fades up from off by itself: only the color goes first.
+    self.frozen = nil
     if color then
       local col, cct, k = self:render(color)
       self:took(cct, k)
       self.sendJson({ seg = self:colorSeg(col, cct), tt = 0 })
     end
-    return
+    return nil
   end
-  self.last = { cmd = cmd, wire = self:wireOf(cmd) }
-  self:keepShown(self.last)
+  local ms = math.max(0, tonumber(cmd.transitionMs) or 0)
+  if cmd.kind == "stop" then
+    return self:stop(cmd, ms, at, now)
+  end
   -- A command that sets no level leaves the power as it is.
   local json = {}
   if cmd.setsLevel then
@@ -481,17 +547,10 @@ function Adapter:put(cmd)
       json.bri = math.max(1, byte(cmd.level))
     end
   end
-  local col
   if color then
-    local cct, k
-    col, cct, k = self:render(color)
+    local col, cct, k = self:render(color)
     self:took(cct, k)
     json.seg = self:colorSeg(col, cct)
-  end
-  local ms = math.max(0, tonumber(cmd.transitionMs) or 0)
-  if cmd.kind == "stop" then
-    self:stop(cmd, json, ms, at)
-    return
   end
   -- On from off lights every segment, unless a preset just sent sets them; while on, each
   -- segment keeps what its own light set.
@@ -501,63 +560,171 @@ function Adapter:put(cmd)
   if lightAll then
     json.seg = withAllOn(json.seg, self.device)
   end
-  if ms > 0 and at then
-    -- WLED puts every fade at its target when a call lands while one runs: hold it where it is first.
-    self:freeze(at, {})
+  if frozen or (ms > 0 and at) then
+    -- WLED puts every fade at its target when a call lands while one runs: hold the controller where
+    -- it is first, once, and let every channel restart from there over the command's time.
+    if not frozen then
+      local held = {}
+      if at.bri then
+        putBri(held, at.bri)
+      end
+      if at.col then
+        held.seg = self:colorSeg(at.col, at.cct)
+      end
+      self:hold(held)
+      frozen = {
+        at = now,
+        bri = at.bri,
+        col = at.col,
+        cct = at.cct,
+        toBri = at.briTo,
+        toCol = at.colTo,
+        toCct = at.cctTo,
+        toLevel = at.toLevel,
+        toColor = at.toColor,
+      }
+    end
     self:carry(cmd, json, at)
-    self:later(function()
-      self:go(cmd, json, ms, col, lightAll, at)
+    self:remember(cmd, json)
+    if ms <= 0 then
+      self.frozen = nil
+      self:go(cmd, json, 0, lightAll, nil)
+      return nil
+    end
+    -- The next command inside the wait carries where this one goes.
+    frozen.toBri = json.on == false and 0 or json.bri or frozen.toBri
+    frozen.toCol, frozen.toCct = frameCol(json)
+    frozen.toCol, frozen.toCct = frozen.toCol or at.colTo, frozen.toCct or at.cctTo
+    frozen.toLevel = cmd.setsLevel and cmd.level or frozen.toLevel
+    frozen.toColor = cmd.setsColor and cmd.color or frozen.toColor
+    self.frozen = frozen
+    self:later(frozen.at + FREEZE_GAP_MS - now, function()
+      self.frozen = nil
+      self:go(cmd, json, ms, lightAll, frozen)
     end)
-    return
+    return nil
   end
-  self:go(cmd, json, ms, col, lightAll, nil)
+  self.frozen = nil
+  self:remember(cmd, json)
+  self:go(cmd, json, ms, lightAll, nil)
+  return nil
 end
 
---- A stop: the aspects it names held at the command's values at once. The other aspect, when a ramp
---- of its own runs on, is held where it is and then goes on to where it was going over its time left.
+--- A stop: each aspect it names held where the adapter's own wire fade has it, at once, and that
+--- place returned as a LightRest. The other aspect, when a ramp of its own runs on, is held too and
+--- then goes on to where the wire fade was taking it, over its time left; with no wire fade of its
+--- own it is left alone.
 --- @param cmd LightCommand
---- @param json table The stopped aspects' frame.
 --- @param ms number The other aspect's time left.
---- @param at table|nil From runningAt.
-function Adapter:stop(cmd, json, ms, at)
-  if ms <= 0 then
-    json.tt = 0
-    self.sendJson(json)
-    return
-  end
-  local rest = {}
-  if not cmd.setsLevel then
-    if at and at.briTo then
-      putBri(rest, at.briTo)
-    elseif cmd.on == true and self:dims() then
-      rest.on, rest.bri = true, math.max(1, byte(cmd.level))
-    end
-  end
-  if not cmd.setsColor and cmd.color then
-    if at and at.colTo then
-      rest.seg = self:colorSeg(at.colTo, at.cct)
+--- @param at table|nil From runningAt or heldAt.
+--- @param now number
+--- @return LightRest|nil
+function Adapter:stop(cmd, ms, at, now)
+  local frame, rest = {}, nil
+  if cmd.setsLevel then
+    if at and at.bri then
+      putBri(frame, at.bri)
+      rest = { level = frame.bri and frame.bri / 255 or nil }
     else
-      local col, cct = self:render(cmd.color)
-      rest.seg = self:colorSeg(col, cct)
+      frame.on = cmd.on == true
+      if frame.on and self:dims() then
+        frame.bri = math.max(1, byte(cmd.level))
+      end
     end
   end
-  if at then
-    self:freeze(at, json)
-  else
-    json.tt = 0
-    self.sendJson(json)
+  if cmd.setsColor then
+    if at and at.col then
+      frame.seg = self:colorSeg(at.col, at.cct)
+      rest = rest or {}
+      rest.color = self:shownColor(at.col, at.cct)
+    elseif cmd.color then
+      local col, cct, k = self:render(cmd.color)
+      self:took(cct, k)
+      frame.seg = self:colorSeg(col, cct)
+    end
   end
-  local col = rest.seg and (rest.seg[1] or rest.seg).col[1] or nil
-  self:later(function()
-    self:go(cmd, rest, ms, col, false, at)
+  local cont = {}
+  if ms > 0 and at then
+    if not cmd.setsLevel and at.briTo ~= nil then
+      if at.bri then
+        putBri(frame, at.bri)
+      end
+      putBri(cont, at.briTo)
+      if cont.on == false and self:dims() and (tonumber(cmd.level) or 0) > 0 then
+        cont.bri = math.max(1, byte(cmd.level))
+      end
+    end
+    if not cmd.setsColor and at.colTo then
+      if at.col then
+        frame.seg = self:colorSeg(at.col, at.cct)
+      end
+      cont.seg = self:colorSeg(at.colTo, at.cctTo)
+    end
+  end
+  -- The library writes the rest into the command, so reports of the held place are the command's.
+  -- The aspect that goes on is the library's value for where its fade goes: a stop's own value for
+  -- it is only an estimate.
+  local goesLevel = cont.on ~= nil and at and at.toLevel
+  local goesColor = cont.seg ~= nil and at and at.toColor
+  local rested = cmd
+  if rest or goesLevel or goesColor then
+    rested = {}
+    for k, v in pairs(cmd) do
+      rested[k] = v
+    end
+    rested.level = rest and rest.level or goesLevel or cmd.level
+    rested.color = rest and rest.color or goesColor or cmd.color
+  end
+  if rest and next(rest) == nil then
+    rest = nil
+  end
+  local continues = next(cont) ~= nil
+  local function heldWire()
+    -- The held place is the stopped aspects' wire form, as sent: no re-render of the rested color.
+    local wire = self.last.wire
+    if rest and rest.level then
+      wire.bri = frame.bri
+    end
+    if rest and rest.color then
+      wire.col, wire.cct = frameCol(frame)
+    end
+  end
+  if not continues then
+    self.frozen = nil
+    frame.tt = 0
+    self:remember(rested, frame)
+    heldWire()
+    self.sendJson(frame)
+    return rest
+  end
+  self:hold(frame)
+  self:remember(rested, cont)
+  heldWire()
+  local frozen = {
+    at = now,
+    bri = frame.bri,
+    col = (frameCol(frame)),
+    cct = select(2, frameCol(frame)),
+    toBri = cont.on == false and 0 or cont.bri,
+    toCol = (frameCol(cont)),
+    toCct = select(2, frameCol(cont)),
+    toLevel = rested.level,
+    toColor = rested.color,
+  }
+  self.frozen = frozen
+  self:later(FREEZE_GAP_MS, function()
+    self.frozen = nil
+    self:go(rested, cont, ms, false, frozen)
   end)
+  return rest
 end
 
---- Run fn FREEZE_GAP_MS from now, unless another command or forget() comes first.
+--- Run fn after ms, unless another command or forget() comes first.
+--- @param ms number
 --- @param fn fun()
-function Adapter:later(fn)
+function Adapter:later(ms, fn)
   local gen = self.legGen
-  delay(FREEZE_GAP_MS):next(function()
+  delay(math.max(0, ms)):next(function()
     if self.legGen == gen then
       fn()
     end
@@ -568,11 +735,11 @@ end
 --- @param cmd LightCommand
 --- @param json table The frame.
 --- @param ms number The fade's length.
---- @param col integer[]|nil The color the frame ends at.
 --- @param lightAll boolean Whether the frame turns every segment on.
---- @param at table|nil Where a freeze held the controller; nil to start from where the command says.
-function Adapter:go(cmd, json, ms, col, lightAll, at)
+--- @param at table|WledFrozen|nil Where a freeze held the controller; nil to start from where the command says.
+function Adapter:go(cmd, json, ms, lightAll, at)
   self.legs = nil
+  local col = frameCol(json)
   if ms > LEG_MS then
     self:startLegs(cmd, json, ms, col, lightAll, at)
     return
@@ -587,7 +754,7 @@ end
 --- @param json table
 --- @param ms number
 --- @param col integer[]|nil
---- @param at table|nil
+--- @param at table|WledFrozen|nil
 --- @return number fromBri, integer[]|nil fromCol
 function Adapter:keep(cmd, json, ms, col, at)
   local device = self.device
@@ -600,13 +767,15 @@ function Adapter:keep(cmd, json, ms, col, at)
     return fromBri, fromCol
   end
   local toBri = json.on == false and 0 or json.bri or (json.on == true and fromBri) or nil
-  local seg = json.seg and (json.seg[1] or json.seg)
+  local _, cct = frameCol(json)
   self.fade = {
     t0 = C4:GetTime(),
     ms = ms,
     bri = toBri and { fromBri, toBri } or nil,
     col = col and { fromCol, col } or nil,
-    cct = seg and seg.cct or nil,
+    cct = cct,
+    toLevel = toBri and cmd.level or nil,
+    toColor = col and cmd.color or nil,
   }
   return fromBri, fromCol
 end
@@ -739,6 +908,7 @@ function Adapter:report()
   if self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT) then
     report.color = self:shownColor(col, cct)
   end
+  self.reported = { on = on, bri = bri, col = col, cct = cct }
   local last = self.last
   if not last then
     local kept = persist:get(SHOWN_PERSIST_KEY)
@@ -747,38 +917,51 @@ function Adapter:report()
     end
     return report
   end
+  local wire = last.wire
+  -- A carried aspect with no report yet has no wire form to differ from.
+  local levelEnd = on == wire.on and (not self:dims() or wire.bri == nil or near(bri, wire.bri))
+  local colorEnd = wire.col == nil or sameColor(col, cct, wire)
   local legs = self.legs
   if legs then
-    local leg = legs.leg
-    if on == leg.on and (not leg.bri or near(bri, leg.bri)) and (not leg.col or sameColor(col, cct, leg)) then
-      report.level = report.level and last.cmd.level
-      report.color = report.color and last.cmd.color
-      return report
+    -- Each aspect the leg carries is the command's when it shows the leg or the end; one that shows
+    -- neither was moved by another client. An aspect the leg leaves is reported as shown.
+    local leg, moved = legs.leg, false
+    if leg.bri then
+      if on == leg.on and near(bri, leg.bri) or levelEnd then
+        report.level = report.level and last.cmd.level
+      else
+        moved = true
+      end
     end
-    local wire = last.wire
-    local isEnd = on == wire.on
-      and (not wire.bri or near(bri, wire.bri))
-      and (not wire.col or sameColor(col, cct, wire))
-    if not isEnd and not legs.hold then
+    if leg.col then
+      if sameColor(col, cct, leg) or colorEnd then
+        report.color = report.color and last.cmd.color
+      else
+        moved = true
+      end
+    end
+    -- An aspect the leg leaves that is not the wire's was moved by another client too.
+    if not leg.bri and not levelEnd or not leg.col and wire.col and not colorEnd then
+      moved = true
+    end
+    if moved and not legs.hold then
       -- Another client moved the light: the legs left would undo it.
       self.legGen = self.legGen + 1
       self.legs = nil
       self.fade = nil
     end
-  elseif self.fade then
-    local wire = last.wire
-    local isEnd = on == wire.on
-      and (not wire.bri or near(bri, wire.bri))
-      and (not wire.col or sameColor(col, cct, wire))
-    if not isEnd then
-      -- The light is off the adapter's line, so the next command starts from where the library says.
-      self.fade = nil
-    end
+    return report
   end
-  if report.level and near(bri, last.wire.bri) then
+  -- Another client's change to any aspect puts every running fade at its target on 16.x (and restarts
+  -- it on 0.15.4), so the light is off the adapter's line: the next command starts from where the
+  -- library says, with no freeze at a stale point.
+  if self.fade and not (levelEnd and colorEnd) then
+    self.fade = nil
+  end
+  if report.level and levelEnd then
     report.level = last.cmd.level
   end
-  if report.color and sameColor(col, cct, last.wire) then
+  if report.color and wire.col and colorEnd then
     report.color = last.cmd.color
   end
   return report
@@ -791,6 +974,8 @@ function Adapter:forget()
   self.last = nil
   persist:delete(SHOWN_PERSIST_KEY)
   self.fade = nil
+  self.frozen = nil
+  self.reported = nil
 end
 
 --- Ask the controller for its whole state; it comes back as a report.

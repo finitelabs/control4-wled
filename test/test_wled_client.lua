@@ -341,6 +341,79 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A frame that asks for a gap keeps it through a busy resend, a 9 and a busy POST")
+--------------------------------------------------------------------------------
+do
+  -- The light's freeze asks for 150 ms before the next frame; the command follows it 150 ms after it
+  -- was sent. Whatever path the freeze takes again, the command lands after it, the gap kept.
+  local FREEZE, NEXT = { bri = 100, tt = 0 }, { bri = 200, tt = 20 }
+  local function timed(fake)
+    local landed = {}
+    local apply = fake.apply
+    fake.apply = function(self, cmd)
+      landed[cmd.bri or 0] = landed[cmd.bri or 0] or W.now()
+      return apply(self, cmd)
+    end
+    return landed
+  end
+  local function check(name, landed)
+    local f, c = landed[100], landed[200]
+    T.truthy(name .. ": the freeze lands, then the command", f ~= nil and c ~= nil and c > f, { f, c })
+    T.truthy(name .. ": at least 150 ms after it", f ~= nil and c ~= nil and c - f >= 150, { f, c })
+  end
+
+  local client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  local landed = timed(fake)
+  fake.wsBusy = 1
+  client:send(FREEZE, { gapAfterMs = 150 })
+  W.run(150)
+  client:send(NEXT)
+  W.run(2000)
+  check("a busy answer to the freeze", landed)
+  client:stop()
+
+  client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  landed = timed(fake)
+  fake.frameLimit = 5
+  client:send(FREEZE, { gapAfterMs = 150 })
+  W.run(20)
+  fake.frameLimit = nil
+  W.run(130)
+  client:send(NEXT)
+  W.run(2000)
+  check("a 9 for the freeze", landed)
+  client:stop()
+
+  client, fake = newClient()
+  fake.socketOpen = false
+  client:start(fake.ip, fake.port)
+  W.run(Client.OPEN_GRACE_MS + 100)
+  landed = timed(fake)
+  fake.busy = 1
+  client:send(FREEZE, { gapAfterMs = 150 })
+  W.run(150)
+  client:send(NEXT)
+  W.run(3000)
+  check("a busy POST of the freeze", landed)
+  client:stop()
+
+  client, fake = newClient()
+  client:start(fake.ip, fake.port)
+  W.run(100)
+  landed = timed(fake)
+  client:send(FREEZE, { gapAfterMs = 150 })
+  W.run(50)
+  client:send(NEXT)
+  W.run(1000)
+  check("a command sent inside the gap", landed)
+  client:stop()
+end
+
+--------------------------------------------------------------------------------
 T.section("Commands dropped by a busy controller: its state is asked for")
 --------------------------------------------------------------------------------
 do

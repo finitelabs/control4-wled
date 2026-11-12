@@ -551,6 +551,61 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("after another client's color, a color mid level fade still holds the level first")
+--------------------------------------------------------------------------------
+do
+  fresh("dig2go-rgbw-16")
+  proxy("SET_LEVEL", { LEVEL = "20" })
+  W.run(3000)
+  -- The WLED app sets an orange no Control4 color renders to, and the controller pushes it.
+  fake:change({ seg = { { id = 0, start = 0, stop = 300, col = { { 255, 160, 0, 0 } } } } })
+  W.run(3000)
+  local jumps, snaps = fake.colorJumps or 0, fake.snaps
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "10000" })
+  -- The controller reports the fade's end at once, and pushes it.
+  W.run(5000)
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = "0.64", LIGHT_COLOR_TARGET_Y = "0.33", LIGHT_COLOR_TARGET_MODE = "0", RATE = "2000" }
+  )
+  W.run(3000)
+  local cmds = sent()
+  T.eq("the color held the level first, at once", cmds[2] and cmds[2].tt, 0)
+  T.eq("then went with the level's end", cmds[3] and { cmds[3].bri, cmds[3].tt }, { 255, 20 })
+  T.eq("no color jumped at the controller", (fake.colorJumps or 0) - jumps, 0)
+  T.eq("nor the level", fake.snaps - snaps, 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("a color stop while a level ramp runs tells the level the ramp goes to, not the stop's estimate")
+--------------------------------------------------------------------------------
+do
+  local function color(x, y, rate)
+    proxy(
+      "SET_COLOR_TARGET",
+      { LIGHT_COLOR_TARGET_X = x, LIGHT_COLOR_TARGET_Y = y, LIGHT_COLOR_TARGET_MODE = "0", RATE = rate }
+    )
+  end
+  for _, case in ipairs({ { "1 s into the color", 1000 }, { "inside the freeze's wait", 100 } }) do
+    fresh("dig2go-rgbw-16")
+    proxy("SET_LEVEL", { LEVEL = "20" })
+    color("0.3", "0.6", "0")
+    W.run(3000)
+    mark()
+    proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "10000" })
+    W.run(5000)
+    color("0.64", "0.33", "5000")
+    W.run(case[2])
+    proxy("SET_COLOR_STOP", {})
+    W.run(15000)
+    local levels = toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT")
+    T.eq(case[1] .. ": the strip ends at the ramp's end", fake.si.state.bri, 255)
+    T.eq(case[1] .. ": and the proxy is told it", levels[#levels], 100)
+  end
+end
+
+--------------------------------------------------------------------------------
 T.section("another client's level mid-fade ends the fade and is told")
 --------------------------------------------------------------------------------
 do

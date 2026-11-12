@@ -61,7 +61,7 @@ end
 local wledLight = LightAdapter:new({
   device = Segment.view(nil),
   refresh = refresh,
-  send = function(json)
+  send = function(json, opts)
     if not gPayload then
       log:warn("Segment command not sent: the segment is not there")
       return
@@ -69,6 +69,7 @@ local wledLight = LightAdapter:new({
     SendToProxy(CONTROLLER_BINDING, "ENTITY_COMMAND", {
       body = SerializeSafe(Segment.intent(json, gPayload.segment.id)),
       segment = gPayload.segment.id,
+      gapAfterMs = opts and opts.gapAfterMs or nil,
     })
   end,
   warm = function()

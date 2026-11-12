@@ -13,6 +13,7 @@ local W = require("wled_fixtures")
 require("c4_local")
 
 local Adapter = require("wled.light_wled")
+local Color = require("lib.light.color")
 local Device = require("wled.device")
 
 local RGB, WHITE, CCT = Device.CAP_RGB, Device.CAP_WHITE, Device.CAP_CCT
@@ -284,19 +285,20 @@ do
   local a = adapter(model(RGB + WHITE, { bri = 51 }))
   a:send(cmd({ level = 1, setsLevel = true, transitionMs = 200000, from = { level = 0.2 } }))
   W.run(30000)
-  a:send(cmd({ kind = "stop", level = 0.5, setsLevel = true }))
-  T.eq("held at once", sent[#sent], { on = true, bri = 128, tt = 0 })
+  -- The library's estimate is 0.5; the adapter's own line has the controller 15% of the way from 51.
+  local rest = a:send(cmd({ kind = "stop", level = 0.5, setsLevel = true }))
+  local at = round(51 + 204 * 0.15)
+  T.eq("held at once where its own fade has the controller", sent[#sent], { on = true, bri = at, tt = 0 })
+  T.eq("and that place is the rest", rest and rest.level, at / 255)
   local count = #sent
   W.run(250000)
   T.eq("no leg goes after it", #sent, count)
   count = #sent
-  a:send(cmd({ kind = "stop", level = 0.5, setsLevel = true, color = RED, transitionMs = 3000 }))
-  T.eq("a stop with a color left running holds the level at once", sent[#sent], { on = true, bri = 128, tt = 0 })
-  W.run(149)
-  T.eq("and the color waits for the freeze to land", #sent, count + 1)
-  W.run(1)
-  T.eq("then goes on over its time left", sent[#sent].tt, 30)
-  T.truthy("to its color, with the level left alone", sent[#sent].seg ~= nil and sent[#sent].bri == nil)
+  rest = a:send(cmd({ kind = "stop", level = 0.5, setsLevel = true, color = RED, transitionMs = 3000 }))
+  T.eq("with no fade of its own, a stop holds at the level it names", sent[#sent], { on = true, bri = 128, tt = 0 })
+  T.eq("and rests nowhere else", rest, nil)
+  W.run(1000)
+  T.eq("a color the adapter has no fade for is left alone", #sent, count + 1)
 end
 
 --------------------------------------------------------------------------------
@@ -426,9 +428,10 @@ do
   shows(a.device, { col = { col[1], col[2] + 2, col[3], col[4] } })
   T.falsy("two off is the controller's own", rawequal(a:report().color, c.color))
 
-  a:send(cmd({ level = 0.5, setsLevel = true, color = c.color }))
   shows(a.device, { col = { col[1], col[2], col[3], col[4] } })
-  T.truthy("a level command carries the color it leaves", rawequal(a:report().color, c.color))
+  a:report()
+  a:send(cmd({ level = 0.5, setsLevel = true, color = c.color }))
+  T.truthy("a level command carries the color the controller showed", rawequal(a:report().color, c.color))
 
   a = adapter(model(WHITE + CCT))
   c = cmd({ setsColor = true, color = kelvin(4000) })
@@ -504,6 +507,9 @@ do
   local c = cmd({ setsColor = true, color = RED, transitionMs = 10000, from = { level = 1, color = GREEN } })
   a:send(c)
   local red = sent[2].seg[1].col[1]
+  -- WLED reports a fade's end at once, so a report comes during it.
+  shows(a.device, { col = red })
+  a:report()
   W.run(2000)
   local lvl = cmd({ level = 0.5, setsLevel = true, color = RED, transitionMs = 2000 })
   a:send(lvl)
@@ -517,8 +523,8 @@ do
   })
   T.eq("and leaving the level, which the fade did not move", { freeze.on, freeze.bri }, { nil, nil })
   shows(a.device, { col = freeze.seg[1].col[1] })
-  T.eq("a report of the freeze is the command's", a:report().level, 0.5)
-  T.truthy("its color too", rawequal(a:report().color, lvl.color))
+  T.truthy("a report of the freeze is the command's color", rawequal(a:report().color, lvl.color))
+  T.eq("and its level, which the freeze leaves, is as shown", a:report().level, 1)
   W.run(149)
   T.eq("the command waits for the freeze to land", #sent, 3)
   W.run(1)
@@ -527,7 +533,10 @@ do
 
   -- A level fade, and halfway a color over 2 s.
   a = adapter(model(RGB + WHITE, { bri = 51 }))
+  a:report()
   a:send(cmd({ level = 1, setsLevel = true, transitionMs = 10000, from = { level = 0.2 } }))
+  shows(a.device, { bri = 255 })
+  a:report()
   W.run(5000)
   a:send(cmd({ setsColor = true, color = RED, transitionMs = 2000 }))
   T.eq("a level fade is held where it is", { sent[2].on, sent[2].bri, sent[2].tt, sent[2].seg }, { true, 153, 0, nil })
@@ -557,11 +566,139 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("a command inside a freeze's wait carries where the held fades go, with no second freeze")
+--------------------------------------------------------------------------------
+do
+  -- A level fade from 51 to 255 over 10 s; halfway a color over 2 s, then 50 ms later another.
+  local a = adapter(model(RGB + WHITE, { bri = 51 }))
+  a:send(cmd({ level = 1, setsLevel = true, transitionMs = 10000, from = { level = 0.2 } }))
+  W.run(5000)
+  a:send(cmd({ setsColor = true, color = RED, transitionMs = 2000 }))
+  T.eq("the first holds the level where it is", { #sent, sent[2].bri, sent[2].tt }, { 2, 153, 0 })
+  W.run(50)
+  a:send(cmd({ setsColor = true, color = GREEN, transitionMs = 2000 }))
+  T.eq("the second sends no freeze of its own", #sent, 2)
+  W.run(99)
+  T.eq("and waits for the first freeze's gap", #sent, 2)
+  W.run(1)
+  T.eq(
+    "then goes, with the level going on to 255",
+    { #sent, sent[3].on, sent[3].bri, sent[3].tt },
+    { 3, true, 255, 20 }
+  )
+  T.truthy("and its own color", sent[3].seg ~= nil and sent[3].seg[1].col[1][2] == 255)
+  W.run(1000)
+  T.eq("and the first's never goes", #sent, 3)
+
+  -- A command at once while frozen goes at once, with every target, and ends the wait.
+  a = adapter(model(RGB + WHITE, { bri = 51 }))
+  a:send(cmd({ level = 1, setsLevel = true, transitionMs = 10000, from = { level = 0.2 } }))
+  W.run(5000)
+  a:send(cmd({ setsColor = true, color = RED, transitionMs = 2000 }))
+  W.run(50)
+  a:send(cmd({ level = 0.4, setsLevel = true }))
+  T.eq("a command at once while frozen goes at once", { #sent, sent[3].bri, sent[3].tt }, { 3, 102, 0 })
+  T.truthy("with the held color's target", sent[3].seg ~= nil and sent[3].seg[1].col[1][1] == 255)
+  W.run(1000)
+  T.eq("and nothing goes after it", #sent, 3)
+
+  -- forget() ends the freeze: the next command starts afresh.
+  a = adapter(model(RGB + WHITE, { bri = 51 }))
+  a:send(cmd({ level = 1, setsLevel = true, transitionMs = 10000, from = { level = 0.2 } }))
+  W.run(5000)
+  a:send(cmd({ setsColor = true, color = RED, transitionMs = 2000 }))
+  a:forget()
+  a:send(cmd({ setsColor = true, color = GREEN, transitionMs = 2000 }))
+  T.eq("after forget a command goes at once, holding nothing", { #sent, sent[3].tt, sent[3].bri }, { 3, 20, nil })
+end
+
+--------------------------------------------------------------------------------
+T.section("a color stop holds the color where its own fade has it, and rests there")
+--------------------------------------------------------------------------------
+do
+  local a = adapter(model(RGB + WHITE))
+  a:send(cmd({ setsColor = true, color = GREEN }))
+  local green = sent[1].seg[1].col[1]
+  a:send(cmd({ setsColor = true, color = RED, transitionMs = 10000, from = { level = 1, color = GREEN } }))
+  local red = sent[2].seg[1].col[1]
+  W.run(2000)
+  -- The library's estimate: the color part way in xy, which WLED's channel blend need not be.
+  local rest = a:send(cmd({ kind = "stop", setsColor = true, color = xy(0.4, 0.5) }))
+  local at = {}
+  for i = 1, 4 do
+    at[i] = round(green[i] + (red[i] - green[i]) * 0.2)
+  end
+  T.eq("held at once where the channels have got to", { sent[3].seg[1].col[1], sent[3].tt }, { at, 0 })
+  local x, y = Color.rgbToXY(at[1] / 255, at[2] / 255, at[3] / 255)
+  T.eq("and that is the rest, as a full color", rest and rest.color, { x = x, y = y, mode = Color.FULL })
+  shows(a.device, { col = at })
+  T.eq("a report of it is the rest", a:report().color, rest and rest.color)
+end
+
+--------------------------------------------------------------------------------
+T.section("a color another client set stays the controller's own bytes, so a level fade's freeze still fires")
+--------------------------------------------------------------------------------
+do
+  local a = adapter(model(RGB + WHITE, { bri = 51 }))
+  -- The WLED app's orange: bytes no Control4 color renders to.
+  shows(a.device, { col = { 255, 160, 0, 0 } })
+  local orange = a:report().color
+  a:send(cmd({ level = 1, setsLevel = true, color = orange, transitionMs = 10000, from = { level = 0.2 } }))
+  shows(a.device, { bri = 255 })
+  T.truthy("a report during the fade shows its color as the controller has it", rawequal(a:report().color, orange))
+  W.run(5000)
+  a:send(cmd({ setsColor = true, color = RED, transitionMs = 2000 }))
+  T.eq("the color mid-fade holds the level first", { #sent, sent[2].bri, sent[2].tt }, { 2, 153, 0 })
+
+  -- Another client's color during a level fade puts the fade at its end on 16.x: the light is off the
+  -- adapter's line, so a command mid-fade holds nothing at a stale point.
+  a = adapter(model(RGB + WHITE, { bri = 51 }))
+  a:report()
+  a:send(cmd({ level = 1, setsLevel = true, transitionMs = 10000, from = { level = 0.2 } }))
+  shows(a.device, { bri = 255, col = { 0, 0, 255, 0 } })
+  a:report()
+  W.run(5000)
+  a:send(cmd({ setsColor = true, color = RED, transitionMs = 2000 }))
+  T.eq("a foreign color mid level fade ends the fade: no freeze", { #sent, sent[2].tt }, { 2, 20 })
+end
+
+--------------------------------------------------------------------------------
+T.section("a leg maps only the aspects it carries; another client's change to the other is reported as shown")
+--------------------------------------------------------------------------------
+do
+  local a = adapter(model(RGB + WHITE, { bri = 51 }))
+  -- The library sends only after a connection's first report.
+  a:report()
+  local c = cmd({ level = 1, setsLevel = true, color = RED, transitionMs = 200000, from = { level = 0.2 } })
+  a:send(c)
+  shows(a.device, { bri = sent[1].bri, col = { 0, 0, 255, 0 } })
+  local r = a:report()
+  T.eq("a level leg's report is the fade's level", r.level, 1)
+  T.falsy("and another client's color is its own", rawequal(r.color, c.color))
+  W.run(250000)
+  T.eq("which stops the legs left", #sent, 1)
+
+  a = adapter(model(RGB + WHITE))
+  a:report()
+  a:send(cmd({ setsColor = true, color = GREEN }))
+  c = cmd({ setsColor = true, color = RED, transitionMs = 200000, from = { level = 1, color = GREEN } })
+  a:send(c)
+  shows(a.device, { col = sent[2].seg[1].col[1], bri = 20 })
+  r = a:report()
+  T.truthy("a color leg's report is the fade's color", rawequal(r.color, c.color))
+  T.eq("and another client's level is its own", r.level, 20 / 255)
+  W.run(250000)
+  T.eq("which stops the legs left too", #sent, 2)
+end
+
+--------------------------------------------------------------------------------
 T.section("a freeze mid legs holds the light on their line, and no leg goes after it")
 --------------------------------------------------------------------------------
 do
   local a = adapter(model(RGB + WHITE, { bri = 51 }))
   a:send(cmd({ level = 1, setsLevel = true, transitionMs = 200000, from = { level = 0.2 } }))
+  shows(a.device, { bri = sent[1].bri })
+  a:report()
   W.run(30000)
   a:send(cmd({ level = 0.5, setsLevel = true, transitionMs = 2000 }))
   T.eq("held on the line 15% of the way", { sent[2].bri, sent[2].tt }, { round(51 + 204 * 0.15), 0 })
@@ -584,9 +721,12 @@ do
   local red = sent[#sent].seg[1].col[1]
   W.run(4850)
   local count = #sent
-  a:send(cmd({ kind = "stop", level = 0.6, setsLevel = true, color = RED, transitionMs = 5000 }))
+  local rest = a:send(cmd({ kind = "stop", level = 0.6, setsLevel = true, color = RED, transitionMs = 5000 }))
   local held = sent[count + 1]
-  T.eq("the level stops at once", { held.on, held.bri, held.tt }, { true, 153, 0 })
+  -- 255 to 51 over 10 s from 150 ms in, 4.85 s along.
+  local at = round(255 + (51 - 255) * 4850 / 10000)
+  T.eq("the level stops at once, where its own fade has it", { held.on, held.bri, held.tt }, { true, at, 0 })
+  T.eq("which is the rest", rest and rest.level, at / 255)
   T.truthy("with the color held where it got to", held.seg ~= nil and held.seg[1].col[1][1] < red[1])
   W.run(150)
   T.eq("then the color goes on over its time left", { sent[count + 2].tt, sent[count + 2].bri }, { 50, nil })
@@ -688,8 +828,8 @@ do
         W.run(sentCmd.at - clock)
         clock = sentCmd.at
         local before = #sent
-        a:send(sentCmd.command)
-        frames[i] = { from = before + 1, cmd = sentCmd.command }
+        local rest = a:send(sentCmd.command)
+        frames[i] = { from = before + 1, cmd = sentCmd.command, rest = rest }
         if i > 1 then
           frames[i - 1].to = before
         end
@@ -714,7 +854,10 @@ do
         elseif cmd.kind == "stop" then
           T.eq(name .. ": held at once", out[1] and out[1].tt, 0)
           if cmd.setsLevel then
-            T.eq(name .. ": at the level it names", { out[1].on, out[1].bri }, { cmd.on, bri })
+            -- Where the adapter's own fade has the controller, returned as the rest; else the level it names.
+            local at = f.rest and f.rest.level and round(f.rest.level * 255) or bri
+            T.eq(name .. ": held where it is", { out[1].on, out[1].bri }, { cmd.on, at })
+            T.truthy(name .. ": near the library's estimate", math.abs((at or 0) - (bri or 0)) <= 13, { at, bri })
           end
           if cmd.transitionMs > 0 then
             T.eq(
