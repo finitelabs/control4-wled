@@ -292,11 +292,9 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A start tells the light its level and color once, and its capabilities at a first start and a restart")
+T.section("Each start and reconnect tells the light its capabilities, level and color, even unchanged")
 --------------------------------------------------------------------------------
--- A controller start puts the proxy back on driver.xml's capabilities. The build writes their rates
--- at the library's 65535 ms while WLED's fades go to a day in legs, so every light is told them at its
--- first start and after a controller restart; a reload keeps what was told (lib.light.proxy).
+-- The Control4 standard: every driver start and every reconnect tells all three again.
 for _, case in ipairs({ { "esp32-rgbw-pwm-16", 1 }, { "esp32-white-16", 0 } }) do
   local profile, color = case[1], case[2]
   for _, how in ipairs({ "update", "restart" }) do
@@ -307,26 +305,30 @@ for _, case in ipairs({ { "esp32-rgbw-pwm-16", 1 }, { "esp32-white-16", 0 } }) d
     if color == 0 then
       T.differs(
         "a white light is told no capabilities at its first start (" .. name .. ")",
-        "lib.light tells the capabilities at a first start and a restart: the build's rate keys of 65535 differ from WLED's day-long fades"
+        "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
       )
     end
     T.eq("the level told once (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
     T.eq("the color told once, if it has one (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), color)
     restart(how)
     W.run(200)
-    T.eq(
+    T.differs(
       "capabilities told again only at a restart (" .. name .. ")",
-      toldCount("DYNAMIC_CAPABILITIES_CHANGED"),
-      how == "restart" and 1 or 0
+      "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
     )
-    if color == 0 and how == "restart" then
+    T.differs(
+      "no level after a reload (" .. name .. ")",
+      "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
+    )
+    if color == 1 then
       T.differs(
-        "a white light is told no capabilities again at a restart (" .. name .. ")",
-        "lib.light tells the capabilities at a first start and a restart: the build's rate keys of 65535 differ from WLED's day-long fades"
+        "no color after a reload (" .. name .. ")",
+        "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
       )
     end
-    T.eq("no level after a reload (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
-    T.eq("no color after a reload (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), 0)
+    T.eq("capabilities told again at the reload (" .. name .. ")", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 1)
+    T.eq("the level told again (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
+    T.eq("the color told again, if it has one (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), color)
     T.eq("Connected event fires at a reload's connect (" .. name .. ")", eventCount(1), 1)
     T.eq("Connected again (" .. name .. ")", Variables["Connected"], "1")
   end
@@ -436,14 +438,15 @@ do
   T.eq("lit before the reset", proxyVars[1001] ~= nil and proxyVars[1001] ~= "0", true)
   mark()
   EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
-  T.differs(
-    "the white this light picked is forgotten",
-    "the copied model's white_point memo is gone: the WLED adapter keeps none"
-  )
+  T.differs("the white this light picked is forgotten", "BENIGN: the copied model's white_point memo is gone")
   T.eq("and what programming last saw", persist:get("WledShown"), nil)
   W.run(5000)
   T.eq("the proxy hears offline, then online", toldCount("ONLINE_CHANGED") >= 2 and lastOnline(), true)
-  T.eq("no level told for a light that did not change", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
+  T.differs(
+    "no level told for a light that did not change",
+    "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
+  )
+  T.eq("its level told again at the reconnect", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
   T.eq("Cloud Monitoring back to its default", Properties["Cloud Monitoring"], "Enabled")
   T.eq("Warm White back to its default", Properties["Warm White (K)"], "2700")
   T.eq("Cool White back to its default", Properties["Cool White (K)"], "6500")

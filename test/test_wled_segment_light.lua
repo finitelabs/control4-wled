@@ -215,7 +215,7 @@ do
   T.eq("and not Connected", Variables["Connected"], "0")
   T.differs(
     "driver.xml has no Extras",
-    "the build writes the light's capabilities from the profile: the source driver.xml carries none"
+    "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
   )
   T.eq("the build's driver.xml has no Extras", builtCaps().has_extras, "False")
   local connection = readXml():match("<id>" .. CONTROLLER .. "</id>(.-)</connection>") or ""
@@ -258,7 +258,7 @@ do
   fresh("esp32-white-16", 0)
   T.differs(
     "driver.xml declares a color stop",
-    "the build writes the light's capabilities from the profile: the source driver.xml carries none"
+    "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
   )
   T.eq("the build's driver.xml declares a color stop", builtCaps().supports_color_stop, "True")
   mark()

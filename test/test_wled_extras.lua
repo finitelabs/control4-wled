@@ -673,7 +673,7 @@ do
   fresh("esp32-rgbw-pwm-16")
   T.differs(
     "driver.xml seeds it",
-    "the build writes the light's capabilities from the profile: the source driver.xml carries none"
+    "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
   )
   T.eq("the build writes it into driver.xml", builtCaps().has_extras, "True")
   W.run(500)
