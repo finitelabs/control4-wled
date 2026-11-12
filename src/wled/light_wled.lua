@@ -855,29 +855,6 @@ function Adapter:startLegs(cmd, json, ms, toCol, lightAll, at)
   leg(1)
 end
 
---- Colors of light added together, as CIE xy: each part's xy and its luminance Y, all on one scale,
---- summed in XYZ. A part with no light is left out.
---- @param parts {x: number, y: number, Y: number}[]
---- @return number|nil x, number|nil y Nil, nil when no part gives light.
-local function mixXY(parts)
-  local X, Y, Z = 0, 0, 0
-  for _, part in ipairs(parts) do
-    local py = tonumber(part.y) or 0
-    local pY = tonumber(part.Y) or 0
-    if pY > 0 and py > 0 then
-      X = X + part.x / py * pY
-      Y = Y + pY
-      Z = Z + (1 - part.x - py) / py * pY
-    end
-  end
-  local sum = X + Y + Z
-  if Y <= 0 or sum <= 0 then
-    return nil, nil
-  end
-  return X / sum, Y / sum
-end
-Adapter.mixXY = mixXY
-
 --- The color a report shows, or nil when it carries none.
 --- @param col integer[] 0-255 per channel.
 --- @param cct integer|nil
@@ -902,7 +879,7 @@ function Adapter:shownColor(col, cct)
     local rx, ry = Color.rgbToXY(r / 255, g / 255, b / 255)
     local _, cool = self:range()
     local wx, wy = Color.kelvinToXY(withCct and self:kelvinFromCct(cct or DEFAULT_CCT) or self.whiteK or cool)
-    local x, y = mixXY({
+    local x, y = Color.mixXY({
       { x = rx, y = ry, Y = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 },
       { x = wx, y = wy, Y = w / 255 },
     })

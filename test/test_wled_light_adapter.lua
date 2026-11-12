@@ -815,13 +815,6 @@ do
   T.truthy("held part red, part white", held[1] > 0 and held[1] < red[1] and held[4] > 0, held)
   x, y = mix(held[1], held[2], held[3], held[4], 4000)
   T.eq("its rest is the mix", rest and { rest.color.x, rest.color.y, rest.color.mode }, { x, y, Color.FULL })
-
-  -- mixXY: no light gives nothing, and a part with no light is left out.
-  T.eq("mixXY of no light is nil, nil", { Adapter.mixXY({ { x = 0.3, y = 0.3, Y = 0 } }) }, {})
-  local ox, oy = Adapter.mixXY({ { x = 0.64, y = 0.33, Y = 0.5 }, { x = 0.15, y = 0.06, Y = 0 } })
-  T.eq("a part with Y 0 is left out", { ox, oy }, { 0.64, 0.33 })
-  ox, oy = Adapter.mixXY({ { x = 0.64, y = 0.33, Y = 0.5 }, { Y = 0 } })
-  T.eq("so is a dark part with no color at all", { ox, oy }, { 0.64, 0.33 })
 end
 
 --------------------------------------------------------------------------------
