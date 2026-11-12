@@ -708,7 +708,8 @@ do
   end
 end
 
--- The sections only this repo's copy of the light model had, now against the real driver.
+-- Hold and click timing inside the press delay, a color while off, button colors, and the proxy's
+-- measured Dim-To-Warm and rates.
 
 local TOP, BOTTOM, TOGGLE = "0", "1", "2"
 local RELEASE_HOLD, PRESS, RELEASE_CLICK = "0", "1", "2"
