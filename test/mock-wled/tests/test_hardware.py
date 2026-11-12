@@ -117,6 +117,91 @@ def test_a_fade_sent_after_one_ends_fades_on_16(device, clock):
     assert 30 < d.output()["bri"] < 45
 
 
+def color(d, i=0):
+    return d.output()["colors"][i]
+
+
+def blue_share(c):
+    return c[2] / max(1, c[0] + c[2])
+
+
+@pytest.mark.parametrize("name", DIG2GO)
+def test_a_level_call_mid_color_fade_puts_the_color_at_its_target_on_16(device, clock, name):
+    # Measured 2026-11-12 on the dig2go's live view: on 16.0.1 a level-only call 2 s into a 10 s
+    # color fade put the color at its target at once; 0.15 lets the color fade on.
+    d = device(name)
+    d.deserialize_state(
+        {"on": True, "bri": 255, "seg": [{"id": 0, "col": [[255, 0, 0, 0]]}], "tt": 0}
+    )
+    run(d, clock, 100)
+    d.deserialize_state({"seg": [{"id": 0, "col": [[0, 0, 255, 0]]}], "tt": 100})
+    run(d, clock, 2000)
+    assert 0.15 < blue_share(color(d)) < 0.25
+    d.deserialize_state({"bri": 128, "tt": 20})
+    run(d, clock, 10)
+    if d.v16:
+        assert color(d) == [0, 0, 255, 0]
+        assert d.color_jumps == 1
+    else:
+        assert blue_share(color(d)) < 0.3
+        assert d.color_jumps == 0
+
+
+def test_a_color_call_mid_level_fade_shows_its_color_at_once_on_16(device, clock):
+    # The same day: a 2 s color call during a running level fade showed its color at once.
+    d = device("dig2go-rgbw-16")
+    d.deserialize_state(
+        {"on": True, "bri": 255, "seg": [{"id": 0, "col": [[255, 0, 0, 0]]}], "tt": 0}
+    )
+    run(d, clock, 100)
+    d.deserialize_state({"bri": 26, "tt": 100})
+    run(d, clock, 2000)
+    d.deserialize_state({"seg": [{"id": 0, "col": [[0, 255, 0, 0]]}], "tt": 20})
+    run(d, clock, 10)
+    assert color(d) == [0, 255, 0, 0]
+
+
+def test_a_new_color_mid_fade_on_015_jumps_and_keeps_the_old_timer(device, clock):
+    # FX_fcn.cpp:271@v0.15.4: a segment already in transition keeps its start values and timer, until
+    # the strip's transition ends.
+    d = device("dig2go-rgbw-015")
+    d.deserialize_state(
+        {"on": True, "bri": 255, "seg": [{"id": 0, "col": [[255, 0, 0, 0]]}], "tt": 0}
+    )
+    run(d, clock, 100)
+    d.deserialize_state({"seg": [{"id": 0, "col": [[0, 0, 255, 0]]}], "tt": 100})
+    run(d, clock, 2000)
+    d.deserialize_state({"seg": [{"id": 0, "col": [[0, 255, 0, 0]]}], "tt": 20})
+    run(d, clock, 10)
+    c = color(d)
+    assert c[2] == 0 and 30 < c[1] < 80
+    run(d, clock, 1000)
+    assert 0 < color(d)[0] < 255
+    # The strip's transition ends with the new call's 2 s, and every segment with it.
+    run(d, clock, 1100)
+    assert color(d) == [0, 255, 0, 0]
+
+
+def test_a_freeze_then_a_fade_shows_no_jump_on_16(device, clock):
+    # Measured 2026-11-12: a 0 ms call where the fade had got to, then the next call 150 ms later,
+    # held the color without a jump and faded on from there.
+    d = device("dig2go-rgbw-16")
+    d.deserialize_state(
+        {"on": True, "bri": 255, "seg": [{"id": 0, "col": [[255, 0, 0, 0]]}], "tt": 0}
+    )
+    run(d, clock, 100)
+    d.deserialize_state({"seg": [{"id": 0, "col": [[0, 0, 255, 0]]}], "tt": 100})
+    run(d, clock, 2000)
+    held = color(d)
+    d.deserialize_state({"seg": [{"id": 0, "col": [held]}], "tt": 0})
+    run(d, clock, 150)
+    assert color(d) == held
+    d.deserialize_state({"bri": 128, "seg": [{"id": 0, "col": [[0, 0, 255, 0]]}], "tt": 20})
+    run(d, clock, 1000)
+    assert blue_share(held) < blue_share(color(d)) < 0.95
+    assert d.color_jumps == 0
+
+
 # ---- white modes -----------------------------------------------------------------------------
 
 
@@ -180,7 +265,12 @@ def test_new_bounds_without_a_name_clear_the_name(device, clock):
     d = device("dig2go-rgbw-015")
     three_runs(d, clock)
     d.deserialize_state(
-        {"seg": [{"id": 0, "start": 0, "stop": 120}, {"id": 1, "start": 120, "stop": 200}]}
+        {
+            "seg": [
+                {"id": 0, "start": 0, "stop": 120},
+                {"id": 1, "start": 120, "stop": 200},
+            ]
+        }
     )
     segs = d.serialize_state()["seg"]
     assert "n" not in segs[0] and "n" not in segs[1] and segs[2]["n"] == "Right Run"

@@ -71,7 +71,7 @@ local told, events = {}, {}
 -- The proxy's variables as it keeps them over a driver reload: Brightness Percent (1001) and
 -- its target (1110), Current Color Chromaticity (1200) and its target (1210), and its
 -- Navigator Dynamic Capabilities (6661), driver.xml's until it is told others and again after a
--- controller start (test_light_scenes.lua's model, measured on dev).
+-- controller start (measured on dev; test/light_proxy_fake.lua models the same).
 local PROXY_DEVICE = 9001
 local proxyVars = {}
 local proxyCaps = {}
@@ -292,26 +292,39 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A start tells the light its level and color once and its capabilities where driver.xml differs")
+T.section("A start tells the light its level and color once, and its capabilities at a first start and a restart")
 --------------------------------------------------------------------------------
--- A controller start puts the proxy back on driver.xml's capabilities: a color light differs in
--- supports_color and is told them again, a white light matches and is told none (and no color).
+-- A controller start puts the proxy back on driver.xml's capabilities. The build writes their rates
+-- at the library's 65535 ms while WLED's fades go to a day in legs, so every light is told them at its
+-- first start and after a controller restart; a reload keeps what was told (lib.light.proxy).
 for _, case in ipairs({ { "esp32-rgbw-pwm-16", 1 }, { "esp32-white-16", 0 } }) do
   local profile, color = case[1], case[2]
   for _, how in ipairs({ "update", "restart" }) do
     local name = ("%s, %s"):format(profile, how)
     fresh(profile)
     W.run(200)
-    T.eq("capabilities told at the first start (" .. name .. ")", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), color)
+    T.eq("capabilities told at the first start (" .. name .. ")", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 1)
+    if color == 0 then
+      T.differs(
+        "a white light is told no capabilities at its first start (" .. name .. ")",
+        "lib.light tells the capabilities at a first start and a restart: the build's rate keys of 65535 differ from WLED's day-long fades"
+      )
+    end
     T.eq("the level told once (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
     T.eq("the color told once, if it has one (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), color)
     restart(how)
     W.run(200)
     T.eq(
-      "capabilities told again only at a restart, where driver.xml differs (" .. name .. ")",
+      "capabilities told again only at a restart (" .. name .. ")",
       toldCount("DYNAMIC_CAPABILITIES_CHANGED"),
-      how == "restart" and color or 0
+      how == "restart" and 1 or 0
     )
+    if color == 0 and how == "restart" then
+      T.differs(
+        "a white light is told no capabilities again at a restart (" .. name .. ")",
+        "lib.light tells the capabilities at a first start and a restart: the build's rate keys of 65535 differ from WLED's day-long fades"
+      )
+    end
     T.eq("no level after a reload (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
     T.eq("no color after a reload (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), 0)
     T.eq("Connected event fires at a reload's connect (" .. name .. ")", eventCount(1), 1)
@@ -419,12 +432,14 @@ do
   Properties["Automatic Updates"] = "Off"
   Properties["Update Channel"] = "Prerelease"
   local persist = require("lib.persist")
-  persist:set("white_point", { x = 0.4, y = 0.4, picked = { x = 0.45, y = 0.41 } })
   T.eq("connected before the reset", Variables["Connected"], "1")
   T.eq("lit before the reset", proxyVars[1001] ~= nil and proxyVars[1001] ~= "0", true)
   mark()
   EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
-  T.eq("the white this light picked is forgotten", persist:get("white_point"), nil)
+  T.differs(
+    "the white this light picked is forgotten",
+    "the copied model's white_point memo is gone: the WLED adapter keeps none"
+  )
   T.eq("and what programming last saw", persist:get("WledShown"), nil)
   W.run(5000)
   T.eq("the proxy hears offline, then online", toldCount("ONLINE_CHANGED") >= 2 and lastOnline(), true)

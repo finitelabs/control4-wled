@@ -15,6 +15,17 @@ DEBUG_WEBSOCKET = false
 local HERE = debug.getinfo(1, "S").source:match("^@(.*)/") or "."
 local DRIVER = HERE .. "/../drivers/wled/driver.lua"
 local XML = HERE .. "/../drivers/wled/driver.xml"
+
+--- The light capabilities the build writes into driver.xml, from the profile the driver's chunk gave
+--- Light.new: the source driver.xml carries none of them.
+local function builtCaps()
+  local made = require("lib.light").made
+  local out = {}
+  for _, row in ipairs(require("lib.light.caps").static(made[#made].profile)) do
+    out[row.key] = row.value
+  end
+  return out
+end
 local PROXY = 5001
 local PROXY_DEVICE = 9001
 
@@ -241,15 +252,12 @@ end
 T.section("a light with no color declares a color stop, so the proxy passes its brightness stop on")
 --------------------------------------------------------------------------------
 do
-  local f = assert(io.open(XML))
-  local xml = f:read("*a")
-  f:close()
-  T.contains(
-    "driver.xml declares it before the controller reports",
-    xml,
-    "<supports_color_stop>True</supports_color_stop>"
-  )
   fresh("esp32-white-16")
+  T.differs(
+    "driver.xml declares it before the controller reports",
+    "the build writes the light's capabilities from the profile: the source driver.xml carries none"
+  )
+  T.eq("the build's driver.xml declares it before the controller reports", builtCaps().supports_color_stop, "True")
   T.eq("a white-only strip is told it too", lastCaps().supports_color_stop, true)
   proxy("SET_LEVEL", { LEVEL = "20" })
   W.run(3000)
@@ -426,10 +434,16 @@ do
   T.eq("on the white LEDs", cmd and cmd.seg[1].col[1], { 0, 0, 0, 255 })
   fresh("esp32-cct-16", { ["Warm White (K)"] = "2000", ["Cool White (K)"] = "6000" })
   mark()
-  proxy("SET_COLOR_TARGET", { LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = "4000", RATE = "0" })
+  -- 4000 K is the fake's own CCT 128 under these white points, so the light, already there, sends nothing.
+  T.differs(
+    "other white points move it: 4000 K is CCT 128",
+    "lib.light sends nothing for a color the light already shows"
+  )
+  proxy("SET_COLOR_TARGET", { LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = "5000", RATE = "0" })
   cmd = sent()[1]
   cct = cmd and cmd.seg[1].cct
-  T.truthy("other white points move it: CCT 128", cct and math.abs(cct - 128) <= 1, cct)
+  -- (5000 - 2000) / (6000 - 2000) of 255.
+  T.truthy("other white points move it: 5000 K is CCT 191", cct and math.abs(cct - 191) <= 1, cct)
 end
 
 --------------------------------------------------------------------------------
@@ -473,6 +487,65 @@ do
   )
   T.truthy("green", cmds[1] and cmds[1].seg and cmds[1].seg[1].col[1][2] == 255)
   T.eq("then on, to 80 over 2 s", cmds[2] and { cmds[2].on, cmds[2].bri, cmds[2].tt }, { true, 204, 20 })
+end
+
+--------------------------------------------------------------------------------
+T.section("the fake shows 16.x putting a running color fade at its target, and 0.15.4 keeping its timer")
+--------------------------------------------------------------------------------
+do
+  -- Measured on the dig2go, 2026-11-12: on 16.0.1 a call that lands while a fade runs puts every
+  -- color at its target at once, a level-only call too; 0.15.4 keeps a fading segment's start and timer.
+  local function blueShare(f)
+    local col = f:output().seg[0].col
+    return col[3] / math.max(1, col[1] + col[3])
+  end
+  for _, case in ipairs({ { "dig2go-rgbw-16", true }, { "esp32-rgbw-015", false } }) do
+    local profile, v16 = case[1], case[2]
+    W.reset()
+    local f = W.Fake.new(profile)
+    f:apply({ on = true, bri = 255, seg = { { id = 0, col = { { 255, 0, 0, 0 } } } }, tt = 0 })
+    f:apply({ seg = { { id = 0, col = { { 0, 0, 255, 0 } } } }, tt = 100 })
+    W.run(2000)
+    T.truthy(profile .. ": the color fade is part way", math.abs(blueShare(f) - 0.2) < 0.03, blueShare(f))
+    f:apply({ bri = 128, tt = 20 })
+    if v16 then
+      T.eq(profile .. ": a level call mid-fade puts the color at its target", f:output().seg[0].col, { 0, 0, 255, 0 })
+      T.eq(profile .. ": counted as a jump", f.colorJumps, 1)
+    else
+      T.truthy(profile .. ": a level call mid-fade leaves the color fading", blueShare(f) < 0.3, blueShare(f))
+      T.eq(profile .. ": no jump", f.colorJumps or 0, 0)
+      f:apply({ seg = { { id = 0, col = { { 0, 255, 0, 0 } } } }, tt = 20 })
+      T.eq(profile .. ": a new color mid-fade jumps on the old timer", f.colorJumps, 1)
+    end
+    W.run(10000)
+    f:apply({ seg = { { id = 0, col = { { 255, 0, 0, 0 } } } }, tt = 20 })
+    W.run(1000)
+    local red = f:output().seg[0].col[1]
+    T.truthy(profile .. ": a fade sent after the last one ended fades", red > 64 and red < 230, red)
+  end
+end
+
+--------------------------------------------------------------------------------
+T.section("a level mid color fade holds the color first, so the strip shows no jump")
+--------------------------------------------------------------------------------
+do
+  fresh("dig2go-rgbw-16")
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = "0.64", LIGHT_COLOR_TARGET_Y = "0.33", LIGHT_COLOR_TARGET_MODE = "0", RATE = "0" }
+  )
+  W.run(3000)
+  local jumps, snaps = fake.colorJumps or 0, fake.snaps
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = "0.17", LIGHT_COLOR_TARGET_Y = "0.70", LIGHT_COLOR_TARGET_MODE = "0", RATE = "10000" }
+  )
+  W.run(2000)
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "40", RATE = "2000" })
+  W.run(12000)
+  T.eq("no color jumped at the controller", (fake.colorJumps or 0) - jumps, 0)
+  T.eq("nor the level", fake.snaps - snaps, 0)
+  T.eq("and it ends green", fake:output().seg[0].col[2], 255)
 end
 
 --------------------------------------------------------------------------------
@@ -569,6 +642,208 @@ do
     end
     T.eq("a Top click " .. c[1] .. ": never full", levels, c[2] == "OFF" and { 128 } or {})
   end
+end
+
+-- The sections only this repo's copy of the light model had, now against the real driver.
+
+local TOP, BOTTOM, TOGGLE = "0", "1", "2"
+local RELEASE_HOLD, PRESS, RELEASE_CLICK = "0", "1", "2"
+
+--- The levels the proxy was told the light is at, since the mark.
+local function changed()
+  return toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT")
+end
+
+--- The levels the proxy was told the light is going to, since the mark.
+local function changing()
+  return toldOf("LIGHT_BRIGHTNESS_CHANGING", "LIGHT_BRIGHTNESS_TARGET")
+end
+
+--- What a Button Link was told of its colors since the mark: { on, off }.
+local function linkColors(binding)
+  local out = nil
+  for _, t in ipairs(told) do
+    if t.binding == binding and t.command == "BUTTON_COLORS" then
+      out = { t.params.ON_COLOR, t.params.OFF_COLOR }
+    end
+  end
+  return out
+end
+
+--- A scene step of a level over a rate, after a delay.
+local function levelStep(level, rate, delay)
+  local step = "<element><delay>%d</delay><rate>%d</rate><brightnessEnabled>true</brightnessEnabled>"
+    .. "<brightness>%d</brightness></element>"
+  return step:format(delay or 0, rate or 0, level)
+end
+
+--- A proxy setup as the proxy answers GET_SETUP, from test/light_setup.
+local function setupFile(name)
+  local f = assert(io.open(HERE .. "/light_setup/" .. name))
+  local xml = f:read("*a")
+  f:close()
+  return xml
+end
+
+--------------------------------------------------------------------------------
+T.section("a hold let go inside its delay stops a fade in flight where it has got to")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16")
+  proxy("OFF")
+  W.run(3000)
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "100", RATE = "5000" })
+  W.run(2500)
+  mark()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  W.run(150)
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = RELEASE_HOLD })
+  W.run(5000)
+  T.differs(
+    "one command, a stop where the fade had got to, and no hold",
+    "lib.light: a hold let go inside its 250 ms gate starts and stops nothing, so a fade in flight runs on"
+  )
+  T.eq("no command, and no hold", #sent(), 0)
+  T.eq("and no ramp told", changing(), {})
+end
+
+--------------------------------------------------------------------------------
+T.section("a Bottom or Toggle click from on inside its press's hold delay sends one command")
+--------------------------------------------------------------------------------
+do
+  for _, button in ipairs({ { "Bottom", BOTTOM }, { "Toggle", TOGGLE } }) do
+    fresh("esp32-rgbw-pwm-16")
+    proxy("SET_LEVEL", { LEVEL = "100" })
+    W.run(3000)
+    mark()
+    proxy("BUTTON_ACTION", { BUTTON_ID = button[2], ACTION = PRESS })
+    W.run(110)
+    proxy("BUTTON_ACTION", { BUTTON_ID = button[2], ACTION = RELEASE_CLICK })
+    W.run(5000)
+    local cmds = sent()
+    T.eq(button[1] .. " click from on: one command", #cmds, 1)
+    T.eq(
+      button[1] .. " click from on: the light ends off",
+      { cmds[1] and cmds[1].on, changed()[#changed()] },
+      { false, 0 }
+    )
+  end
+end
+
+--------------------------------------------------------------------------------
+T.section("a scene started inside a press's hold delay replaces the hold")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16")
+  proxy("SET_LEVEL", { LEVEL = "80" })
+  W.run(3000)
+  proxy("PUSH_SCENE", { SCENE_ID = "7", ELEMENTS = levelStep(20, 2000) .. levelStep(60, 1000, 500) })
+  mark()
+  proxy("BUTTON_ACTION", { BUTTON_ID = TOP, ACTION = PRESS })
+  W.run(100)
+  proxy("ACTIVATE_SCENE", { SCENE_ID = "7" })
+  W.run(15000)
+  T.differs(
+    "its steps run, and the hold never begins",
+    "lib.light finding, sent to the light session: Buttons:cancel leaves a press still in its gate, so the hold replaces the scene"
+  )
+  proxy("CLEAR_ALL_SCENES")
+end
+
+--------------------------------------------------------------------------------
+T.section("a color set while the light is off is the one its next on comes on in, over the Color On Mode's")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16")
+  proxy("UPDATE_COLOR_ON_MODE", {
+    COLOR_PRESET_ID = "3",
+    COLOR_PRESET_ORIGIN = "2",
+    COLOR_PRESET_COLOR_X = "0.15",
+    COLOR_PRESET_COLOR_Y = "0.06",
+    COLOR_PRESET_COLOR_MODE = "0",
+    COLOR_FADE_PRESET_ID = "0",
+    COLOR_FADE_PRESET_ORIGIN = "0",
+  })
+  proxy("OFF")
+  W.run(3000)
+  mark()
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = "0.17", LIGHT_COLOR_TARGET_Y = "0.70", LIGHT_COLOR_TARGET_MODE = "0", RATE = "0" }
+  )
+  W.run(3000)
+  T.eq("the proxy is told it at once", #toldOf("LIGHT_COLOR_CHANGED"), 1)
+  T.eq("it goes to the controller, which stays off", { sent()[1] and sent()[1].on, fake.si.state.on }, { nil, false })
+  proxy("ON")
+  W.run(3000)
+  local col = fake.si.state.seg[1].col[1]
+  T.truthy("the next on comes on in it, over the On color", col[2] == 255 and col[3] < 64, T.show(col))
+  proxy("OFF")
+  W.run(3000)
+  proxy("ON")
+  W.run(3000)
+  col = fake.si.state.seg[1].col[1]
+  T.truthy("it holds for that on alone: the one after is in the On color", col[3] == 255 and col[2] < 64, T.show(col))
+end
+
+--------------------------------------------------------------------------------
+T.section("a light's buttons have the proxy's colors, and each link is told them as it comes online")
+--------------------------------------------------------------------------------
+do
+  local setup = setupFile("setup-643.xml"):gsub("<ON_COLOR>0000ff</ON_COLOR>", "<ON_COLOR>00ff00</ON_COLOR>", 1)
+  ShimSetUIRequest(function(_, request)
+    return request == "GET_SETUP" and setup or ""
+  end)
+  require("lib.persist"):delete("button_colors")
+  fresh("esp32-rgbw-pwm-16")
+  T.eq("the On link is told the proxy's colors", linkColors(300), { "00ff00", "000000" })
+  T.eq(
+    "and the Toggle and Off links theirs",
+    { linkColors(301), linkColors(302) },
+    { { "0000ff", "000000" }, { "000000", "0000ff" } }
+  )
+  mark()
+  ReceivedFromProxy(300, "REQUEST_BUTTON_COLORS", {})
+  T.eq("the On link asking is answered with them", linkColors(300), { "00ff00", "000000" })
+  ShimSetUIRequest(function()
+    return ""
+  end)
+  require("lib.persist"):delete("button_colors")
+end
+
+--------------------------------------------------------------------------------
+T.section("a light's own proxy as measured: Dim-To-Warm between two presets of one color, and rates of 750 ms")
+--------------------------------------------------------------------------------
+do
+  -- setup-643.xml: an unedited RGBCT light's proxy. Both presets are 3200 K.
+  local setup = setupFile("setup-643.xml")
+  ShimSetUIRequest(function(_, request)
+    return request == "GET_SETUP" and setup or ""
+  end)
+  for _, key in ipairs({ "color_on_mode", "brightness_rate_default", "color_rate_default" }) do
+    require("lib.persist"):delete(key)
+  end
+  fresh("esp32-rgbw-pwm-16")
+  proxy("OFF")
+  W.run(3000)
+  mark()
+  proxy("ON")
+  W.run(3000)
+  local last = sent()[#sent()]
+  -- (3200 - 2700) / (6500 - 2700) of 255.
+  T.truthy(
+    "an on is in the On Color, a color temperature: CCT 34",
+    last and last.seg and math.abs(last.seg[1].cct - 34) <= 1,
+    T.show(last)
+  )
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "30" })
+  W.run(3000)
+  last = sent()[#sent()]
+  T.eq("a level with no rate goes out over the proxy's 750 ms", last and { last.bri, last.tt }, { 77, 8 })
+  ShimSetUIRequest(function()
+    return ""
+  end)
 end
 
 T.finish()

@@ -4,7 +4,7 @@
 -- keeps the one connection to the controller: what the controller reports for this segment arrives
 -- over that binding, and this light's commands go back over it as what they mean for its segment;
 -- the WLED driver decides what the controller's master does (src/wled/segment.lua). The light is
--- the light_v2 proxy on binding 5001, run by the light model (src/wled/light.lua) through the
+-- the light_v2 proxy on binding 5001, run by the shared light library (src/lib/light.lua) over the
 -- WLED adapter (src/wled/light_wled.lua).
 
 require("lib.utils")
@@ -25,7 +25,7 @@ local diagnostics = require("lib.diagnostics")
 
 local Device = require("wled.device")
 local Segment = require("wled.segment")
-local light = require("wled.light")
+local Light = require("lib.light")
 local LightAdapter = require("wled.light_wled")
 
 --- The binding to the WLED driver.
@@ -42,20 +42,25 @@ local gInitialized = false
 --- @type table|nil
 local gPayload = nil
 
---- Whether the light was read off since its last report or bind, so a repeated disconnect tells nothing.
-local gReadOff = false
-
---- Show the driver's status, and whether the segment is there, to programming.
+--- Show the driver's status.
 --- @param status string
---- @param connected boolean
-local function setStatus(status, connected)
+local function setStatus(status)
   UpdateProperty("Driver Status", status)
-  values:update("Connected", connected, "BOOL")
+end
+
+--- Whether the light is bound to a WLED driver's segment connection.
+local gBound = false
+
+--- Ask the WLED driver for the segment's state, when there is one to ask.
+local function refresh()
+  if gBound then
+    SendToProxy(CONTROLLER_BINDING, "REFRESH_STATE", {}, "NOTIFY")
+  end
 end
 
 local wledLight = LightAdapter:new({
   device = Segment.view(nil),
-  extras = false,
+  refresh = refresh,
   send = function(json)
     if not gPayload then
       log:warn("Segment command not sent: the segment is not there")
@@ -73,7 +78,21 @@ local wledLight = LightAdapter:new({
     return tonumber(Properties["Cool White (K)"]) or DEFAULT_COOL
   end,
 })
-light.attach(wledLight:adapter())
+
+--- The light's proxy surface; the build writes driver.xml's light capabilities from it.
+local light = Light.new(wledLight, {
+  api = Light.API,
+  proxy = 5001,
+  links = { top = 300, toggle = 301, bottom = 302 },
+  dims = true,
+  color = true,
+  cct = true,
+  fades = true,
+  defaultOn = true,
+  scenes = true,
+  onModes = true,
+  flash = true,
+})
 
 --- The Segment property: the segment's name, LED range and what its LEDs light.
 --- @param seg table
@@ -87,11 +106,6 @@ local function describe(seg)
     (tonumber(seg.stop) or 0) - 1,
     Device.capabilityLabel(seg.lc)
   )
-end
-
---- Ask the WLED driver for the segment's state.
-local function refresh()
-  SendToProxy(CONTROLLER_BINDING, "REFRESH_STATE", {}, "NOTIFY")
 end
 
 -- ─── From the WLED driver (RFP dispatch) ───────────────────────────────────
@@ -112,11 +126,11 @@ function RFP.UPDATE_STATE(idBinding, strCommand, tParams)
     return
   end
   gPayload = payload
-  gReadOff = false
   wledLight.device = Segment.view(payload)
   UpdateProperty("Segment", describe(payload.segment))
-  setStatus("Connected", true)
-  light.state(wledLight:entity(), wledLight:state())
+  setStatus("Connected")
+  light:declare(wledLight:lightDevice())
+  light:report(wledLight:report())
 end
 
 function RFP.UPDATE_DISCONNECT(idBinding, strCommand, tParams)
@@ -127,25 +141,26 @@ function RFP.UPDATE_DISCONNECT(idBinding, strCommand, tParams)
   gPayload = nil
   wledLight.device = Segment.view(nil)
   local suspended = toboolean(Select(tParams, "suspended"))
-  setStatus(Select(tParams, "status") or (suspended and "Connecting" or "Not connected to the WLED controller"), false)
-  -- Suspended keeps the level; gone reads off once, even with no report since a load, a bind or a suspend.
-  if light.isOnline() or not (suspended or gReadOff) then
-    gReadOff = not suspended
-    light.disconnect(suspended)
-  end
+  setStatus(Select(tParams, "status") or (suspended and "Connecting" or "Not connected to the WLED controller"))
+  -- Suspended keeps the level; gone reads off once per outage, which the light keeps track of.
+  wledLight:forget()
+  light:lost(suspended)
 end
 
 OBC[CONTROLLER_BINDING] = function(idBinding, strClass, isBound)
   log:trace("OBC[%s](%s, %s)", idBinding, strClass, isBound)
   gPayload = nil
-  gReadOff = false
+  gBound = isBound
   wledLight.device = Segment.view(nil)
-  light.reset(isBound)
+  wledLight:forget()
   if isBound then
-    setStatus("Connecting", false)
-    refresh()
+    setStatus("Connecting")
+    -- A new segment: the light starts over and asks for it.
+    light:reset()
   else
-    setStatus("Bind this light to a WLED driver's segment connection", false)
+    setStatus("Bind this light to a WLED driver's segment connection")
+    -- Unbound on purpose, so the light keeps its level.
+    light:lost(true)
   end
 end
 
@@ -178,14 +193,11 @@ function OnDriverLateInit()
   end
 
   gInitialized = true
-  light.lateInit()
-  if (tointeger(C4:GetBoundProviderDevice(C4:GetDeviceID(), CONTROLLER_BINDING)) or 0) == 0 then
-    setStatus("Bind this light to a WLED driver's segment connection", false)
-    return
-  end
-  -- Shown off until the WLED driver tells it the segment; the proxy keeps its last level meanwhile.
-  setStatus("Connecting", false)
-  refresh()
+  gBound = (tointeger(C4:GetBoundProviderDevice(C4:GetDeviceID(), CONTROLLER_BINDING)) or 0) ~= 0
+  setStatus(gBound and "Connecting" or "Bind this light to a WLED driver's segment connection")
+  -- Shown offline until the WLED driver tells it the segment, which start asks for; the proxy keeps
+  -- its last level meanwhile.
+  light:start()
 end
 
 --#ifdef DRIVERCENTRAL
@@ -231,8 +243,8 @@ end
 
 --- A new white point moves the light's color temperature range.
 local function whitePointChanged()
-  if gInitialized and light.isOnline() then
-    light.state(wledLight:entity(), wledLight:state())
+  if gInitialized and gPayload then
+    light:declare(wledLight:lightDevice())
   end
 end
 
