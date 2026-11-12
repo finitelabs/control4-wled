@@ -856,7 +856,7 @@ function Adapter:startLegs(cmd, json, ms, toCol, lightAll, at)
 end
 
 --- Colors of light added together, as CIE xy: each part's xy and its luminance Y, all on one scale,
---- summed in XYZ. A part with no light is left out. It has the shape of lib.light.color's mixXY.
+--- summed in XYZ. A part with no light is left out.
 --- @param parts {x: number, y: number, Y: number}[]
 --- @return number|nil x, number|nil y Nil, nil when no part gives light.
 local function mixXY(parts)
