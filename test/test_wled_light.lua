@@ -777,6 +777,40 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("a push composed between a color and an off, reaching the driver after the off, never tells it on")
+--------------------------------------------------------------------------------
+do
+  fresh("dig2go-rgbw-16")
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = "0.708", LIGHT_COLOR_TARGET_Y = "0.292", LIGHT_COLOR_TARGET_MODE = "0" }
+  )
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "15", RATE = "0" })
+  W.run(3000)
+  -- Measured on the dig2go: a push reaches the controller about 50 ms after WLED sends it.
+  local sendText = fake.sendText
+  fake.sendText = function(self, text)
+    self:after(50, function()
+      sendText(self, text)
+    end)
+  end
+  mark()
+  proxy("SET_COLOR_TARGET", { LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = "4000", RATE = "0" })
+  W.run(15)
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "0", RATE = "0" })
+  W.run(3000)
+  fake.sendText = sendText
+  local levels = toldOf("LIGHT_BRIGHTNESS_CHANGED", "LIGHT_BRIGHTNESS_CURRENT")
+  local lit = false
+  for _, level in ipairs(levels) do
+    lit = lit or tonumber(level) > 0
+  end
+  T.eq("the proxy is never told the light on", lit, false, levels)
+  T.eq("and ends told off", tonumber(levels[#levels]), 0)
+  T.eq("the strip ends off", fake.si.state.on, false)
+end
+
+--------------------------------------------------------------------------------
 T.section("a click sends the controller only the click's level, as one with Crossfade off needs")
 --------------------------------------------------------------------------------
 do
