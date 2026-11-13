@@ -162,7 +162,7 @@ local function controllerRig(profile)
       return {
         on = bri > 0,
         level = bri > 0 and bri / 255 or (tonumber(st.bri) or 0) / 255,
-        color = colorOf({ col = { out.seg[main.id].col }, cct = main.cct }, lc),
+        color = colorOf({ col = { out.seg[main.id].col }, cct = out.seg[main.id].cct }, lc),
       }
     end
     -- WLED pushes its whole state on a change, so a quiet change is pushed all the same.
@@ -263,7 +263,7 @@ local function segmentRig(profile, id)
       return {
         on = lit,
         level = lit and level or (tonumber(s.bri) or 255) / 255,
-        color = colorOf({ col = { own.col }, cct = s.cct }, lc),
+        color = colorOf({ col = { own.col }, cct = own.cct }, lc),
       }
     end
     function device.set(values, _quiet)

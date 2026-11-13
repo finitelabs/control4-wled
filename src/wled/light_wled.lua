@@ -366,7 +366,7 @@ end
 --- @field ms number Its length, legs included.
 --- @field bri number[]|nil Master brightness (0-255) from and to; to is 0 for an off. Nil when it moves none.
 --- @field col integer[][]|nil The color (0-255 per channel) from and to; nil when it moves none.
---- @field cct integer|nil The CCT that goes with the color.
+--- @field cct integer[]|nil The CCT (0-255) from and to, which WLED fades with the color; nil when the frame sets none.
 --- @field toLevel number|nil The level of the command the fade goes to, as the library holds it.
 --- @field toColor LightColor|nil Likewise the color.
 
@@ -384,22 +384,26 @@ end
 
 --- Where the adapter's own wire fade has the controller now, with the fade's ends, while it runs.
 --- @param now number From C4:GetTime().
---- @return table|nil at bri and col where the fade is, briTo and colTo where it ends, cct; nil when none runs.
+--- @return table|nil at bri, col and cct where the fade is, briTo, colTo and cctTo where it ends, colFrom and
+---   cctFrom where it started; nil when none runs.
 function Adapter:runningAt(now)
   local f = self.fade
   if not f or f.ms <= 0 or now >= f.t0 + f.ms then
     return nil
   end
   local p = InRange((now - f.t0) / f.ms, 0, 1)
-  local at = { cct = f.cct, cctTo = f.cct, toLevel = f.toLevel, toColor = f.toColor }
+  local at = { toLevel = f.toLevel, toColor = f.toColor }
   if f.bri then
     at.bri, at.briTo = f.bri[1] + (f.bri[2] - f.bri[1]) * p, f.bri[2]
   end
   if f.col then
-    at.col, at.colTo = {}, f.col[2]
+    at.col, at.colFrom, at.colTo = {}, f.col[1], f.col[2]
     for i = 1, #f.col[2] do
       at.col[i] = round((f.col[1][i] or 0) + (f.col[2][i] - (f.col[1][i] or 0)) * p)
     end
+  end
+  if f.cct then
+    at.cct, at.cctFrom, at.cctTo = round(f.cct[1] + (f.cct[2] - f.cct[1]) * p), f.cct[1], f.cct[2]
   end
   return at
 end
@@ -412,8 +416,10 @@ local function heldAt(frozen)
     bri = frozen.bri,
     briTo = frozen.toBri,
     col = frozen.col,
+    colFrom = frozen.col,
     colTo = frozen.toCol,
     cct = frozen.cct,
+    cctFrom = frozen.cct,
     cctTo = frozen.toCct or frozen.cct,
     toLevel = frozen.toLevel,
     toColor = frozen.toColor,
@@ -635,7 +641,9 @@ function Adapter:stop(cmd, ms, at, now)
     end
   end
   if cmd.setsColor then
-    if at and at.col then
+    -- A fade whose wire form does not move, a white on the white LEDs alone, has no place of its own: the
+    -- library's estimate is the color it has reached.
+    if at and at.col and not sameColor(at.colFrom, at.cctFrom, { col = at.colTo, cct = at.cctTo }) then
       frame.seg = self:colorSeg(at.col, at.cct)
       rest = rest or {}
       rest.color = self:shownColor(at.col, at.cct)
@@ -757,16 +765,25 @@ end
 --- @param ms number
 --- @param col integer[]|nil
 --- @param at table|WledFrozen|nil
---- @return number fromBri, integer[]|nil fromCol
+--- @return number fromBri, integer[]|nil fromCol, integer|nil fromCct
 function Adapter:keep(cmd, json, ms, col, at)
   local device = self.device
   local from = cmd.from or {}
   local isOn = device.on == true and anySegmentOn(device)
   local fromBri = at and at.bri or (isOn and InRange((tonumber(from.level) or 0) * 255, 0, 255) or 0)
-  local fromCol = col and (at and at.col or (from.color and self:render(from.color)) or col) or nil
+  local fromCol, fromCct = nil, nil
+  if col then
+    if at and at.col then
+      fromCol, fromCct = at.col, at.cct
+    elseif from.color then
+      fromCol, fromCct = self:render(from.color)
+    else
+      fromCol = col
+    end
+  end
   if ms <= 0 then
     self.fade = nil
-    return fromBri, fromCol
+    return fromBri, fromCol, fromCct
   end
   local toBri = json.on == false and 0 or json.bri or (json.on == true and fromBri) or nil
   local _, cct = frameCol(json)
@@ -775,11 +792,11 @@ function Adapter:keep(cmd, json, ms, col, at)
     ms = ms,
     bri = toBri and { fromBri, toBri } or nil,
     col = col and { fromCol, col } or nil,
-    cct = cct,
+    cct = cct and { fromCct or cct, cct } or nil,
     toLevel = toBri and cmd.level or nil,
     toColor = col and cmd.color or nil,
   }
-  return fromBri, fromCol
+  return fromBri, fromCol, fromCct
 end
 
 --- A fade longer than one command carries, as legs along one straight line from where the
@@ -798,7 +815,7 @@ function Adapter:startLegs(cmd, json, ms, toCol, lightAll, at)
   -- A controller that is off fades up from nothing.
   local isOn = device.on == true and anySegmentOn(device)
   local setsLevel = json.on ~= nil
-  local fromBri, fromCol = self:keep(cmd, json, ms, toCol, at)
+  local fromBri, fromCol, fromCct = self:keep(cmd, json, ms, toCol, at)
   local toBri = json.on and (json.bri or fromBri) or 0
   fromCol = fromCol or toCol
   local gen = self.legGen
@@ -830,12 +847,15 @@ function Adapter:startLegs(cmd, json, ms, toCol, lightAll, at)
         for i = 1, #toCol do
           col[i] = round((fromCol[i] or 0) + (toCol[i] - (fromCol[i] or 0)) * p)
         end
+        local function cctAt(to)
+          return to and fromCct and round(fromCct + (to - fromCct) * p) or to
+        end
         local seg = {}
         for i, s in ipairs(json.seg) do
-          seg[i] = { id = s.id, col = { col }, fx = 0, cct = s.cct }
+          seg[i] = { id = s.id, col = { col }, fx = 0, cct = cctAt(s.cct) }
         end
         if #seg == 0 then
-          seg = { col = { col }, fx = 0, cct = json.seg.cct }
+          seg = { col = { col }, fx = 0, cct = cctAt(json.seg.cct) }
         end
         part.seg = seg
       end
