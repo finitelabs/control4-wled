@@ -122,7 +122,7 @@ Each segment reports what its LEDs can light, and the
 <!-- #ifdef DRIVERCENTRAL -->
 
 If you have a board or controller that does not work, please contact us at
-[driver-support@finitelabs.com](mailto:driver-support@finitelabs.com).
+[%%SUPPORT_EMAIL%%](mailto:__SUPPORT_EMAIL__).
 
 <!-- #else -->
 
@@ -700,8 +700,7 @@ https://drivercentral.io/platforms/control4-drivers/lighting/wled-lights
 <!-- #ifdef DRIVERCENTRAL -->
 
 If you have any questions or issues integrating this driver with Control4 or
-WLED, you can contact us at
-[driver-support@finitelabs.com](mailto:driver-support@finitelabs.com) or
+WLED, you can contact us at [%%SUPPORT_EMAIL%%](mailto:__SUPPORT_EMAIL__) or
 call/text us at [%%SUPPORT_PHONE%%](tel:__SUPPORT_PHONE__).
 
 <!-- #else -->
