@@ -2,7 +2,7 @@
 --
 -- Owns the one connection to a WLED controller (src/wled/client.lua), keeps the controller's
 -- model (src/wled/device.lua) and shows it in Composer. The controller's light is the light_v2
--- proxy on binding 5001, run by the light model (src/wled/light.lua) through the WLED adapter
+-- proxy on binding 5001, run by the shared light library (src/lib/light.lua) over the WLED adapter
 -- (src/wled/light_wled.lua). Its Extras menu is src/wled/extras.lua. WLED Segment lights bind to it,
 -- one per segment, and reach the controller through it (src/wled/segment.lua).
 
@@ -41,7 +41,7 @@ local Discovery = require("wled.discovery")
 local Extras = require("wled.extras")
 local Cycle = require("wled.cycle")
 local Segment = require("wled.segment")
-local light = require("wled.light")
+local Light = require("lib.light")
 local LightAdapter = require("wled.light_wled")
 local Lists = require("wled.lists")
 
@@ -126,7 +126,8 @@ local DEFAULT_WARM, DEFAULT_COOL = 2700, 6500
 --- Send a state command; its result arrives in the controller's next report. Nothing goes to a
 --- controller that is not the one this driver was set up with.
 --- @param json table
-local function send(json)
+--- @param opts {gapAfterMs: number|nil}|nil How long nothing may follow it on the wire.
+local function send(json, opts)
   --#ifdef DRIVERCENTRAL
   if not drivercentral:licensed() then
     log:warn("WLED command not sent: no active license")
@@ -137,7 +138,7 @@ local function send(json)
     log:warn("WLED command not sent: a different controller answers at this address")
     return
   end
-  client:send(json):next(nil, function(err)
+  client:send(json, opts):next(nil, function(err)
     log:warn("WLED command not sent: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
     -- The light shows what was asked; the controller's state puts it right.
     if Select(err, "error") ~= "stopped" then
@@ -151,6 +152,14 @@ end
 local wledLight = LightAdapter:new({
   device = device,
   send = send,
+  refresh = function()
+    --#ifdef DRIVERCENTRAL
+    if not drivercentral:licensed() then
+      return
+    end
+    --#endif
+    client:refresh()
+  end,
   warm = function()
     return tonumber(Properties["Warm White (K)"]) or DEFAULT_WARM
   end,
@@ -158,7 +167,31 @@ local wledLight = LightAdapter:new({
     return tonumber(Properties["Cool White (K)"]) or DEFAULT_COOL
   end,
 })
-light.attach(wledLight:adapter())
+
+--- The light's proxy surface; the build writes driver.xml's light capabilities from it.
+local light = Light.new(wledLight, {
+  api = Light.API,
+  proxy = PROXY_BINDING,
+  links = { top = 300, toggle = 301, bottom = 302 },
+  dims = true,
+  color = true,
+  cct = true,
+  fades = true,
+  defaultOn = true,
+  scenes = true,
+  onModes = true,
+  flash = true,
+  extras = true,
+  -- Legs carry a fade past one command's 65.5 s.
+  maxMs = 86400000,
+})
+
+--- The controller is gone or set aside: the light ends its run, and the adapter its memos.
+--- @param suspended boolean The driver dropped the connection itself, so the light keeps its level.
+local function lightLost(suspended)
+  wledLight:forget()
+  light:lost(suspended)
+end
 
 local lists = Lists:new({
   device = device,
@@ -279,12 +312,10 @@ local function setConnected(connected, status, suspend)
   if connected then
     gSuspended = false
   else
-    -- Lights with no report since a load or a suspend read off too once the controller is found gone.
+    -- Segment lights with no report since a load or a suspend read off too once the controller is found gone.
     local gone = not suspend and gSuspended
     gSuspended = suspend == true and (gSuspended or gConnected)
-    if light.isOnline() or gone then
-      light.disconnect(suspend == true)
-    end
+    lightLost(suspend == true)
     if gSegmentsTold or gone then
       gSegmentsTold = false
       gSegmentSent = {}
@@ -297,7 +328,6 @@ local function setConnected(connected, status, suspend)
     return
   end
   gConnected = connected
-  values:update("Connected", connected, "BOOL")
   C4:FireEventByID(connected and EVENT.CONNECTED or EVENT.DISCONNECTED)
   log:info("%s %s", connected and "Connected to" or "Disconnected from", Properties["IP Address"] or "")
 end
@@ -764,7 +794,7 @@ local function registerSegmentLink(key, binding)
       -- The next report tells this light its segment even unchanged: a command the controller did
       -- not take is put right.
       gSegmentSent[idBinding] = nil
-      send(Segment.forward(intent, device))
+      send(Segment.forward(intent, device), { gapAfterMs = tonumber(Select(tParams, "gapAfterMs")) })
     end
   end
   OBC[binding.bindingId] = function(idBinding, strClass, isBound)
@@ -1067,7 +1097,8 @@ local function onState(state, info)
     end
   end
   if state ~= nil then
-    light.state(wledLight:entity(), wledLight:state())
+    light:declare(wledLight:lightDevice())
+    light:report(wledLight:report())
     if gShowAll or changes.segments or changes.first or next(gSegmentOf) == nil then
       updateSegments()
     end
@@ -1088,11 +1119,35 @@ local function onState(state, info)
   end
 end
 
+--- Read the controller's LED settings: on 0.15.x, Crossfade off makes every change at once, so the
+--- light takes no fade time. A change is declared, and told the segment lights.
+local function readCrossfade()
+  --#ifdef DRIVERCENTRAL
+  if not drivercentral:licensed() then
+    return
+  end
+  --#endif
+  client:get("/json/cfg"):next(function(cfg)
+    local crossfade = Select(cfg, "light", "tr", "mode") ~= false
+    if device.crossfade == crossfade then
+      return
+    end
+    device.crossfade = crossfade
+    if device.lc ~= nil then
+      light:declare(wledLight:lightDevice())
+      pushSegments()
+    end
+  end, function(err)
+    log:debug("WLED LED settings not read: %s", type(err) == "table" and (err.error or "failed") or tostring(err))
+  end)
+end
+
 local function onOnline()
   -- Connected waits for the first state, which carries the MAC to check.
   setStatus("Connecting")
-  -- The controller may have changed its lists while it could not be reached.
+  -- The controller may have changed its lists, or its LED settings, while it could not be reached.
   wantAllLists()
+  readCrossfade()
 end
 
 --- @param reason string
@@ -1105,7 +1160,14 @@ local function onOffline(reason)
   startFollowing()
 end
 
-client = Client:new({ onState = onState, onOnline = onOnline, onOffline = onOffline })
+--- The slow poll reads 0.15.x's Crossfade switch again, which WLED's settings page changes with no push.
+local function onPoll()
+  if device.ver and not Device.isV16(device.ver) then
+    readCrossfade()
+  end
+end
+
+client = Client:new({ onState = onState, onOnline = onOnline, onOffline = onOffline, onPoll = onPoll })
 
 --#ifdef DRIVERCENTRAL
 --- DriverCentral's license gate. Without a license the driver drops the connection and stops
@@ -1125,9 +1187,7 @@ local function licenseChanged(licensed)
   client:stop()
   setStatus(drivercentral.UNLICENSED_STATUS)
   gSuspended = gSuspended or gConnected
-  if light.isOnline() then
-    light.disconnect(true)
-  end
+  lightLost(true)
   if gSegmentsTold then
     gSegmentsTold = false
     gSegmentSent = {}
@@ -1215,8 +1275,6 @@ function OnDriverLateInit()
   end, true)
   --#endif
 
-  -- Shown off until the controller answers; the proxy keeps its last level meanwhile.
-  values:update("Connected", false, "BOOL")
   ensureVariables()
   -- Test functions live in memory: Preset Is answers from its saved list until the presets are read.
   local saved = Select(conditionals:getConditionals(), PROGRAMMING, "preset_is", "list_items")
@@ -1224,10 +1282,11 @@ function OnDriverLateInit()
     registerPresetIs(saved, true)
   end
   gInitialized = true
-  light.lateInit()
   -- The address saved with the project is where the driver's controller was, so it may follow it.
   gFollow = true
   connect()
+  -- Shown offline until the controller answers; the proxy keeps its last level meanwhile.
+  light:start()
   showFound({})
   search()
   --#ifdef DRIVERCENTRAL
@@ -1323,8 +1382,8 @@ end
 
 --- A new white point moves the light's color temperature range.
 local function whitePointChanged()
-  if gInitialized and light.isOnline() then
-    light.state(wledLight:entity(), wledLight:state())
+  if gInitialized and device.lc ~= nil then
+    light:declare(wledLight:lightDevice())
   end
 end
 
@@ -1719,12 +1778,12 @@ function EC.Reset_Driver(params)
   log:print("Resetting driver to initial state")
   persist:delete(MAC_PERSIST_KEY)
   stopFollowing()
-  -- Tell the proxy and programming before the light's state is cleared. The controller is still
-  -- there, so its lights keep their level: no Light Off for a light that did not change.
-  setConnected(false, "Connecting", true)
+  -- The variables go first, so the light's Connected comes back with its offline. The controller is
+  -- still there, so its lights keep their level: no Light Off for a light that did not change.
   values:reset()
-  -- As an unbind does: a fresh install has no white of its own remembered.
-  light.reset(false)
+  setConnected(false, "Connecting", true)
+  wledLight:forget()
+  light:reset()
   device = Device:new()
   wledLight.device = device
   lists.device = device
@@ -1748,7 +1807,6 @@ function EC.Reset_Driver(params)
   persist:delete(CYCLE_PERSIST_KEY)
   persist:delete(CYCLE_NAMES_PERSIST_KEY)
   SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = "<extras_setup><extra></extra></extras_setup>" }, "NOTIFY")
-  values:update("Connected", false, "BOOL")
   ensureVariables()
   for name, value in pairs(RESET_PROPERTY_VALUES) do
     UpdateProperty(name, value, true)

@@ -71,7 +71,7 @@ local told, events = {}, {}
 -- The proxy's variables as it keeps them over a driver reload: Brightness Percent (1001) and
 -- its target (1110), Current Color Chromaticity (1200) and its target (1210), and its
 -- Navigator Dynamic Capabilities (6661), driver.xml's until it is told others and again after a
--- controller start (test_light_scenes.lua's model, measured on dev).
+-- controller start (measured on dev; test/light_proxy_fake.lua models the same).
 local PROXY_DEVICE = 9001
 local proxyVars = {}
 local proxyCaps = {}
@@ -292,28 +292,43 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A start tells the light its level and color once and its capabilities where driver.xml differs")
+T.section("Each start and reconnect tells the light its capabilities, level and color, even unchanged")
 --------------------------------------------------------------------------------
--- A controller start puts the proxy back on driver.xml's capabilities: a color light differs in
--- supports_color and is told them again, a white light matches and is told none (and no color).
+-- The Control4 standard: every driver start and every reconnect tells all three again.
 for _, case in ipairs({ { "esp32-rgbw-pwm-16", 1 }, { "esp32-white-16", 0 } }) do
   local profile, color = case[1], case[2]
   for _, how in ipairs({ "update", "restart" }) do
     local name = ("%s, %s"):format(profile, how)
     fresh(profile)
     W.run(200)
-    T.eq("capabilities told at the first start (" .. name .. ")", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), color)
+    T.eq("capabilities told at the first start (" .. name .. ")", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 1)
+    if color == 0 then
+      T.differs(
+        "a white light is told no capabilities at its first start (" .. name .. ")",
+        "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
+      )
+    end
     T.eq("the level told once (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
     T.eq("the color told once, if it has one (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), color)
     restart(how)
     W.run(200)
-    T.eq(
-      "capabilities told again only at a restart, where driver.xml differs (" .. name .. ")",
-      toldCount("DYNAMIC_CAPABILITIES_CHANGED"),
-      how == "restart" and color or 0
+    T.differs(
+      "capabilities told again only at a restart (" .. name .. ")",
+      "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
     )
-    T.eq("no level after a reload (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
-    T.eq("no color after a reload (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), 0)
+    T.differs(
+      "no level after a reload (" .. name .. ")",
+      "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
+    )
+    if color == 1 then
+      T.differs(
+        "no color after a reload (" .. name .. ")",
+        "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
+      )
+    end
+    T.eq("capabilities told again at the reload (" .. name .. ")", toldCount("DYNAMIC_CAPABILITIES_CHANGED"), 1)
+    T.eq("the level told again (" .. name .. ")", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
+    T.eq("the color told again, if it has one (" .. name .. ")", toldCount("LIGHT_COLOR_CHANGED"), color)
     T.eq("Connected event fires at a reload's connect (" .. name .. ")", eventCount(1), 1)
     T.eq("Connected again (" .. name .. ")", Variables["Connected"], "1")
   end
@@ -419,16 +434,19 @@ do
   Properties["Automatic Updates"] = "Off"
   Properties["Update Channel"] = "Prerelease"
   local persist = require("lib.persist")
-  persist:set("white_point", { x = 0.4, y = 0.4, picked = { x = 0.45, y = 0.41 } })
   T.eq("connected before the reset", Variables["Connected"], "1")
   T.eq("lit before the reset", proxyVars[1001] ~= nil and proxyVars[1001] ~= "0", true)
   mark()
   EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
-  T.eq("the white this light picked is forgotten", persist:get("white_point"), nil)
+  T.differs("the white this light picked is forgotten", "BENIGN: the copied model's white_point memo is gone")
   T.eq("and what programming last saw", persist:get("WledShown"), nil)
   W.run(5000)
   T.eq("the proxy hears offline, then online", toldCount("ONLINE_CHANGED") >= 2 and lastOnline(), true)
-  T.eq("no level told for a light that did not change", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 0)
+  T.differs(
+    "no level told for a light that did not change",
+    "At each start and reconnect the light tells its capabilities, brightness and color, even unchanged."
+  )
+  T.eq("its level told again at the reconnect", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
   T.eq("Cloud Monitoring back to its default", Properties["Cloud Monitoring"], "Enabled")
   T.eq("Warm White back to its default", Properties["Warm White (K)"], "2700")
   T.eq("Cool White back to its default", Properties["Cool White (K)"], "6500")
@@ -629,6 +647,26 @@ do
   local last = fake.commands[#fake.commands]
   T.eq("a level goes out as master brightness at once", last and { last.bri, last.tt }, { 204, 0 })
   T.eq("and is told", toldCount("LIGHT_BRIGHTNESS_CHANGED"), 1)
+end
+
+--------------------------------------------------------------------------------
+T.section("Commands sent while a reload connects go nowhere, and the proxy is told the light as it is")
+--------------------------------------------------------------------------------
+for _, how in ipairs({ "update", "restart" }) do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  ReceivedFromProxy(PROXY, "SET_LEVEL", { LEVEL = "50" })
+  W.run(2000)
+  local sentBefore = #fake.commands
+  restart(how)
+  ReceivedFromProxy(PROXY, "OFF", {})
+  ReceivedFromProxy(PROXY, "SET_LEVEL", { LEVEL = "20" })
+  T.eq("the proxy is told offline while it connects (" .. how .. ")", lastOnline(), false)
+  W.run(3000)
+  T.eq("neither command is sent (" .. how .. ")", #fake.commands, sentBefore)
+  T.eq("so the strip stays on (" .. how .. ")", fake.si.state.on, true)
+  T.eq("online at the first state (" .. how .. ")", lastOnline(), true)
+  T.eq("and the proxy is told it on at 50 % (" .. how .. ")", proxyVars[1001], "50")
 end
 
 --------------------------------------------------------------------------------

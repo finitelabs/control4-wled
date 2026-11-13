@@ -296,7 +296,7 @@ do
     payload.segment.stop,
     payload.segment.lc,
   }, { 1, 60, 61, 7 })
-  T.eq("the master power and level", payload.master, { on = true, bri = 128 })
+  T.eq("the master power and level, and whether it fades", payload.master, { on = true, bri = 128, crossfade = true })
 
   mark()
   elsewhere(fake, { seg = { { id = 1, bri = 40 } } })

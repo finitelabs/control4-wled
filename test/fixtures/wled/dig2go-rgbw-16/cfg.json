@@ -1,0 +1,34 @@
+{
+ "rev": [
+  1,
+  0
+ ],
+ "vid": 2606300,
+ "id": {
+  "mdns": "wled-c3d4f2",
+  "name": "Mock Bench Strip"
+ },
+ "hw": {
+  "led": {
+   "total": 300,
+   "cct": false,
+   "cr": false,
+   "cb": 0,
+   "rgbwm": 255,
+   "ins": [
+    {
+     "start": 0,
+     "len": 300,
+     "type": 30,
+     "order": 0,
+     "rgbwm": 0
+    }
+   ]
+  }
+ },
+ "light": {
+  "tr": {
+   "dur": 7
+  }
+ }
+}

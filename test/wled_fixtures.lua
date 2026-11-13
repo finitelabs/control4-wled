@@ -219,7 +219,11 @@ function Fake.new(profile, opts)
     ["/json/pal"] = M.fixture(profile, "pal.json"),
     ["/json/fxdata"] = M.fixture(profile, "fxdata.json"),
     ["/presets.json"] = M.fixture(profile, "presets.json"),
+    ["/json/cfg"] = M.fixture(profile, "cfg.json"),
   }
+  -- 0.15.4's LED settings switch "Crossfade": off, every change is at once. 16.x has no switch.
+  local light = self.files["/json/cfg"].light or {}
+  self.crossfade = (light.tr or {}).mode ~= false
   self.reachable = true
   self.socketOpen = true
   self.ignorePings = false
@@ -392,14 +396,131 @@ local PRESET_LOAD_MS = 40
 --- Apply a command the way the controller would for the parts these suites use. A preset loads
 --- a moment later, as WLED's does.
 --- @param cmd table
+--- Where the strip's output is along one fade: from, to, start and length; a value at rest when ms is 0.
+--- @param f table|nil {from, to, t0, ms}; from and to are numbers or channel lists.
+--- @param now number
+--- @return any
+local function along(f, now)
+  if not f then
+    return nil
+  end
+  local p = f.ms > 0 and math.max(0, math.min(1, (now - f.t0) / f.ms)) or 1
+  if type(f.to) ~= "table" then
+    return f.from + (f.to - f.from) * p
+  end
+  local out = {}
+  for i = 1, #f.to do
+    out[i] = math.floor((f.from[i] or 0) + (f.to[i] - (f.from[i] or 0)) * p + 0.5)
+  end
+  return out
+end
+
+--- What the strip shows now: the master output (0 while off) and each segment's color and level.
+--- @return {bri: number, seg: table<integer, {col: integer[], bri: number}>}
+function Fake:output()
+  local now = C4:GetTime()
+  local state = self.si.state
+  -- A fade counts only while it runs: after it, or a preset or another client's change, the state is what shows.
+  local function live(f)
+    return f ~= nil and f.ms > 0 and now < f.t0 + f.ms
+  end
+  local out = { bri = live(self.outBri) and along(self.outBri, now) or (state.on and state.bri or 0), seg = {} }
+  for _, seg in ipairs(state.seg or {}) do
+    local o = (self.outSeg or {})[seg.id] or {}
+    out.seg[seg.id] = {
+      col = live(o.col) and along(o.col, now) or copy(seg.col and seg.col[1] or {}),
+      bri = live(o.bri) and along(o.bri, now) or (seg.on ~= false and (seg.bri or 255) or 0),
+    }
+  end
+  return out
+end
+
+--- How far apart two channel lists are, in the channel that differs most.
+local function apart(a, b)
+  local d = 0
+  for i = 1, math.max(#a, #b) do
+    d = math.max(d, math.abs((a[i] or 0) - (b[i] or 0)))
+  end
+  return d
+end
+
+--- Move the output model for a command: what the strip shows fades from where it is to the new
+--- state over the command's tt. 16.x puts every fade at its target when a call with a level or a tt
+--- lands while one runs (measured on a dig2go, 2026-11-11 and 11-12), brightness and every segment's
+--- color alike. 0.15.4 restarts brightness from where it is, but a segment already fading keeps its
+--- start and timer, so a mid-fade color change jumps and finishes on the old schedule.
+--- snaps counts the fades that jumped; colorJumps the calls that moved a color at once by more than
+--- the wire's rounding while a fade ran.
+--- @param cmd table
+--- @param before table The output before the command, from Fake:output.
+--- @param running boolean A fade was running when the command landed.
+function Fake:moveOutput(cmd, before, running)
+  local now = C4:GetTime()
+  local state = self.si.state
+  local tt = tonumber(cmd.tt) or 0
+  local ms = self.crossfade and tt * 100 or 0
+  local fading = cmd.bri ~= nil or cmd.tt ~= nil
+  local snap = self:isV16() and running and fading
+  self.outSeg = self.outSeg or {}
+  local briTo = state.on and state.bri or 0
+  if snap or ms <= 0 then
+    self.outBri = nil
+  else
+    self.outBri = { from = before.bri, to = briTo, t0 = now, ms = ms }
+  end
+  local jumped = false
+  for _, seg in ipairs(state.seg or {}) do
+    local was = before.seg[seg.id] or { col = {}, bri = 0 }
+    local o = self.outSeg[seg.id] or {}
+    local colTo = copy(seg.col and seg.col[1] or {})
+    local segBriTo = seg.on ~= false and (seg.bri or 255) or 0
+    local colFading = o.col and o.col.ms > 0 and now < o.col.t0 + o.col.ms
+    if snap or ms <= 0 then
+      o.col, o.bri = nil, nil
+      if running and apart(was.col, colTo) > 2 and (snap or ms > 0) then
+        jumped = true
+      end
+    else
+      local whiteToRgb = (was.col[1] or 0) == 0
+        and (was.col[2] or 0) == 0
+        and (was.col[3] or 0) == 0
+        and (was.col[4] or 0) > 0
+        and (colTo[4] or 0) == 0
+        and math.max(colTo[1] or 0, colTo[2] or 0, colTo[3] or 0) > 0
+      if self:isV16() and whiteToRgb then
+        -- Measured on the dig2go, 2026-11-12: on 16.0.1 a fade from the white LEDs alone to an RGB
+        -- color alone ([0,0,0,255] to [255,0,0,0], tt 30) lands within a frame.
+        o.col = nil
+      elseif apart(was.col, colTo) > 0 then
+        if colFading and not self:isV16() then
+          -- 0.15.4: the segment keeps its transition's start and timer, now toward the new color.
+          o.col = { from = o.col.from, to = colTo, t0 = o.col.t0, ms = o.col.ms }
+          if apart(was.col, along(o.col, now)) > 2 then
+            jumped = true
+          end
+        else
+          o.col = { from = was.col, to = colTo, t0 = now, ms = ms }
+        end
+      end
+      o.bri = { from = was.bri, to = segBriTo, t0 = now, ms = ms }
+    end
+    self.outSeg[seg.id] = o
+  end
+  if jumped then
+    self.colorJumps = (self.colorJumps or 0) + 1
+  end
+end
+
 function Fake:apply(cmd)
   self.commands[#self.commands + 1] = cmd
   -- 16.x jumps to the target of a fade that arrives while another runs (measured on a dig2go);
   -- 0.15 fades on from where the output is. snaps counts the fades that jumped.
   local tt = tonumber(cmd.tt)
+  local now = C4:GetTime()
+  local running = self.fadeUntil ~= nil and now <= self.fadeUntil
+  local before = self:output()
   if tt and tt > 0 then
-    local now = C4:GetTime()
-    if self:isV16() and self.fadeUntil and now <= self.fadeUntil then
+    if self:isV16() and running then
       self.snaps = self.snaps + 1
     end
     self.fadeUntil = now + tt * 100
@@ -407,6 +528,7 @@ function Fake:apply(cmd)
     self.fadeUntil = nil
   end
   self:applyFields(cmd)
+  self:moveOutput(cmd, before, running)
   if type(cmd.playlist) == "table" and next(cmd.playlist) == nil then
     -- 16.x takes an empty playlist sent during one as a nested playlist, and the running one
     -- carries on (playlist.cpp@v16.0.1); 0.15 unloads it.

@@ -1,0 +1,35 @@
+{
+ "rev": [
+  1,
+  0
+ ],
+ "vid": 2508020,
+ "id": {
+  "mdns": "wled-c3d408",
+  "name": "Mock Porch RGBW"
+ },
+ "hw": {
+  "led": {
+   "total": 30,
+   "cct": false,
+   "cr": false,
+   "cb": 0,
+   "rgbwm": 255,
+   "ins": [
+    {
+     "start": 0,
+     "len": 30,
+     "type": 30,
+     "order": 0,
+     "rgbwm": 3
+    }
+   ]
+  }
+ },
+ "light": {
+  "tr": {
+   "dur": 7,
+   "mode": true
+  }
+ }
+}
