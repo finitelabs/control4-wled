@@ -650,6 +650,25 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("An off sent while a reload connects goes nowhere, and the proxy is told the light as it is")
+--------------------------------------------------------------------------------
+for _, how in ipairs({ "update", "restart" }) do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(200)
+  ReceivedFromProxy(PROXY, "SET_LEVEL", { LEVEL = "50" })
+  W.run(2000)
+  local sentBefore = #fake.commands
+  restart(how)
+  ReceivedFromProxy(PROXY, "OFF", {})
+  T.eq("the proxy is told offline while it connects (" .. how .. ")", lastOnline(), false)
+  W.run(3000)
+  T.eq("the off is not sent (" .. how .. ")", #fake.commands, sentBefore)
+  T.eq("so the strip stays on (" .. how .. ")", fake.si.state.on, true)
+  T.eq("online at the first state (" .. how .. ")", lastOnline(), true)
+  T.eq("and the proxy is told it on at 50 % (" .. how .. ")", proxyVars[1001], "50")
+end
+
+--------------------------------------------------------------------------------
 T.section("Live data from another system shows in Driver Status within one poll, though WLED pushes nothing")
 --------------------------------------------------------------------------------
 do
