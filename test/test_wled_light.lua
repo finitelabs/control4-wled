@@ -487,6 +487,20 @@ do
   T.eq("first the color, at once, the light left off", { first.on, first.bri, first.tt }, { nil, nil, 0 })
   T.truthy("in green", first.seg and first.seg[1].col[1][2] == 255)
   T.eq("then on, to 80 over 2 s", { second.on, second.bri, second.tt }, { true, 204, 20 })
+
+  -- Programming's level names no brightness preset, so the proxy's copy of the On color 20 ms later is no follow-up.
+  W.run(20)
+  mark()
+  proxy("SET_COLOR_TARGET", {
+    LIGHT_COLOR_TARGET_X = "0.17",
+    LIGHT_COLOR_TARGET_Y = "0.70",
+    LIGHT_COLOR_TARGET_MODE = "0",
+    LIGHT_COLOR_TARGET_PRESET_ID = "3",
+    LIGHT_COLOR_TARGET_PRESET_ORIGIN = "2",
+    RATE = "2000",
+  })
+  W.run(3000)
+  T.eq("the proxy's copy of the On color 20 ms on sends nothing more", #sent(), 0)
 end
 
 --------------------------------------------------------------------------------
@@ -651,7 +665,6 @@ do
     return x and y and C4:ColorXYtoCCT(x, y) or nil
   end
 
-  -- WLED fades a tunable white strip's CCT with its color (0.15 Segment::currentBri(true), 16 Segment::currentCCT).
   fresh("esp32-cct-16")
   proxy("SET_LEVEL", { LEVEL = "100" })
   white(6500, "0")
