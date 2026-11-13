@@ -17,6 +17,17 @@ local HERE = debug.getinfo(1, "S").source:match("^@(.*)/") or "."
 local DRIVER = HERE .. "/../drivers/wled_segment/driver.lua"
 local XML = HERE .. "/../drivers/wled_segment/driver.xml"
 
+--- The light capabilities the build writes into driver.xml, from the profile the driver's chunk gave
+--- Light.new: the source driver.xml carries none of them.
+local function builtCaps()
+  local made = require("lib.light").made
+  local out = {}
+  for _, row in ipairs(require("lib.light.caps").static(made[#made].profile)) do
+    out[row.key] = row.value
+  end
+  return out
+end
+
 local PROXY, CONTROLLER = 5001, 5002
 
 package.preload["cloud-client-byte"] = function()
@@ -202,7 +213,11 @@ do
   T.eq("asks for its segment at start", #toldOf(CONTROLLER, "REFRESH_STATE"), 1)
   T.eq("connecting meanwhile", Properties["Driver Status"], "Connecting")
   T.eq("and not Connected", Variables["Connected"], "0")
-  T.contains("driver.xml has no Extras", readXml(), "<has_extras>False</has_extras>")
+  T.differs(
+    "driver.xml has no Extras",
+    "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
+  )
+  T.eq("the build's driver.xml has no Extras", builtCaps().has_extras, "False")
   local connection = readXml():match("<id>" .. CONTROLLER .. "</id>(.-)</connection>") or ""
   T.contains("and its WLED Controller connection says it is not hidden", connection, "<hidden>False</hidden>")
   mark()
@@ -240,8 +255,12 @@ do
 end
 
 do
-  T.contains("driver.xml declares a color stop", readXml(), "<supports_color_stop>True</supports_color_stop>")
   fresh("esp32-white-16", 0)
+  T.differs(
+    "driver.xml declares a color stop",
+    "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
+  )
+  T.eq("the build's driver.xml declares a color stop", builtCaps().supports_color_stop, "True")
   mark()
   report()
   local caps = toldOf(PROXY, "DYNAMIC_CAPABILITIES_CHANGED")
@@ -483,6 +502,64 @@ do
   T.eq("bound: asks for its segment", #toldOf(CONTROLLER, "REFRESH_STATE"), 1)
   report()
   T.eq("and shows it", Properties["Driver Status"], "Connected")
+end
+
+--------------------------------------------------------------------------------
+T.section("a light loaded while its controller is suspended stays offline, and tells no level it does not know")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16", 1)
+  mark()
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", { suspended = "true" })
+  T.eq("late init told it offline: nothing more", #toldOf(PROXY, "ONLINE_CHANGED"), 0)
+  T.eq("and no level", #toldOf(PROXY, "LIGHT_BRIGHTNESS_CHANGED"), 0)
+  mark()
+  proxy("GET_LIGHT_LEVEL")
+  proxy("TOGGLE")
+  T.eq("Get Light Level and a Toggle tell nothing", #toldOf(PROXY, "LIGHT_BRIGHTNESS_CHANGED"), 0)
+  T.eq("and send nothing", #commands(), 0)
+end
+
+--------------------------------------------------------------------------------
+T.section("a light already told offline is not told so again")
+--------------------------------------------------------------------------------
+do
+  --- The ONLINE_CHANGED states told since the mark.
+  local function onlines()
+    local out = {}
+    for _, p in ipairs(toldOf(PROXY, "ONLINE_CHANGED")) do
+      out[#out + 1] = p.STATE
+    end
+    return out
+  end
+  fresh("esp32-rgbw-pwm-16", 1)
+  report()
+  mark()
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", { suspended = "true" })
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", {})
+  report()
+  T.eq("suspended, then lost, then back: offline once, then online", onlines(), { false, true })
+  fresh("esp32-rgbw-pwm-16", 1)
+  mark()
+  RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", {})
+  T.eq("lost after a load, which told it offline: nothing more", onlines(), {})
+end
+
+--------------------------------------------------------------------------------
+T.section("a segment of a 0.15.4 controller with Crossfade off takes no fade time")
+--------------------------------------------------------------------------------
+do
+  fresh("esp8266-ws2812b-015-nofade", 0)
+  -- The WLED driver read the controller's LED settings and tells the segment with its state.
+  model.crossfade = false
+  mark()
+  report()
+  local caps = toldOf(PROXY, "DYNAMIC_CAPABILITIES_CHANGED")
+  T.eq("its light offers no stop", (caps[#caps] or {}).supports_brightness_stop, false)
+  mark()
+  proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "40", RATE = "2000" })
+  local cmds = commands()
+  T.eq("a timed level goes at once", cmds[1] and cmds[1].tt, 0)
 end
 
 T.finish()

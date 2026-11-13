@@ -441,6 +441,9 @@ class Segment:
         self.sound_sim, self.map1d2d, self.set, self.blend_mode = 0, 0, 0, 0
         self.name = None
         self.reset = False
+        # A color transition (FX_fcn.cpp Segment::startTransition): the colors it fades from, its
+        # start and its length; t_from None is no transition.
+        self.t_from, self.t_start, self.t_dur = None, 0, 0
 
     def is_active(self):
         return self.stop > self.start
@@ -521,6 +524,8 @@ class Device:
         # Whether the command being applied sets bri or tt, and whether a fade jumped on 16.x.
         self.fade_command = False
         self.fade_jumped = False
+        # Calls that put a running color fade at its target at once, a visible jump.
+        self.color_jumps = 0
         self.blending_style = 0
         self.state_changed = False
 
@@ -529,7 +534,11 @@ class Device:
         self.segments = []
         for s in segs[: self.max_segments]:
             seg = Segment(
-                s["start"], s["stop"], s.get("startY", 0), s.get("stopY", self.height), color
+                s["start"],
+                s["stop"],
+                s.get("startY", 0),
+                s.get("stopY", self.height),
+                color,
             )
             if "n" in s:
                 seg.name = s["n"]
@@ -757,8 +766,58 @@ class Device:
                 return
             if slot == 1 and c != 0:
                 return
+        self.start_color_transition(seg, slot, c)
         seg.colors[slot] = c
         self.state_changed = True
+
+    def color_progress(self, seg):
+        """How far a segment's color transition has got, 0 to 1; 1 with none running."""
+        if seg.t_from is None or seg.t_dur <= 0:
+            return 1.0
+        return min(1.0, (self.now() - seg.t_start) / seg.t_dur)
+
+    def output_color(self, seg, slot=0):
+        """The color a segment shows now, part way through its transition."""
+        to = channels(seg.colors[slot])
+        p = self.color_progress(seg)
+        if p >= 1.0:
+            return to
+        fr = channels(seg.t_from[slot])
+        return [int(fr[i] + (to[i] - fr[i]) * p) for i in range(4)]
+
+    def start_color_transition(self, seg, slot=0, c=None):
+        """FX_fcn.cpp Segment::startTransition, called before a color changes. 16.x captures where a
+        running transition has got to and restarts it; 0.15.4 leaves a running one its start values
+        and timer, so the new color is reached on the old schedule (FX_fcn.cpp:271@v0.15.4).
+        """
+        dur = self.strip_transition if self.crossfade else 0
+        if dur <= 0:
+            seg.t_from = None
+            return
+        if self.v16 and slot == 0 and c is not None:
+            # Measured on the dig2go, 2026-11-12: on 16.0.1 a fade from the white LEDs alone to an RGB
+            # color alone ([0,0,0,255] to [255,0,0,0], tt 30) lands within a frame.
+            fr, to = channels(seg.colors[0]), channels(c)
+            if fr[:3] == [0, 0, 0] and fr[3] > 0 and to[3] == 0 and max(to[:3]) > 0:
+                seg.t_from = None
+                return
+        running = self.color_progress(seg) < 1.0
+        if running and not self.v16:
+            return
+        seg.t_from = [rgbw32(*self.output_color(seg, i)) for i in range(3)]
+        seg.t_start, seg.t_dur = self.now(), dur
+
+    def stop_color_transitions(self, jumped=False):
+        """WS2812FX::setTransitionMode(false): every segment at its colors at once. jumped counts it
+        when a color still part way moves at once by more than the wire's rounding."""
+        moved = False
+        for seg in self.segments:
+            if self.color_progress(seg) < 1.0:
+                now_col, to = self.output_color(seg), channels(seg.colors[0])
+                moved = moved or max(abs(a - b) for a, b in zip(now_col, to)) > 2
+            seg.t_from = None
+        if jumped and moved:
+            self.color_jumps += 1
 
     def set_palette(self, seg, pal):
         if self.v16:
@@ -1033,10 +1092,12 @@ class Device:
         else:
             if self.transition_active:
                 self.bri_old = self.bri_t
-                # 16.x jumps at once to the target of a fade that arrives while another runs
-                # (measured on a dig2go); 0.15 fades on from where the output is.
+                # 16.x jumps at once to the target of a fade that arrives while another runs,
+                # brightness and every segment's color alike (measured on a dig2go, 2026-11-11 and
+                # 11-12); 0.15 fades brightness on from where the output is.
                 if self.v16 and self.fade_command:
                     self.fade_jumped = True
+                    self.stop_color_transitions(jumped=True)
             self.transition_active = True
             self.transition_start = now
         self.state_changed = False
@@ -1215,7 +1276,13 @@ class Device:
         out.update(sel=seg.selected, rev=seg.reverse, mi=seg.mirror)
         if self.matrix:
             out.update(rY=seg.reverse_y, mY=seg.mirror_y, tp=seg.transpose)
-        out.update(o1=seg.check1, o2=seg.check2, o3=seg.check3, si=seg.sound_sim, m12=seg.map1d2d)
+        out.update(
+            o1=seg.check1,
+            o2=seg.check2,
+            o3=seg.check3,
+            si=seg.sound_sim,
+            m12=seg.map1d2d,
+        )
         if self.v16:
             out["bm"] = seg.blend_mode
         return out
@@ -1310,7 +1377,7 @@ class Device:
             "simplifiedui": False,
             "live": bool(self.realtime_mode),
             "liveseg": -1,
-            "lm": REALTIME_NAMES.get(self.realtime_mode, "") if self.realtime_mode else "",
+            "lm": (REALTIME_NAMES.get(self.realtime_mode, "") if self.realtime_mode else ""),
             "lip": self.realtime_ip,
             "ws": self.ws_count(),
             "fxcount": self.mode_count(),
@@ -1399,6 +1466,8 @@ class Device:
         return {
             "bri": self.output_bri(),
             "target": self.bri,
+            "colors": [self.output_color(seg) for seg in self.segments],
+            "color_jumps": self.color_jumps,
             "transition_ms": self.strip_transition if self.transition_active else 0,
             "transition_left_ms": (
                 max(0, self.strip_transition - (self.now() - self.transition_start))
@@ -1587,7 +1656,11 @@ class Device:
                 self.pl_repeat = self.pl_parent_repeat
                 self.pl_parent_index, self.pl_parent_repeat = -1, 0
             elif rep == 0:
-                self.pl_parent_preset, self.pl_parent_index, self.pl_parent_repeat = 0, -1, 0
+                self.pl_parent_preset, self.pl_parent_index, self.pl_parent_repeat = (
+                    0,
+                    -1,
+                    0,
+                )
         self.current_playlist = preset_id
         return self.current_playlist
 
@@ -1731,6 +1804,7 @@ class Device:
             self.transition_active = False
             self.json_transition_once = False
             self.apply_final_bri()
+            self.stop_color_transitions()
             return
         if self.fade_jumped:
             self.bri_t = self.bri

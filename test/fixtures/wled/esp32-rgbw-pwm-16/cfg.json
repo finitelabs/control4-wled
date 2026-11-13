@@ -1,0 +1,41 @@
+{
+ "rev": [
+  1,
+  0
+ ],
+ "vid": 2606300,
+ "id": {
+  "mdns": "wled-c3d402",
+  "name": "Mock Shelf Controller"
+ },
+ "hw": {
+  "led": {
+   "total": 61,
+   "cct": false,
+   "cr": false,
+   "cb": 0,
+   "rgbwm": 255,
+   "ins": [
+    {
+     "start": 0,
+     "len": 60,
+     "type": 30,
+     "order": 0,
+     "rgbwm": 3
+    },
+    {
+     "start": 60,
+     "len": 1,
+     "type": 45,
+     "order": 0,
+     "rgbwm": 3
+    }
+   ]
+  }
+ },
+ "light": {
+  "tr": {
+   "dur": 7
+  }
+ }
+}

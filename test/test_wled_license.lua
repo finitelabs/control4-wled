@@ -187,4 +187,22 @@ do
   T.eq("the controller has segments", segments > 0, true)
 end
 
+T.section("Reset Driver while unlicensed reaches no controller, and leaves the light offline")
+do
+  fake.reachable = true
+  cloud.answer = { AC = 0, AS = "Invalid License" }
+  tick(30)
+  T.eq("unlicensed", Properties["Driver Status"], "No active license")
+  local requests, toldBefore = #fake.requests, #told
+  EC.Reset_Driver({ ["Are You Sure?"] = "Yes" })
+  W.run(3000)
+  T.eq("nothing reaches the controller, its state asked for or not", #fake.requests - requests, 0)
+  local online = false
+  for i = toldBefore + 1, #told do
+    online = online or (told[i].command == "ONLINE_CHANGED" and told[i].params.STATE == true)
+  end
+  T.eq("and the light is not put online", online, false)
+  T.eq("a light ON reaches nothing", reaches("ON"), false)
+end
+
 T.finish()

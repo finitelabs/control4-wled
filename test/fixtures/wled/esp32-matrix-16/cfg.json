@@ -1,0 +1,34 @@
+{
+ "rev": [
+  1,
+  0
+ ],
+ "vid": 2606300,
+ "id": {
+  "mdns": "wled-c3d40b",
+  "name": "Mock Panel 8x8"
+ },
+ "hw": {
+  "led": {
+   "total": 64,
+   "cct": false,
+   "cr": false,
+   "cb": 0,
+   "rgbwm": 255,
+   "ins": [
+    {
+     "start": 0,
+     "len": 64,
+     "type": 22,
+     "order": 0,
+     "rgbwm": 0
+    }
+   ]
+  }
+ },
+ "light": {
+  "tr": {
+   "dur": 7
+  }
+ }
+}

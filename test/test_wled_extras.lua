@@ -17,6 +17,17 @@ local HERE = debug.getinfo(1, "S").source:match("^@(.*)/") or "."
 local DRIVER = HERE .. "/../drivers/wled/driver.lua"
 local XML = HERE .. "/../drivers/wled/driver.xml"
 
+--- The light capabilities the build writes into driver.xml, from the profile the driver's chunk gave
+--- Light.new: the source driver.xml carries none of them.
+local function builtCaps()
+  local made = require("lib.light").made
+  local out = {}
+  for _, row in ipairs(require("lib.light.caps").static(made[#made].profile)) do
+    out[row.key] = row.value
+  end
+  return out
+end
+
 package.preload["cloud-client-byte"] = function()
   return {}
 end
@@ -208,7 +219,14 @@ do
   T.eq(
     "Copy Segment: an empty entry hides speed, an empty palette entry hides the palette",
     Extras.controls(77, ",Color shift,Lighten,Brighten,ID,Axis(2D),FullStack(last frame);;;12;ix=0", true),
-    { ix = "Color shift", c1 = "Lighten", c2 = "Brighten", c3 = "ID", o1 = "Axis(2D)", o2 = "FullStack(last frame)" }
+    {
+      ix = "Color shift",
+      c1 = "Lighten",
+      c2 = "Brighten",
+      c3 = "ID",
+      o1 = "Axis(2D)",
+      o2 = "FullStack(last frame)",
+    }
   )
   T.eq(
     "a check left as ! keeps WLED's name",
@@ -652,8 +670,12 @@ T.section("The light offers Extras, and Reset Driver empties them")
 do
   -- Every WLED controller has effects, so Extras are a fixed capability: a static False would make
   -- every controller start tell a dimmer's capabilities again, firing the proxy's color events.
-  T.contains("driver.xml seeds it", readXml(), "<has_extras>True</has_extras>")
   fresh("esp32-rgbw-pwm-16")
+  T.differs(
+    "driver.xml seeds it",
+    "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
+  )
+  T.eq("the build writes it into driver.xml", builtCaps().has_extras, "True")
   W.run(500)
   local caps = toldOf("DYNAMIC_CAPABILITIES_CHANGED")
   T.eq("the light says it has Extras", caps[#caps] and caps[#caps].params.has_extras, true)

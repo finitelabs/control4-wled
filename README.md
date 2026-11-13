@@ -124,6 +124,10 @@ If you have a board or controller that does not work, please
 1. The controller restarts with its settings kept, and the driver connects again
    on its own.
 
+After moving a controller to an older WLED version, check its LED settings in
+"Config", then "LED Preferences", since a downgrade can reset color gamma and
+the frame rate.
+
 # <span style="color:#0094FF">Using the light</span>
 
 ## On, off, level and scenes
