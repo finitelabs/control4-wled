@@ -650,7 +650,7 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("An off sent while a reload connects goes nowhere, and the proxy is told the light as it is")
+T.section("Commands sent while a reload connects go nowhere, and the proxy is told the light as it is")
 --------------------------------------------------------------------------------
 for _, how in ipairs({ "update", "restart" }) do
   local fake = fresh("esp32-rgbw-pwm-16")
@@ -660,9 +660,10 @@ for _, how in ipairs({ "update", "restart" }) do
   local sentBefore = #fake.commands
   restart(how)
   ReceivedFromProxy(PROXY, "OFF", {})
+  ReceivedFromProxy(PROXY, "SET_LEVEL", { LEVEL = "20" })
   T.eq("the proxy is told offline while it connects (" .. how .. ")", lastOnline(), false)
   W.run(3000)
-  T.eq("the off is not sent (" .. how .. ")", #fake.commands, sentBefore)
+  T.eq("neither command is sent (" .. how .. ")", #fake.commands, sentBefore)
   T.eq("so the strip stays on (" .. how .. ")", fake.si.state.on, true)
   T.eq("online at the first state (" .. how .. ")", lastOnline(), true)
   T.eq("and the proxy is told it on at 50 % (" .. how .. ")", proxyVars[1001], "50")
