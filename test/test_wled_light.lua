@@ -466,7 +466,8 @@ do
     { 1 }
   )
 
-  -- With a Color On Mode the color goes first, at once, without turning the light on.
+  -- With a Color On Mode the color goes first, at once, without turning the light on, so a hold let go part
+  -- way leaves the light in the On color.
   proxy("SET_LEVEL", { LEVEL = "0" })
   W.run(3000)
   proxy("UPDATE_COLOR_ON_MODE", {
@@ -481,13 +482,11 @@ do
   mark()
   proxy("SET_BRIGHTNESS_TARGET", { LIGHT_BRIGHTNESS_TARGET = "80", RATE = "2000" })
   cmds = sent()
-  T.differs(
-    "two commands: first the color, at once, the light left off, then on to 80 over 2 s",
-    "An on from off fades the color from the one the light kept to its on color, over the on's time."
-  )
-  T.eq("one command: on, to 80 over 2 s", #cmds, 1)
-  T.eq("its level and time", cmds[1] and { cmds[1].on, cmds[1].bri, cmds[1].tt }, { true, 204, 20 })
-  T.truthy("fading to green with it", cmds[1] and cmds[1].seg and cmds[1].seg[1].col[1][2] == 255)
+  local first, second = cmds[1] or {}, cmds[2] or {}
+  T.eq("two commands", #cmds, 2)
+  T.eq("first the color, at once, the light left off", { first.on, first.bri, first.tt }, { nil, nil, 0 })
+  T.truthy("in green", first.seg and first.seg[1].col[1][2] == 255)
+  T.eq("then on, to 80 over 2 s", { second.on, second.bri, second.tt }, { true, 204, 20 })
 end
 
 --------------------------------------------------------------------------------
@@ -629,6 +628,61 @@ do
     T.eq(case[1] .. ": the strip ends at the ramp's end", fake.si.state.bri, 255)
     T.eq(case[1] .. ": and the proxy is told it", levels[#levels], 100)
   end
+end
+
+--------------------------------------------------------------------------------
+T.section("a stop part way through a fade between two whites holds the white the fade has reached")
+--------------------------------------------------------------------------------
+do
+  local function white(kelvin, rate)
+    local x, y = C4:ColorCCTtoXY(kelvin)
+    proxy("SET_COLOR_TARGET", {
+      LIGHT_COLOR_TARGET_X = tostring(x),
+      LIGHT_COLOR_TARGET_Y = tostring(y),
+      LIGHT_COLOR_TARGET_MODE = "1",
+      LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = tostring(kelvin),
+      RATE = rate,
+    })
+  end
+  local function toldKelvin()
+    local xs = toldOf("LIGHT_COLOR_CHANGED", "LIGHT_COLOR_CURRENT_X")
+    local ys = toldOf("LIGHT_COLOR_CHANGED", "LIGHT_COLOR_CURRENT_Y")
+    local x, y = tonumber(xs[#xs]), tonumber(ys[#ys])
+    return x and y and C4:ColorXYtoCCT(x, y) or nil
+  end
+
+  -- WLED fades a tunable white strip's CCT with its color (0.15 Segment::currentBri(true), 16 Segment::currentCCT).
+  fresh("esp32-cct-16")
+  proxy("SET_LEVEL", { LEVEL = "100" })
+  white(6500, "0")
+  W.run(3000)
+  mark()
+  white(2700, "4000")
+  W.run(2000)
+  local cct = fake:output().seg[0].cct
+  T.truthy("the CCT is half way, 2 s into 4 s", cct and math.abs(cct - 128) <= 3, cct)
+  proxy("SET_COLOR_STOP", {})
+  W.run(3000)
+  cct = fake.si.state.seg[1].cct
+  T.truthy("a stop holds the CCT there, not at the fade's end", cct and math.abs(cct - 128) <= 3, cct)
+  local kelvin = 2700 + (6500 - 2700) * (cct or 0) / 255
+  local told = toldKelvin()
+  T.truthy("and the proxy is told that white", told and math.abs(told - kelvin) <= 100, { told, kelvin })
+
+  -- A strip with one white shows every white on its white LEDs, so its fade has no place of its own: the stop
+  -- tells the white the library has reached.
+  fresh("dig2go-rgbw-16")
+  proxy("SET_LEVEL", { LEVEL = "100" })
+  white(6500, "0")
+  W.run(3000)
+  mark()
+  white(2700, "4000")
+  W.run(2000)
+  proxy("SET_COLOR_STOP", {})
+  W.run(3000)
+  T.eq("the white LEDs alone, all through", fake.si.state.seg[1].col[1], { 0, 0, 0, 255 })
+  told = toldKelvin()
+  T.truthy("a stop tells the white half way, not the fade's end", told and told > 3500 and told < 5000, told)
 end
 
 --------------------------------------------------------------------------------

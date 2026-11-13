@@ -415,8 +415,8 @@ local function along(f, now)
   return out
 end
 
---- What the strip shows now: the master output (0 while off) and each segment's color and level.
---- @return {bri: number, seg: table<integer, {col: integer[], bri: number}>}
+--- What the strip shows now: the master output (0 while off) and each segment's color, level and CCT.
+--- @return {bri: number, seg: table<integer, {col: integer[], bri: number, cct: integer|nil}>}
 function Fake:output()
   local now = C4:GetTime()
   local state = self.si.state
@@ -430,6 +430,7 @@ function Fake:output()
     out.seg[seg.id] = {
       col = live(o.col) and along(o.col, now) or copy(seg.col and seg.col[1] or {}),
       bri = live(o.bri) and along(o.bri, now) or (seg.on ~= false and (seg.bri or 255) or 0),
+      cct = live(o.cct) and math.floor(along(o.cct, now) + 0.5) or tonumber(seg.cct),
     }
   end
   return out
@@ -475,8 +476,10 @@ function Fake:moveOutput(cmd, before, running)
     local colTo = copy(seg.col and seg.col[1] or {})
     local segBriTo = seg.on ~= false and (seg.bri or 255) or 0
     local colFading = o.col and o.col.ms > 0 and now < o.col.t0 + o.col.ms
+    local cctFading = o.cct and o.cct.ms > 0 and now < o.cct.t0 + o.cct.ms
+    local transition = (colFading and o.col) or (cctFading and o.cct) or nil
     if snap or ms <= 0 then
-      o.col, o.bri = nil, nil
+      o.col, o.bri, o.cct = nil, nil, nil
       if running and apart(was.col, colTo) > 2 and (snap or ms > 0) then
         jumped = true
       end
@@ -492,14 +495,24 @@ function Fake:moveOutput(cmd, before, running)
         -- color alone ([0,0,0,255] to [255,0,0,0], tt 30) lands within a frame.
         o.col = nil
       elseif apart(was.col, colTo) > 0 then
-        if colFading and not self:isV16() then
+        if transition and not self:isV16() then
           -- 0.15.4: the segment keeps its transition's start and timer, now toward the new color.
-          o.col = { from = o.col.from, to = colTo, t0 = o.col.t0, ms = o.col.ms }
+          o.col = { from = colFading and o.col.from or was.col, to = colTo, t0 = transition.t0, ms = transition.ms }
           if apart(was.col, along(o.col, now)) > 2 then
             jumped = true
           end
         else
           o.col = { from = was.col, to = colTo, t0 = now, ms = ms }
+        end
+      end
+      -- WLED fades the CCT in the color's transition (0.15 Segment::currentBri(true), 16 Segment::currentCCT),
+      -- so 0.15.4 keeps a running transition's start and timer for it as well.
+      local cctTo = tonumber(seg.cct)
+      if cctTo and was.cct and was.cct ~= cctTo then
+        if transition and not self:isV16() then
+          o.cct = { from = cctFading and o.cct.from or was.cct, to = cctTo, t0 = transition.t0, ms = transition.ms }
+        else
+          o.cct = { from = was.cct, to = cctTo, t0 = now, ms = ms }
         end
       end
       o.bri = { from = was.bri, to = segBriTo, t0 = now, ms = ms }
