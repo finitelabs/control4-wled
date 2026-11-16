@@ -21,6 +21,13 @@ template's DriverCentral README lists the styles. WLED publishes no brand kit;
 its files are under the EUPL-1.2, which grants no trademark rights, so the logo
 is used only to name the devices the driver controls (see the repo's `NOTICE`).
 
+The brand color, #FF6B00, is the orange of Akemi, WLED's LED mascot and the logo
+of its documentation site (`docs/assets/images/ui/akemi/001_cheerful.png` in
+https://github.com/wled/WLED-Docs, MIT). The product card's tile fades to
+#D65A00, Akemi's own shadow orange. The card's mark is Akemi's pixels with the
+side wires cropped off, recolored white with the face left open; the Navigator
+icons show Akemi unedited.
+
 ## Rendering
 
 ```bash

@@ -17,7 +17,7 @@
 
 ______________________________________________________________________
 
-# <span style="color:#0094FF">Overview</span>
+# <span style="color:#FF6B00">Overview</span>
 
 > DISCLAIMER: This software is neither affiliated with nor endorsed by either
 > Control4 or WLED.
@@ -27,7 +27,7 @@ light: on and off, level, color and white with fades, Advanced Lighting Scenes
 and keypad buttons, for that part of the strip only. It binds to the **WLED**
 driver, which keeps the one connection to the controller.
 
-# <span style="color:#0094FF">Index</span>
+# <span style="color:#FF6B00">Index</span>
 
 <div style="font-size: small">
 
@@ -56,12 +56,12 @@ driver, which keeps the one connection to the controller.
 
 </div>
 
-# <span style="color:#0094FF">System Requirements</span>
+# <span style="color:#FF6B00">System Requirements</span>
 
 - Control4 OS 3.3.2 or later
 - The **WLED** driver, connected to the WLED controller the segment is on
 
-# <span style="color:#0094FF">Features</span>
+# <span style="color:#FF6B00">Features</span>
 
 - A Control4 light for one segment: on, off, level and toggle, with the Default
   On level, Previous Level and Min and Max On Level
@@ -72,7 +72,7 @@ driver, which keeps the one connection to the controller.
 - A `Connected` variable for programming
 - A segment that WLED renumbers or resizes keeps its light
 
-# <span style="color:#0094FF">Compatibility</span>
+# <span style="color:#FF6B00">Compatibility</span>
 
 The light offers what its segment's LEDs can light, as the
 [`Segment`](#segment-read-only) property shows it:
@@ -99,7 +99,7 @@ Color temperature runs between the light's `Warm White (K)` and
 > with WLED's white mode set to calculate the white from the color reports RGB.
 > The light follows such a change while it runs.
 
-# <span style="color:#0094FF">How segment lights and the controller light work together</span>
+# <span style="color:#FF6B00">How segment lights and the controller light work together</span>
 
 - A segment light's level is its segment's own level. The **WLED** driver's
   light sets the controller's master level, which WLED applies on top of every
@@ -119,7 +119,7 @@ Color temperature runs between the light's `Warm White (K)` and
   controller light on turns every segment on; this light's On turns on its
   segment only.
 
-# <span style="color:#0094FF">Installer Setup</span>
+# <span style="color:#FF6B00">Installer Setup</span>
 
 > ⚠️ Add the **WLED** driver for the controller first, and give the controller a
 > DHCP reservation in the router.
@@ -302,7 +302,7 @@ light is off.
 
 <!-- #ifdef DRIVERCENTRAL -->
 
-# <span style="color:#0094FF">Developer Information</span>
+# <span style="color:#FF6B00">Developer Information</span>
 
 <p align="center">
 <img alt="Finite Labs" src="./images/finite-labs-logo.png" width="400"/>
@@ -321,7 +321,7 @@ https://drivercentral.io/platforms/control4-drivers/lighting/wled-lights
 
 <!-- #endif -->
 
-# <span style="color:#0094FF">Support</span>
+# <span style="color:#FF6B00">Support</span>
 
 <!-- #ifdef DRIVERCENTRAL -->
 

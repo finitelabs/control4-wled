@@ -4,7 +4,7 @@
 
 ______________________________________________________________________
 
-# <span style="color:#0094FF">Overview</span>
+# <span style="color:#FF6B00">Overview</span>
 
 > DISCLAIMER: This software is neither affiliated with nor endorsed by either
 > Control4 or WLED.
@@ -21,7 +21,7 @@ segment, and the controller's own WLED effects, palettes, presets and playlists,
 from the light's Extras menu and from programming. For a strip split into parts,
 the **WLED Segment** driver adds a light for each segment, through this driver.
 
-# <span style="color:#0094FF">Index</span>
+# <span style="color:#FF6B00">Index</span>
 
 <div style="font-size: small">
 
@@ -61,13 +61,13 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 
 </div>
 
-# <span style="color:#0094FF">System Requirements</span>
+# <span style="color:#FF6B00">System Requirements</span>
 
 - Control4 OS 3.3.2 or later
 - A WLED controller running WLED 0.15 or later, on a network the Control4
   controller can reach
 
-# <span style="color:#0094FF">Features</span>
+# <span style="color:#FF6B00">Features</span>
 
 - A Control4 light with color and white, fades, Color On Mode and Dim-To-Warm
 - Advanced Lighting Scenes and keypad button links with LEDs
@@ -78,7 +78,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 - Live updates when the WLED app, a button or another system changes the
   controller
 
-# <span style="color:#0094FF">Compatibility</span>
+# <span style="color:#FF6B00">Compatibility</span>
 
 Any controller running WLED 0.15 or later: ESP32, ESP32-S3, ESP32-C3 and ESP8266
 boards, whether WLED came installed or was installed by hand. `Driver Status`
@@ -128,7 +128,7 @@ After moving a controller to an older WLED version, check its LED settings in
 "Config", then "LED Preferences", since a downgrade can reset color gamma and
 the frame rate.
 
-# <span style="color:#0094FF">Using the light</span>
+# <span style="color:#FF6B00">Using the light</span>
 
 ## On, off, level and scenes
 
@@ -209,7 +209,7 @@ to it: then the light shows `Segment not found` and drives nothing until a
 segment is back on the same LEDs, and unbinding the light removes the
 connection.
 
-# <span style="color:#0094FF">Installer Setup</span>
+# <span style="color:#FF6B00">Installer Setup</span>
 
 > ⚠️ Add one **WLED** driver per WLED controller, and give each controller a
 > DHCP reservation in the router so its address does not change.
@@ -545,7 +545,7 @@ on the controller loses its link too, unless a keypad is still connected to it:
 then the link stays, and does nothing until a preset is saved again under that
 id.
 
-# <span style="color:#0094FF">Support</span>
+# <span style="color:#FF6B00">Support</span>
 
 If you have any questions or issues integrating this driver with Control4, you
 can file an issue on GitHub:
@@ -554,7 +554,7 @@ https://github.com/finitelabs/control4-wled/issues/new
 
 <a href="https://www.buymeacoffee.com/derek.miller" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-# <span style="color:#0094FF">Changelog</span>
+# <span style="color:#FF6B00">Changelog</span>
 
 <!--
 Template for a new release entry (copy below the heading, fill in, uncomment):
