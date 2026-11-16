@@ -1,5 +1,7 @@
-The WLED driver's icons and documentation header use the WLED logo artwork, cropped but
-otherwise unmodified, from the WLED project.
+The WLED driver's documentation header uses the WLED logo artwork, cropped but otherwise
+unmodified, from the WLED project. Its icons and DriverCentral product card use Akemi,
+the WLED mascot, from the WLED documentation: unmodified in the icons, recolored white
+on the product card.
 
 -------------------------------------------------------------------------------
 
@@ -9,8 +11,34 @@ https://github.com/wled/WLED (images/wled_logo_akemi.png at v16.0.1)
 Copyright Christian Schwinne and the WLED contributors. Licensed under the European
 Union Public Licence v. 1.2 (EUPL-1.2), https://github.com/wled/WLED/blob/main/LICENSE.
 
-The WLED name and logo belong to the WLED project, and the licence grants no trademark
-rights. They are used here only to name the devices the driver controls; this driver is
+WLED documentation
+https://github.com/wled/WLED-Docs (docs/assets/images/ui/akemi/001_cheerful.png at
+4f0a59152204fdda10340cdd9f14a37c3fd20e95)
+
+Copyright (c) 2021 Christian Schwinne
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+
+The WLED name, logo and mascot belong to the WLED project, and neither license grants
+trademark rights. They are used here only to name the devices the driver controls; this driver is
 not affiliated with or endorsed by the WLED project.
 
 -------------------------------------------------------------------------------

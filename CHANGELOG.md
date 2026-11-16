@@ -1,4 +1,4 @@
-# <span style="color:#0094FF">Changelog</span>
+# <span style="color:#FF6B00">Changelog</span>
 
 <!--
 Template for a new release entry (copy below the heading, fill in, uncomment):

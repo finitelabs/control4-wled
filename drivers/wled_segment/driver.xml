@@ -106,7 +106,7 @@
         <minimum>1900</minimum>
         <maximum>10091</maximum>
         <default>2700</default>
-        <description>The color temperature of the strip's warmest white.</description>
+        <description>The color temperature of the segment's warmest white.</description>
       </property>
       <property>
         <name>Cool White (K)</name>
@@ -114,7 +114,7 @@
         <minimum>1900</minimum>
         <maximum>10091</maximum>
         <default>6500</default>
-        <description>The color temperature of the strip's coolest white.</description>
+        <description>The color temperature of the segment's coolest white.</description>
       </property>
       <property>
         <name>Segment Info</name>
