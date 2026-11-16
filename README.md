@@ -92,9 +92,9 @@ Each segment reports what its LEDs can light, and the
 
 | Shown              | LEDs                                                  |
 | ------------------ | ----------------------------------------------------- |
-| RGB                | Color, for example WS2812B strips                     |
-| RGBW               | Color and a white channel, for example SK6812 strips  |
-| RGB, tunable white | Color and two whites, for example RGB+CCT strips      |
+| RGB                | Color                                                 |
+| RGBW               | Color and a white channel                             |
+| RGB, tunable white | Color and two whites                                  |
 | RGB, CCT           | Color, with WLED's white balance correction turned on |
 | Tunable white      | Two whites (CCT)                                      |
 | CCT                | Color temperature, with no white channel reported     |
@@ -162,8 +162,7 @@ Extras menu. It shows what the controller's main segment shows:
 
 - **Effect**: the controller's effects, with the running one picked. Below it
   are the sliders and checkboxes that effect uses, under the names WLED gives
-  them for it, for example `Trail` and `Delay` for Scanner. The ones the effect
-  does not use are hidden.
+  them for it. The ones the effect does not use are hidden.
 - **Color palette**: the controller's palettes, shown only while the effect uses
   a palette and the LEDs have color.
 - **Preset** and **Playlist**, when the controller has any. Picking a preset
@@ -181,12 +180,11 @@ or by a playlist step shows there too.
 
 ## Segment lights
 
-For a strip split into parts in WLED, for example left and right cabinets, add a
-**WLED Segment** driver for each part and bind it to that segment's connection
-on this driver (see [Connections](#connections)). The segment light controls its
-segment only; this driver's light still controls the whole strip. The **WLED
-Segment** driver includes its own documentation, accessible from within Composer
-Pro.
+For a strip split into parts in WLED, add a **WLED Segment** driver for each
+part and bind it to that segment's connection on this driver (see
+[Connections](#connections)). The segment light controls its segment only; this
+driver's light still controls the whole strip. The **WLED Segment** driver
+includes its own documentation, accessible from within Composer Pro.
 
 - A segment light's level is its segment's own level, and this light's level is
   the controller's master level, which WLED applies on top of every segment.
@@ -200,14 +198,13 @@ Pro.
   level or color change while it is on leaves each segment on or off as it is.
 - This light's colors, effects and presets still cover every segment.
 
-WLED can renumber segments, for example when a segment is deleted or a preset
-with another layout is applied. Each connection follows its segment by its LEDs,
-so a segment light stays on the same part of the strip, and a renamed segment's
-connection is renamed with it. A new segment gets a new connection. When a
-segment is gone, its connection goes too, unless a segment light is still bound
-to it: then the light shows `Segment not found` and drives nothing until a
-segment is back on the same LEDs, and unbinding the light removes the
-connection.
+WLED can renumber segments when a segment is deleted or a preset with another
+layout is applied. Each connection follows its segment by its LEDs, so a segment
+light stays on the same part of the strip, and a renamed segment's connection is
+renamed with it. A new segment gets a new connection. When a segment is gone,
+its connection goes too, unless a segment light is still bound to it: then the
+light shows `Segment not found` and drives nothing until a segment is back on
+the same LEDs, and unbinding the light removes the connection.
 
 # <span style="color:#FF6B00">Installer Setup</span>
 
@@ -394,9 +391,8 @@ Looks for WLED controllers on the network again and lists them in
 > every keypad button from this driver's button links.
 
 The driver remembers the MAC address of the first controller it reaches. If a
-different controller answers at the address later, for example after the router
-gives the address to another device, the driver does not drive it. It looks for
-its own controller on the network and follows it (see
+different controller answers at the address later, the driver does not drive it.
+It looks for its own controller on the network and follows it (see
 [IP Address](#ip-address)), and until then `Driver Status` names the other one.
 When the controller was replaced on purpose, pick the new one in
 [`Found Controllers`](#found-controllers), or run Reset Driver with `Yes`: the

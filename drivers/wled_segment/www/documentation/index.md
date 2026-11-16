@@ -183,8 +183,7 @@ Displays the state of the segment:
 - `Not connected to the WLED controller`: the **WLED** driver cannot reach the
   controller.
 - `Segment not found`: the controller no longer has the segment. The light
-  drives nothing until a segment is back on the same LEDs, for example after a
-  preset that removed it is replaced by one that has it.
+  drives nothing until a segment is back on the same LEDs.
 - `Bind this light to a WLED driver's segment connection`: the **WLED
   Controller** connection is not bound.
   <!-- #ifdef DRIVERCENTRAL -->
