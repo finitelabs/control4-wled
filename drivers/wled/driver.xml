@@ -25,6 +25,7 @@
       <description>NAME is STRING</description>
       <true_text>Connected</true_text>
       <false_text>Disconnected</false_text>
+      <sort_order>1</sort_order>
     </conditional>
     <conditional>
       <id>2</id>
@@ -34,6 +35,7 @@
       <description>NAME playlist is STRING</description>
       <true_text>Running</true_text>
       <false_text>Not Running</false_text>
+      <sort_order>2</sort_order>
     </conditional>
   </conditionals>
   <events>
