@@ -26,22 +26,15 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 <div style="font-size: small">
 
 - [System Requirements](#system-requirements)
-
 - [Features](#features)
-
 - [Compatibility](#compatibility)
-
   - [Updating WLED](#updating-wled)
-
 - [Using the light](#using-the-light)
-
   - [On, off, level and scenes](#on-off-level-and-scenes)
   - [Colors and WLED effects](#colors-and-wled-effects)
   - [The Extras menu](#the-extras-menu)
   - [Segment lights](#segment-lights)
-
 - [Installer Setup](#installer-setup)
-
   - [Driver Installation](#driver-installation)
   - [Driver Setup](#driver-setup)
     - [Driver Properties](#driver-properties)
@@ -54,9 +47,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
     - [Driver Actions](#driver-actions)
   - [Programming Reference](#programming-reference)
   - [Connections](#connections)
-
 - [Support](#support)
-
 - [Changelog](#changelog)
 
 </div>
