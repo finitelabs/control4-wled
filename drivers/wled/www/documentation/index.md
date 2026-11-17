@@ -155,7 +155,7 @@ the frame rate.
 
 The light works as any Control4 light does: on, off, level and toggle, with the
 Default On level, Previous Level and Min and Max On Level set on the light in
-Composer. Fades of any length run on the WLED controller itself, with the
+Composer. Fades up to 16 minutes run on the WLED controller itself, with the
 light's click and hold rates. Advanced Lighting Scenes run level and color
 steps, ramps, stops and flash. The light offers color and white as the
 controller's LEDs allow (see [Compatibility](#compatibility)), with color
