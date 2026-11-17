@@ -67,7 +67,8 @@ driver, which keeps the one connection to the controller.
   On level, Previous Level and Min and Max On Level
 - Color and white as the segment's LEDs allow, so two strip types on one
   controller each get the light they need
-- Fades up to 16 minutes, Advanced Lighting Scenes, Color On Mode and Dim-To-Warm
+- Fades up to 16 minutes, Advanced Lighting Scenes, Color On Mode and
+  Dim-To-Warm
 - On, Off and Toggle button links, with keypad LEDs that show the light's state
 - A `Connected` variable for programming
 - A segment that WLED renumbers or resizes keeps its light
