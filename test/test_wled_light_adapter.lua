@@ -494,6 +494,11 @@ do
     refresh = true,
   })
   T.eq("a color sent while off is sent; 255 steps", { d.colorWhileOff, d.levelSteps }, { "send", 255 })
+  T.eq(
+    "an on/off controller opens no fade from off, which needs a channel that dims",
+    adapter(model(0)):lightDevice().fade.preOn,
+    false
+  )
 end
 
 --------------------------------------------------------------------------------
