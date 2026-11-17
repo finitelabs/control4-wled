@@ -62,6 +62,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 
 - A Control4 light with color and white, fades, Color On Mode and Dim-To-Warm
 - Advanced Lighting Scenes and keypad button links with LEDs
+- Control4 load groups
 - WLED's effects, palettes, presets and playlists in programming and the Extras
   menu, with preset cycling from keypads
 - A light for each segment, with the **WLED Segment** driver
@@ -569,6 +570,13 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 ### Removed
 - Removed
 -->
+
+## Unreleased
+
+### Added
+
+- Added Control4 load groups to the WLED and WLED Segment lights. Each joins a
+  load group and follows the group's level, ramps and sync.
 
 ## v20261117 - 2026-11-17
 

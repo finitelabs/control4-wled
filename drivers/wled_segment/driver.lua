@@ -93,6 +93,7 @@ local light = Light.new(wledLight, {
   scenes = true,
   onModes = true,
   flash = true,
+  loadGroups = true,
   -- Legs carry a fade past one command's 65.5 s; Composer reads a bound under a million ms.
   maxMs = 999999,
 })
