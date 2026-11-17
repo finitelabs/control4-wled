@@ -695,6 +695,13 @@ do
   T.truthy("Rotozoomer offered", contains(effects, "Rotozoomer"))
   T.eq("starts at Solid", effects[1], "Solid")
   T.eq("/json/fxdata read twice, no more", requestCount(fake, "/json/fxdata"), 2)
+
+  fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f.files["/json/fxdata"] = nil
+  end)
+  W.run(500)
+  T.eq("a controller that has no metadata keeps the 2D-only effects", #choices("Set Effect", "Effect"), 216)
+  T.eq("and is asked once", requestCount(fake, "/json/fxdata"), 1)
 end
 
 --------------------------------------------------------------------------------
