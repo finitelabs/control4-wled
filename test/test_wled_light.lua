@@ -172,7 +172,11 @@ do
     { caps.color_correlated_temperature_min, caps.color_correlated_temperature_max },
     { 2700, 6500 }
   )
-  T.eq("a rate can run past what one WLED command carries", caps.brightness_rate_max, 86400000)
+  T.eq(
+    "a rate can run past what one WLED command carries, under the million ms Director writes whole",
+    { caps.brightness_rate_max, caps.color_rate_max },
+    { 999999, 999999 }
+  )
 end
 
 --------------------------------------------------------------------------------
@@ -258,6 +262,11 @@ do
     "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
   )
   T.eq("the build's driver.xml declares it before the controller reports", builtCaps().supports_color_stop, "True")
+  T.eq(
+    "and its rate bounds, under the million ms Composer reads",
+    { builtCaps().brightness_rate_max, builtCaps().color_rate_max },
+    { "999999", "999999" }
+  )
   T.eq("a white-only strip is told it too", lastCaps().supports_color_stop, true)
   proxy("SET_LEVEL", { LEVEL = "20" })
   W.run(3000)

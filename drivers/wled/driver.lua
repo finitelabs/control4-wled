@@ -182,8 +182,8 @@ local light = Light.new(wledLight, {
   onModes = true,
   flash = true,
   extras = true,
-  -- Legs carry a fade past one command's 65.5 s.
-  maxMs = 86400000,
+  -- Legs carry a fade past one command's 65.5 s; Composer reads a bound under a million ms.
+  maxMs = 999999,
 })
 
 --- The controller is gone or set aside: the light ends its run, and the adapter its memos.
