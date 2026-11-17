@@ -3,7 +3,7 @@
 The WLED side follows wled00/wled_server.cpp, json.cpp (serveJson) and ws.cpp at the pinned
 releases. The control API lives under /_mock/, a path WLED never serves, and plays the world
 outside the API: a button press, another client, live data, a settings change, a reboot, a
-dropped link, a busy JSON buffer, an overloaded send buffer.
+dropped link, a busy JSON buffer, an overloaded send buffer, a reply cut short.
 """
 
 import asyncio
@@ -52,6 +52,7 @@ class Instance:
         self.announcers = []
         self.seq = 0
         self.down = False
+        self.cuts = {}
         self.runner = None
         self.site = None
         self.loop_task = None
@@ -227,6 +228,10 @@ class Instance:
         target = self.target(request.path)
         if target == "unknown":
             return self.json_error(501, ERR_NOT_IMPL)
+        if self.cuts.get(request.path, 0) > 0:
+            self.cuts[request.path] -= 1
+            body = list(self.device.pal) if target == "pal" else self.json_body(target)
+            return await self.cut_short(request, body)
         if target == "pal":
             return self.json_response(list(self.device.pal))
         streamed = (target == "fxdata" and self.device.v16) or target == "cfg_file"
@@ -238,6 +243,18 @@ class Instance:
 
     def json_response(self, body):
         return web.Response(text=dumps(body), content_type="application/json")
+
+    async def cut_short(self, request, body):
+        """Half the answer in a chunked reply that ends cleanly, as WLED 16.0.1 sometimes ends
+        /json/fxdata under load."""
+        text = dumps(body).encode()
+        resp = web.StreamResponse(headers=CORS)
+        resp.content_type = "application/json"
+        resp.enable_chunked_encoding()
+        await resp.prepare(request)
+        await resp.write(text[: len(text) // 2])
+        await resp.write_eof()
+        return resp
 
     async def get_json(self, request):
         return await self.serve_json(request)
@@ -414,6 +431,8 @@ class Instance:
                     "POST /_mock/drop": '{"down_ms": 0} drops every socket, optionally refuses',
                     "POST /_mock/busy": '{"ms": 500} holds the JSON buffer',
                     "POST /_mock/overload": "closes every WebSocket with 1013",
+                    "POST /_mock/cut": '{"path": "/json/fxdata", "count": 1} ends the next answers '
+                    "to that path half way",
                     "GET /_mock/output": "what the strip shows now",
                     "GET /_mock/clients": "connected WebSocket clients, oldest first",
                 },
@@ -472,6 +491,8 @@ class Instance:
                 self.later(self.drop_all)
         elif action == "busy":
             d.make_busy(int(body.get("ms", 500)))
+        elif action == "cut":
+            self.cuts[str(body.get("path", "/json/fxdata"))] = int(body.get("count", 1))
         elif action == "overload":
             for c in list(self.clients):
                 await c.ws.close(code=WSCloseCode.TRY_AGAIN_LATER)

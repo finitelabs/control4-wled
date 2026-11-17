@@ -674,6 +674,30 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("Effect metadata that WLED cuts short is asked for once more")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f.cut["/json/fxdata"] = 1
+  end)
+  W.run(500)
+  local effects = choices("Set Effect", "Effect")
+  T.eq("cut once: the second answer hides the 2D-only effects", #effects, 163)
+  T.falsy("Rotozoomer hidden", contains(effects, "Rotozoomer"))
+  T.eq("/json/fxdata read twice", requestCount(fake, "/json/fxdata"), 2)
+
+  fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f.cut["/json/fxdata"] = 2
+  end)
+  W.run(500)
+  effects = choices("Set Effect", "Effect")
+  T.eq("cut twice: taken as not sent, so the 2D-only effects stay", #effects, 216)
+  T.truthy("Rotozoomer offered", contains(effects, "Rotozoomer"))
+  T.eq("starts at Solid", effects[1], "Solid")
+  T.eq("/json/fxdata read twice, no more", requestCount(fake, "/json/fxdata"), 2)
+end
+
+--------------------------------------------------------------------------------
 T.section("What WLED never pushes is picked up within one 15 s poll")
 --------------------------------------------------------------------------------
 do

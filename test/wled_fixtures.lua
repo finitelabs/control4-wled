@@ -205,6 +205,7 @@ function Fake.new(profile, opts)
   self.ip = opts.ip or "192.0.2.10"
   self.port = opts.port or 80
   self.si = M.fixture(profile, "si.json")
+  self.cut = {}
   self.files = {
     ["/json/si"] = function()
       return copy(self.si)
@@ -662,6 +663,13 @@ function Fake:answer(method, path, body)
     if entry == nil then
       d:reject({ error = "not found", code = 501, body = { error = 4 } })
       return
+    end
+    -- cut: the next answers to a path end early, as WLED sometimes ends a chunked reply, and arrive as
+    -- lib.http and urlDo hand back JSON that doesn't parse: the text that came, alone in a table.
+    if (self.cut[path] or 0) > 0 then
+      self.cut[path] = self.cut[path] - 1
+      local text = JSON:encode(entry)
+      entry = { text:sub(1, math.floor(#text / 2)) }
     end
     d:resolve({ code = 200, body = entry })
   end)
