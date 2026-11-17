@@ -956,6 +956,18 @@ do
   local ok = pcall(a.send, a, cmd({ setsColor = true, color = { x = "bad" } }))
   T.truthy("a command it cannot build does not raise", ok)
   T.eq("and sends nothing", #sent, 0)
+
+  local diagnostics = require("lib.diagnostics")
+  local capture = diagnostics.captureError
+  local sources = {}
+  diagnostics.captureError = function(_, _message, _traceback, source)
+    sources[#sources + 1] = source
+  end
+  a:send(cmd({ setsLevel = true, level = 50 }))
+  T.eq("a command that goes reports nothing", #sources, 0)
+  a:send(cmd({ setsColor = true, color = { x = "bad" } }))
+  diagnostics.captureError = capture
+  T.eq("a command it cannot build reaches Cloud Monitoring", sources, { "WLED.LightSend" })
 end
 
 T.finish()
