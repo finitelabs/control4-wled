@@ -298,6 +298,7 @@ return {
       controllerRig("dig2go-rgbw-16"),
       controllerRig("esp32-cct-16"),
       controllerRig("esp32-rgbw-015"),
+      controllerRig("esp32-relay-16"),
     },
     wled_segment = {
       segmentRig("esp32-rgbw-pwm-16", 1),
