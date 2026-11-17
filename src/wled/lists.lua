@@ -201,8 +201,8 @@ function Lists:refresh(what)
         :next(function(value)
           names = value
           -- The metadata only hides 2D-only effects; a controller that cannot send it keeps them. WLED
-          -- sometimes cuts this reply short, which arrives as one string, the text that didn't parse, so
-          -- a reply without one entry per effect is asked for once more.
+          -- sometimes cuts this reply short, which arrives as a table holding only the text that didn't
+          -- parse, so a reply without one entry per effect is asked for once more.
           local function readMeta(again)
             return self.get("/json/fxdata"):next(function(meta)
               if type(meta) == "table" and type(names) == "table" and #meta == #names then
