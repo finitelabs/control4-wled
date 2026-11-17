@@ -998,6 +998,18 @@ local function colorsOf(s, state)
   return col
 end
 
+--- Whether a segment runs an effect: the one last sent to it, else the one it reported.
+--- @param s WledSegment
+--- @param state table|nil The segment's state from WLED.
+--- @return boolean
+local function runsEffect(s, state)
+  local fx = tonumber(s.fx)
+  if fx == nil then
+    fx = state and tonumber(state.fx)
+  end
+  return fx ~= nil and fx ~= 0
+end
+
 --- Turn the light on and run an effect on every segment, each lit, from the effect's own defaults
 --- as WLED's page starts it. Any effect but Solid starts with the light's white mixed into its
 --- color, so the white doesn't tint the effect, and keeps the colors it started from; a segment
@@ -1017,6 +1029,10 @@ local function startEffect(id)
   for _, s in ipairs(device.segments or {}) do
     local seg = { id = s.id, fx = id, fxdef = true, on = true }
     local key = tostring(s.id)
+    if not runsEffect(s, states[s.id]) then
+      -- Another client ended the effect they were kept for.
+      from[key] = nil
+    end
     if id == 0 then
       seg.col = from[key]
     elseif Device.has(s.lc ~= 0 and s.lc or device.lc, Device.CAP_RGB) then

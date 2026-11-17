@@ -230,8 +230,8 @@ function Segment.forward(intent, device)
 end
 
 --- Take a command the WLED driver sent into its model of the controller at once: the master's
---- power and each segment's power and colors, so the next command before the controller reports
---- sees them. The controller's next report replaces them.
+--- power and each segment's power, colors and effect, so the next command before the controller
+--- reports sees them. The controller's next report replaces them.
 --- @param json table The JSON state command sent.
 --- @param device WledDevice The WLED driver's model, changed in place.
 function Segment.note(json, device)
@@ -258,6 +258,9 @@ function Segment.note(json, device)
       end
       if type(entry.col) == "table" and entry.col[1] ~= nil then
         s.col = entry.col
+      end
+      if entry.fx ~= nil then
+        s.fx = entry.fx
       end
     end
   end

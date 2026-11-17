@@ -359,7 +359,9 @@ do
     { 0, 0, 0, 0 },
   })
 
-  -- What the effect started from outlasts a driver update.
+  -- A second effect keeps what the first started from, and that outlasts a driver update.
+  ExecuteCommand("Set Effect", { Effect = "Breathe" })
+  W.run(1500)
   restart("update")
   W.run(1500)
   ExecuteCommand("Set Effect", { Effect = "Solid" })
@@ -376,6 +378,31 @@ do
     lastCommand(fake),
     { on = true, seg = { { id = 0, fx = 0, fxdef = true, on = true }, { id = 1, fx = 0, fxdef = true, on = true } } }
   )
+
+  local plain = { { id = 0, fx = 0, fxdef = true, on = true }, { id = 1, fx = 0, fxdef = true, on = true } }
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(1500)
+  ExecuteCommand("Apply Preset", { Preset = "Mock Rainbow (2)" })
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("a preset ends what an effect started from", lastCommand(fake), { on = true, seg = plain })
+
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(1500)
+  ExecuteCommand("Reset Driver", { ["Are You Sure?"] = "Yes" })
+  -- The fake answers no close frame, so the socket to the controller times out first.
+  W.run(30000)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("and Reset Driver forgets it", lastCommand(fake), { on = true, seg = plain })
+
+  -- Programming's steps run back to back: Solid goes before the controller reports the effect.
+  W.run(1500)
+  local before = fake.si.state.seg[1].col
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("Solid straight after an effect brings the colors back", lastCommand(fake).seg[1].col, before)
 end
 
 --------------------------------------------------------------------------------

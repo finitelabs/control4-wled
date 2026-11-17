@@ -1204,6 +1204,22 @@ do
   ExecuteCommand("Set Effect", { Effect = "Solid" })
   W.run(3000)
   T.eq("Solid shows the blue another client set before the effect", fake.si.state.seg[1].col[1], { 0, 0, 255, 0 })
+
+  -- Another client ends an effect and shows green: what the effect started from no longer applies.
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(3000)
+  fake.si.state.seg[1].fx = 0
+  fake.si.state.seg[1].col = { { 0, 255, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  fake:change({})
+  W.run(3000)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  W.run(3000)
+  T.eq("Solid keeps the green another client ended the effect in", fake.si.state.seg[1].col[1], { 0, 255, 0, 0 })
+  ExecuteCommand("Set Effect", { Effect = "Breathe" })
+  W.run(3000)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  W.run(3000)
+  T.eq("and an effect after it comes back to the green", fake.si.state.seg[1].col[1], { 0, 255, 0, 0 })
 end
 
 T.finish()
