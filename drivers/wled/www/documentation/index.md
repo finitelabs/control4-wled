@@ -83,6 +83,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 
 - A Control4 light with color and white, fades, Color On Mode and Dim-To-Warm
 - Advanced Lighting Scenes and keypad button links with LEDs
+- Control4 load groups
 - WLED's effects, palettes, presets and playlists in programming and the Extras
   menu, with preset cycling from keypads
 - A light for each segment, with the **WLED Segment** driver

@@ -18,6 +18,13 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Removed
 -->
 
+## Unreleased
+
+### Added
+
+- Added Control4 load groups to the WLED and WLED Segment lights. Each joins a
+  load group and follows the group's level, ramps and sync.
+
 ## v20261117 - 2026-11-17
 
 ### Added

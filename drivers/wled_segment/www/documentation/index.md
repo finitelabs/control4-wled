@@ -69,6 +69,7 @@ driver, which keeps the one connection to the controller.
   controller each get the light they need
 - Fades up to 16 minutes, Advanced Lighting Scenes, Color On Mode and
   Dim-To-Warm
+- Control4 load groups
 - On, Off and Toggle button links, with keypad LEDs that show the light's state
 - A `Connected` variable for programming
 - A segment that WLED renumbers or resizes keeps its light
