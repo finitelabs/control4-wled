@@ -13,20 +13,18 @@ to their sources. The product card comes from `make icons`.
 | `photos/1-...` to `photos/6-...` | 2000x2000 | Listing photos, uploaded in number order                                                                                                                                                                               |
 
 `assets/` holds what the pages share: the Finite Labs logo, `scene.js`, which
-draws the banners' art, and WLED's official logo as `brand-mark.png`
-(`images/wled_logo_akemi.png` in https://github.com/wled/WLED at v16.0.1), with
-only its transparent margin trimmed. The banners' art is `strip`, a glowing LED
-strip behind the logo, set on each banner's `<svg class="scene">`; the
-template's DriverCentral README lists the styles. WLED publishes no brand kit;
-its files are under the EUPL-1.2, which grants no trademark rights, so the logo
-is used only to name the devices the driver controls (see the repo's `NOTICE`).
+draws the banners' art, and `akemi.png`. The banners' art is `strip`, a glowing
+LED strip behind `akemi.png`, set on each banner's `<svg class="scene">`; the
+template's DriverCentral README lists the styles. The photo frame shows
+`akemi.png` beside the WLED name.
 
-The product card and the Navigator icons show Akemi, WLED's LED mascot and the
-logo of its documentation site (`docs/assets/images/ui/akemi/001_cheerful.png`
-in https://github.com/wled/WLED-Docs, MIT), with its pixels recolored in a
-rainbow like the WLED app's icon. The card's tile is #222222, the WLED app's
-background, fading to #1C1C1C. The accent color, #FF6B00, is Akemi's own orange
-and colors the docs headings, banners and photo frame.
+The product card, the Navigator icons and `akemi.png` show Akemi, WLED's LED
+mascot and the logo of its documentation site
+(`docs/assets/images/ui/akemi/001_cheerful.png` in
+https://github.com/wled/WLED-Docs, MIT), with its pixels recolored in a rainbow
+like the WLED app's icon. The card's tile is #222222, the WLED app's background,
+fading to #1C1C1C. The accent color, #FF6B00, is Akemi's own orange and colors
+the docs headings, banners and photo frame.
 
 ## Rendering
 
