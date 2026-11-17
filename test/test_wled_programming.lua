@@ -156,6 +156,7 @@ local function fresh(profile, setup)
   end
   require("lib.persist"):delete("WledControllerMac")
   require("lib.persist"):delete("WledShown")
+  require("lib.persist"):delete("WledEffectFrom")
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end
@@ -282,10 +283,17 @@ do
   W.run(500)
 
   ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  local colors = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
   T.eq(
-    "Set Effect: fx on every segment, from the effect's defaults as WLED's page starts it",
+    "Set Effect: on, and on every segment, lit, the effect from its defaults and colors with no white",
     lastCommand(fake),
-    { seg = { { id = 0, fx = 9, fxdef = true }, { id = 1, fx = 9, fxdef = true } } }
+    {
+      on = true,
+      seg = {
+        { id = 0, fx = 9, fxdef = true, on = true, col = colors },
+        { id = 1, fx = 9, fxdef = true, on = true, col = colors },
+      },
+    }
   )
   ExecuteCommand("Set Effect", { Effect = "65" })
   T.eq("Set Effect by id", lastCommand(fake).seg[1].fx, 65)
@@ -323,7 +331,99 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("Effect and palette commands never change power or level")
+T.section("Set Effect turns an off light on, every segment lit, in the effect's own look")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f.si.state.on = false
+    f.si.state.seg[2].on = false
+    -- WLED adds a color's white to every palette color an effect draws.
+    f.si.state.seg[1].col = { { 200, 0, 120, 100 }, { 10, 20, 30, 40 }, { 5, 5, 5, 5 } }
+    f.si.state.seg[2].col = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  end)
+  W.run(500)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(1500)
+  local state = fake.si.state
+  T.eq("the controller is on", state.on, true)
+  T.eq("both segments lit, the one that was off too", { state.seg[1].on, state.seg[2].on }, { true, true })
+  T.eq("the effect runs", { state.seg[1].fx, state.seg[2].fx }, { 9, 9 })
+  T.eq("the white moves into red, green and blue, so it tints nothing, and the other colors clear", state.seg[1].col, {
+    { 255, 100, 220, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+  })
+  T.eq("a color with nothing lit gives way to WLED's own, so a color effect still shows", state.seg[2].col, {
+    { 255, 160, 0, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+  })
+
+  -- A second effect keeps what the first started from, and that outlasts a driver update.
+  ExecuteCommand("Set Effect", { Effect = "Breathe" })
+  W.run(1500)
+  restart("update")
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("Solid turns it on and shows each segment's colors from before the effect again", lastCommand(fake), {
+    on = true,
+    seg = {
+      { id = 0, fx = 0, fxdef = true, on = true, col = { { 200, 0, 120, 100 }, { 10, 20, 30, 40 }, { 5, 5, 5, 5 } } },
+      { id = 1, fx = 0, fxdef = true, on = true, col = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } } },
+    },
+  })
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq(
+    "once Solid, a second Solid has no colors to bring back",
+    lastCommand(fake),
+    { on = true, seg = { { id = 0, fx = 0, fxdef = true, on = true }, { id = 1, fx = 0, fxdef = true, on = true } } }
+  )
+
+  local plain = { { id = 0, fx = 0, fxdef = true, on = true }, { id = 1, fx = 0, fxdef = true, on = true } }
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(1500)
+  ExecuteCommand("Apply Preset", { Preset = "Mock Rainbow (2)" })
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("a preset ends what an effect started from", lastCommand(fake), { on = true, seg = plain })
+
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(1500)
+  ExecuteCommand("Reset Driver", { ["Are You Sure?"] = "Yes" })
+  -- The fake answers no close frame, so the socket to the controller times out first.
+  W.run(30000)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("and Reset Driver forgets it", lastCommand(fake), { on = true, seg = plain })
+
+  -- Programming's steps run back to back: Solid goes before the controller reports the effect.
+  W.run(1500)
+  local before = fake.si.state.seg[1].col
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("Solid straight after an effect brings the colors back", lastCommand(fake).seg[1].col, before)
+end
+
+--------------------------------------------------------------------------------
+T.section("Set Effect leaves a strip with no color LEDs its own colors")
+--------------------------------------------------------------------------------
+-- WLED draws an effect on such a strip from its colors alone, and Control4's white is all they hold.
+for _, profile in ipairs({ "esp32-white-16", "esp32-cct-16" }) do
+  local fake = fresh(profile, function(f)
+    f.si.state.seg[1].col = { { 0, 0, 0, 255 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  end)
+  W.run(500)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  T.eq(
+    "on and lit, no colors sent (" .. profile .. ")",
+    lastCommand(fake),
+    { on = true, seg = { { id = 0, fx = 9, fxdef = true, on = true } } }
+  )
+end
+
+--------------------------------------------------------------------------------
+T.section("Palette and effect setting commands never change power or level")
 --------------------------------------------------------------------------------
 do
   local fake = fresh("esp32-rgbw-pwm-16", function(f)
@@ -331,7 +431,6 @@ do
   end)
   W.run(500)
   local from = #fake.commands
-  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
   ExecuteCommand("Set Effect Speed", { Speed = "10" })
   ExecuteCommand("Set Effect Intensity", { Intensity = "10" })
   ExecuteCommand("Set Palette", { Palette = "Default" })
@@ -352,7 +451,7 @@ do
       end
     end
   end
-  T.eq("four commands", #fake.commands - from, 4)
+  T.eq("three commands", #fake.commands - from, 3)
   T.eq("none carries power, level or color", touched, {})
   T.eq("the controller stays off", fake.si.state.on, false)
 end

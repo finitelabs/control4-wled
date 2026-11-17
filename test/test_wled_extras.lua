@@ -88,7 +88,7 @@ local told = {}
 function C4:SendToProxy(binding, command, params)
   if command == "EXTRAS_SETUP_CHANGED" or command == "EXTRAS_STATE_CHANGED" then
     told[#told + 1] = { binding = binding, command = command, xml = params.XML }
-  elseif command == "DYNAMIC_CAPABILITIES_CHANGED" then
+  elseif command == "DYNAMIC_CAPABILITIES_CHANGED" or command == "LIGHT_BRIGHTNESS_CHANGED" then
     told[#told + 1] = { binding = binding, command = command, params = params }
   end
 end
@@ -163,6 +163,7 @@ local function fresh(profile, setup)
   end
   require("lib.persist"):delete("WledControllerMac")
   require("lib.persist"):delete("WledShown")
+  require("lib.persist"):delete("WledEffectFrom")
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end
@@ -419,15 +420,26 @@ end
 T.section("Picks and sliders reach every segment")
 --------------------------------------------------------------------------------
 do
-  local fake = fresh("esp32-rgbw-pwm-16")
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    for _, seg in ipairs(f.si.state.seg) do
+      seg.col = { { 0, 0, 0, 255 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+    end
+  end)
   W.run(500)
 
   mark()
   pick("fx", "Rainbow")
+  local colors = { { 255, 255, 255, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
   T.eq(
-    "an effect picked by its name, on both segments, from its own defaults as WLED's page starts it",
-    lastCommand(fake).seg,
-    { { id = 0, fx = 9, fxdef = true }, { id = 1, fx = 9, fxdef = true } }
+    "an effect picked by its name: on, both segments lit, from its own defaults and the light's white in its color",
+    lastCommand(fake),
+    {
+      on = true,
+      seg = {
+        { id = 0, fx = 9, fxdef = true, on = true, col = colors },
+        { id = 1, fx = 9, fxdef = true, on = true, col = colors },
+      },
+    }
   )
   local states = toldOf("EXTRAS_STATE_CHANGED")
   T.eq("the menu shows the pick at once, by its name", object(states[1] and states[1].xml, "fx").value, "Rainbow")
@@ -494,6 +506,26 @@ do
   ExecuteCommand("Set Effect Custom Value", { Control = "Custom 9", Value = "1" })
   ExecuteCommand("Set Effect Option", { Option = "Check 9", State = "On" })
   T.eq("a control the menu does not have sends nothing", #fake.commands, n)
+end
+
+--------------------------------------------------------------------------------
+T.section("An effect picked while the light is off turns it on, and the light shows it on")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    f.si.state.on = false
+  end)
+  W.run(500)
+  mark()
+  pick("pal", "Rainbow")
+  W.run(1500)
+  T.eq("a palette leaves it off", fake.si.state.on, false)
+  pick("fx", "Rainbow")
+  W.run(1500)
+  T.eq("an effect turns it on", fake.si.state.on, true)
+  local levels = toldOf("LIGHT_BRIGHTNESS_CHANGED")
+  local last = levels[#levels]
+  T.eq("the light tells the proxy it's on", last ~= nil and tonumber(last.params.LIGHT_BRIGHTNESS_CURRENT) > 0, true)
 end
 
 --------------------------------------------------------------------------------

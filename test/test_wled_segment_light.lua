@@ -394,6 +394,29 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("While its segment runs an effect, Control4 keeps the light's color")
+--------------------------------------------------------------------------------
+do
+  fresh("esp32-rgbw-pwm-16", 1)
+  report()
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = 0.64, LIGHT_COLOR_TARGET_Y = 0.33, LIGHT_COLOR_TARGET_MODE = 0, RATE = 0 }
+  )
+  through()
+  mark()
+  -- The WLED driver starts an effect on every segment, in other colors.
+  fake:apply({ on = true, seg = { { id = 1, fx = 9, col = { { 255, 160, 0, 0 } } } } })
+  report()
+  W.run(3000)
+  T.eq("the effect's colors tell Control4 none", #toldOf(PROXY, "LIGHT_COLOR_CHANGED"), 0)
+  fake:apply({ seg = { { id = 1, fx = 0 } } })
+  report()
+  W.run(3000)
+  T.eq("once its segment is Solid, its colors are reported again", #toldOf(PROXY, "LIGHT_COLOR_CHANGED"), 1)
+end
+
+--------------------------------------------------------------------------------
 T.section("A disconnect keeps the level, suspended or not")
 --------------------------------------------------------------------------------
 do

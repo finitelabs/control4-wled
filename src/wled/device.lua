@@ -34,6 +34,8 @@ local OLDEST_SUPPORTED = "0.15"
 --- @field on boolean The segment's own power.
 --- @field bri integer The segment's own brightness, 0 to 255.
 --- @field lc integer Capability bits.
+--- @field col table|nil The colors last sent to it, until the controller's next report.
+--- @field fx integer|string|nil The effect last sent to it, until the controller's next report.
 
 --- @class WledDevice
 --- @field mac string|nil 12 lower-case hex digits.

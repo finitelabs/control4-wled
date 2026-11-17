@@ -76,6 +76,8 @@ local SHOWN_PERSIST_KEY = "WledLightShownColor"
 --- @field legGen integer Bumped by every command, so legs of an older fade stop.
 --- @field legs WledLegs|nil The fade going out in legs.
 --- @field last WledLast|nil The latest command and its wire form.
+--- @field reported {on: boolean, bri: number, col: integer[], cct: integer|nil, effect: boolean}|nil The
+---   controller's last report; effect is true while its segment runs an effect.
 --- @field fade WledFade|nil The adapter's own wire fade: the last timed frame, legs included.
 --- @field cct integer|nil The CCT last sent or reported, which a full color keeps.
 --- @field whiteK number|nil The white last sent to an RGBW strip's white LEDs, in Kelvin.
@@ -201,6 +203,7 @@ local function primary(seg)
   end
   return at(1), at(2), at(3), at(4)
 end
+Adapter.primary = primary
 
 --- Whether any segment is on. A controller that lists no segments counts as one.
 --- @param device table
@@ -347,7 +350,8 @@ function Adapter:wireOf(cmd, json)
       wire.col, wire.cct = self:render(cmd.color)
     elseif seg and seg.col then
       wire.col, wire.cct = seg.col[1], seg.cct
-    else
+    elseif not rep.effect then
+      -- A running effect's colors are not the light's, so a command that only carries the color has none.
       wire.col, wire.cct = rep.col, rep.cct
     end
   end
@@ -947,10 +951,12 @@ function Adapter:report()
   if self:dims() then
     report.level = bri / 255
   end
-  if self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT) then
+  -- While an effect runs, its colors are the effect's and Control4 keeps the light's own.
+  local effect = seg ~= nil and (tonumber(seg.fx) or 0) ~= 0
+  if (self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT)) and not effect then
     report.color = self:shownColor(col, cct)
   end
-  self.reported = { on = on, bri = bri, col = col, cct = cct }
+  self.reported = { on = on, bri = bri, col = col, cct = cct, effect = effect }
   local last = self.last
   if not last then
     local kept = persist:get(SHOWN_PERSIST_KEY)
