@@ -497,6 +497,63 @@ do
 end
 
 --------------------------------------------------------------------------------
+T.section("A report from before a set leaves the menu showing what was set")
+--------------------------------------------------------------------------------
+do
+  local fake = fresh("esp32-rgbw-pwm-16")
+  W.run(500)
+  local old = tostring(fake.si.state.seg[1].sx)
+
+  -- WLED takes a socket command at once; a push it sent just before arrives after it.
+  local stale = JSON:encode(fake.si)
+  mark()
+  pick("sx", "200")
+  fake:sendText(stale)
+  T.eq("the menu shows the new speed once", #toldOf("EXTRAS_STATE_CHANGED"), 1)
+  W.run(1500)
+  T.eq("the controller's report of it tells nothing more", #toldOf("EXTRAS_STATE_CHANGED"), 1)
+  T.eq("the controller has it", fake.si.state.seg[1].sx, 200)
+  T.truthy("the speed it had", old ~= "200")
+
+  stale = JSON:encode(fake.si)
+  mark()
+  pick("fx", "Rainbow")
+  fake:sendText(stale)
+  local shown = {}
+  for _, t in ipairs(told) do
+    local fx = object(t.xml, "fx")
+    if fx then
+      shown[#shown + 1] = fx.value
+    end
+  end
+  local others = 0
+  for _, v in ipairs(shown) do
+    others = others + (v == "Rainbow" and 0 or 1)
+  end
+  T.truthy("the menu is told the effect", #shown > 0)
+  T.eq("an effect's stale report never shows the old effect", others, 0)
+  W.run(1500)
+  T.eq("Rainbow's own controls follow", object(lastSetup(), "ix").label, "Size")
+
+  -- A set the controller never took: once the wait is over, its report wins.
+  local handle = fake.handle
+  fake.handle = function()
+    return nil
+  end
+  pick("c1", "77")
+  W.run(3000)
+  fake.handle = handle
+  mark()
+  fake:pushNow()
+  local states = toldOf("EXTRAS_STATE_CHANGED")
+  T.eq(
+    "the menu shows what the controller has",
+    object(states[1] and states[1].xml, "c1").value,
+    tostring(fake.si.state.seg[1].c1)
+  )
+end
+
+--------------------------------------------------------------------------------
 T.section("A checkbox picked in the menu is not answered, so the app keeps its tick")
 --------------------------------------------------------------------------------
 do

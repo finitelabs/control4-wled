@@ -77,6 +77,7 @@ local SHOWN_PERSIST_KEY = "WledLightShownColor"
 --- @field whiteK number|nil The white last sent to an RGBW strip's white LEDs, in Kelvin.
 local Adapter = {}
 Adapter.__index = Adapter
+Adapter.WAIT_MS = WAIT_MS
 
 --- @class WledLightOptions
 --- @field send fun(json: table) Sends a JSON state command to the controller.
