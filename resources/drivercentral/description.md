@@ -1,4 +1,4 @@
-<p><img src="https://drivercentral.io/images/companies/61/WLED/facts-strip-2400x136.png?1794355962167" alt="" width="1200" height="68" /></p>
+<p><img src="https://drivercentral.io/images/companies/61/WLED/facts-strip-2400x136.png?1794934139531" alt="" width="1200" height="68" /></p>
 
 ## Overview
 
