@@ -218,6 +218,11 @@ do
     "BENIGN: the build writes the light's capabilities; the source driver.xml carries none"
   )
   T.eq("the build's driver.xml has no Extras", builtCaps().has_extras, "False")
+  T.eq(
+    "and its rate bounds, under the million ms Composer reads",
+    { builtCaps().brightness_rate_max, builtCaps().color_rate_max },
+    { "999999", "999999" }
+  )
   local connection = readXml():match("<id>" .. CONTROLLER .. "</id>(.-)</connection>") or ""
   T.contains("and its WLED Controller connection says it is not hidden", connection, "<hidden>False</hidden>")
   mark()
