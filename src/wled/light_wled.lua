@@ -29,6 +29,9 @@ local Color = require("lib.light.color")
 local log = require("lib.logging")
 local persist = require("lib.persist")
 local Device = require("wled.device")
+--#ifdef DRIVERCENTRAL
+local diagnostics = require("lib.diagnostics")
+--#endif
 
 local TT_MAX = 655
 local LEG_MS = TT_MAX * 100
@@ -65,7 +68,7 @@ local SHOWN_PERSIST_KEY = "WledLightShownColor"
 
 --- @class WledLight : LightAdapter
 --- @field device WledDevice The controller's model.
---- @field sendJson fun(json: table) Sends a JSON state command to the controller.
+--- @field sendJson fun(json: table, opts?: {gapAfterMs: number|nil}) Sends a JSON state command to the controller.
 --- @field refreshState fun()|nil Asks the controller for its whole state.
 --- @field warm fun(): number Warm White, in Kelvin.
 --- @field cool fun(): number Cool White, in Kelvin.
@@ -80,7 +83,7 @@ Adapter.__index = Adapter
 Adapter.WAIT_MS = WAIT_MS
 
 --- @class WledLightOptions
---- @field send fun(json: table) Sends a JSON state command to the controller.
+--- @field send fun(json: table, opts?: {gapAfterMs: number|nil}) Sends a JSON state command to the controller.
 --- @field refresh fun()|nil Asks the controller for its whole state.
 --- @field device WledDevice The controller's model.
 --- @field warm fun(): number Warm White, in Kelvin.
@@ -106,13 +109,13 @@ end
 
 --- Whether the controller's bits include one.
 --- @param bit integer One of Device's CAP_ bits.
---- @return boolean
+--- @return boolean has True if the controller's bits include it.
 function Adapter:has(bit)
   return Device.has(self.device.lc, bit)
 end
 
 --- Whether the controller dims: any channel but a bare on/off.
---- @return boolean
+--- @return boolean dims True if any channel dims.
 function Adapter:dims()
   return self:has(Device.CAP_RGB) or self:has(Device.CAP_WHITE) or self:has(Device.CAP_CCT)
 end
@@ -357,6 +360,9 @@ function Adapter:send(cmd)
   local ok, result = pcall(self.put, self, cmd)
   if not ok then
     log:error("WLED light command not sent: %s", result)
+    --#ifdef DRIVERCENTRAL
+    diagnostics:captureError(tostring(result), nil, "WLED.LightSend")
+    --#endif
     return nil
   end
   return result
@@ -525,7 +531,7 @@ function Adapter:remember(cmd, json)
 end
 
 --- @param cmd LightCommand
---- @return LightRest|nil
+--- @return LightRest|nil rest Where a stop held an aspect, at its own wire fade's position.
 function Adapter:put(cmd)
   self.legGen = self.legGen + 1
   self.legs = nil
@@ -627,7 +633,7 @@ end
 --- @param ms number The other aspect's time left.
 --- @param at table|nil From runningAt or heldAt.
 --- @param now number
---- @return LightRest|nil
+--- @return LightRest|nil rest Where the stop held an aspect.
 function Adapter:stop(cmd, ms, at, now)
   local frame, rest = {}, nil
   if cmd.setsLevel then

@@ -126,7 +126,7 @@ local DEFAULT_WARM, DEFAULT_COOL = 2700, 6500
 --- Send a state command; its result arrives in the controller's next report. Nothing goes to a
 --- controller that is not the one this driver was set up with.
 --- @param json table
---- @param opts {gapAfterMs: number|nil}|nil How long nothing may follow it on the wire.
+--- @param opts? {gapAfterMs: number|nil} How long nothing may follow it on the wire.
 local function send(json, opts)
   --#ifdef DRIVERCENTRAL
   if not drivercentral:licensed() then

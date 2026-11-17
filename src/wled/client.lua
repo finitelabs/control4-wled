@@ -127,7 +127,7 @@ Client.__index = Client
 --- @field WebSocket table|nil The WebSocket class; the vendored module by default.
 
 --- Creates the transport to one controller; start() connects it.
---- @param opts WledClientOptions|nil
+--- @param opts? WledClientOptions
 --- @return WledClient client A client not yet connected.
 function Client:new(opts)
   opts = opts or {}
@@ -197,7 +197,7 @@ end
 --- Move to a new mode, telling the driver when reachability changes. From "starting", the
 --- first answer reports online and the first failure reports offline.
 --- @param mode "ws"|"http"|"offline"
---- @param reason string|nil Why the controller cannot be reached, for "offline".
+--- @param reason? string Why the controller cannot be reached, for "offline".
 function Client:setMode(mode, reason)
   local was = self.mode
   self.mode = mode
@@ -210,7 +210,7 @@ end
 
 --- Connect to a controller, closing any connection already open.
 --- @param host string The controller's address.
---- @param port integer|nil Its web port, 80 when nil.
+--- @param port? integer Its web port, 80 when nil.
 function Client:start(host, port)
   self:stop()
   self.host, self.port = host, tonumber(port) or 80
@@ -406,7 +406,7 @@ end
 --- An answer that a later write or push overtook is dropped; that one tells the state.
 --- @param gen integer The start it belongs to.
 --- @param socketGen integer The socket it belongs to.
---- @param ms integer|nil The wait before this turn; SOCKET_POLL_MS when nil.
+--- @param ms? integer The wait before this turn; SOCKET_POLL_MS when nil.
 function Client:socketPoll(gen, socketGen, ms)
   self:after(gen, ms or SOCKET_POLL_MS, function()
     if not self.socketUp or self.socketGen ~= socketGen then
@@ -710,7 +710,7 @@ end
 --- Poll /json/si while the socket is down; it keeps the state current and tells whether the
 --- controller can be reached at all.
 --- @param gen integer The start it belongs to.
---- @param token integer|nil The poll loop it belongs to; the current one when nil.
+--- @param token? integer The poll loop it belongs to; the current one when nil.
 function Client:poll(gen, token)
   token = token or self.pollToken
   if self.socketUp or self.gen ~= gen or token ~= self.pollToken then
@@ -901,7 +901,7 @@ end
 --- Whether a waiting busy resend owes a frame that asked for a gap after it; the frames sent meanwhile
 --- wait for it then, so the replay keeps the gap. Without one, they go at once and the replay sends
 --- them again after it, as the newest must land last.
---- @return boolean
+--- @return boolean owes True if a waiting resend owes a gap.
 function Client:owesGap()
   for _, list in ipairs({ self.owed or {}, self.recent }) do
     for _, frame in ipairs(list) do
@@ -938,8 +938,8 @@ function Client:flushHeld()
 end
 
 --- @param cmd table
---- @param opts {gapAfterMs: number|nil}|nil
---- @return Deferred
+--- @param opts? {gapAfterMs: number|nil}
+--- @return Deferred answer Resolves with the controller's answer, or rejects.
 function Client:sendNow(cmd, opts)
   self.writes = self.writes + 1
   local body = JSON:encode(cmd)

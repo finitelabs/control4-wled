@@ -409,11 +409,13 @@ address is removed.
 ##### IP Address
 
 Sets the WLED controller's address on the network. Changing it connects to the
-new address at once. When the controller stops answering, or another controller
-answers at its address, the driver looks for it on the network by its MAC
-address every 30 seconds and changes `IP Address` and `Port` to where it
-answers. It never moves away from an address you set before the controller has
-answered there, and it keeps a host name you typed.
+new address at once. When the controller stops answering, the driver finds it
+again by its MAC address and changes `IP Address` and `Port` to where it
+answers.
+
+> **Note:** The driver looks every 30 seconds, and also when another controller
+> answers at its address. It never moves away from an address you set before the
+> controller has answered there, and it keeps a host name you typed.
 
 ##### Port \[ 1 - 65535, default: **_80_** \]
 
@@ -422,13 +424,13 @@ Sets WLED's web port. Leave it at `80` unless it was changed in WLED.
 ##### Found Controllers
 
 Shown only while the last search found a controller. Lists the WLED controllers
-the driver finds on the network as `name (address)`, with the port after the
-address when it is not 80. Picking one sets `IP Address` and `Port` to it and
-makes it the driver's controller, in place of any controller it used before. The
-driver searches when it loads, when [Find Controllers](#find-controllers) runs,
-and while its controller cannot be reached. It finds controllers on the same
-network as the Control4 controller that have an mDNS address set in WLED's WiFi
-settings, as they do by default.
+the driver finds on the network. Picking one sets `IP Address` and `Port` to it
+and makes it the driver's controller, in place of any controller it used before.
+
+> **Note:** The driver searches when it loads, when
+> [Find Controllers](#find-controllers) runs, and while its controller cannot be
+> reached. It finds controllers on the same network as the Control4 controller
+> that have an mDNS address set in WLED's WiFi settings, as they do by default.
 
 #### Light Settings
 
@@ -447,12 +449,13 @@ Sets the color temperature of the strip's coolest white.
 ##### Cycle Presets
 
 Sets the presets the Next and Previous Preset buttons and commands step through,
-in order: WLED preset ids or names, separated by commas, for example `4, 1, 7`
-or `Movie Night, Warm Glow`. Empty, the default, cycles every preset on the
-controller in id order. Playlists do not cycle. A number is read as a preset id;
-use the id for a preset whose name is a number or has a comma in it. A preset
-named here keeps its place when it is renamed in WLED. An entry the controller
-has no preset for is left out and written to the log.
+in order, as WLED preset ids or names separated by commas. Empty, the default,
+cycles every preset on the controller in id order. Playlists do not cycle.
+
+> **Note:** A number is read as a preset id, so use the id for a preset whose
+> name is a number or has a comma in it. A preset named here keeps its place
+> when it is renamed in WLED. An entry the controller has no preset for is left
+> out and written to the log.
 
 ##### Presets in Cycle (read-only)
 
