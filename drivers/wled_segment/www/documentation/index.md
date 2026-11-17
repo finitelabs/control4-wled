@@ -279,7 +279,8 @@ Monitoring is Enabled.
 ### Light (provider)
 
 The Control4 Light proxy connection. The light is online while its segment is
-there and the **WLED** driver is connected to the controller.
+there and the **WLED** driver is connected to the controller. While offline it
+keeps the level it last showed.
 
 ### WLED Controller (consumer)
 

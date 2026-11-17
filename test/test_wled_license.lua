@@ -165,7 +165,7 @@ do
   T.eq("a light OFF still reaches the controller", reaches("OFF"), true)
 end
 
-T.section("A license back while the controller is gone reads its lights off")
+T.section("A license back while the controller is gone tells its lights so, at their level")
 do
   cloud.answer = { AC = 0, AS = "Invalid License" }
   tick(30)
@@ -176,13 +176,13 @@ do
   cloud.say(cloud.answer)
   W.run(60000)
   T.eq("Driver Status", Properties["Driver Status"], "Not connected: No connection to the controller")
-  T.eq("the light is told level 0", brightnessSince(toldBefore), 0)
+  T.eq("the light is told no level", brightnessSince(toldBefore), nil)
   local segments = 0
   for _, segment in pairs(require("lib.bindings"):getDynamicBindings("Segments")) do
     segments = segments + 1
     local last = lastTo[segment.bindingId]
     T.eq("segment " .. segment.bindingId .. " is told the controller is gone", last.command, "UPDATE_DISCONNECT")
-    T.eq("not suspended, so its light reads off", last.params.suspended, nil)
+    T.eq("not suspended, so its light says the controller is gone", last.params.suspended, nil)
   end
   T.eq("the controller has segments", segments > 0, true)
 end

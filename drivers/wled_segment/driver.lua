@@ -145,9 +145,8 @@ function RFP.UPDATE_DISCONNECT(idBinding, strCommand, tParams)
   wledLight.device = Segment.view(nil)
   local suspended = toboolean(Select(tParams, "suspended"))
   setStatus(Select(tParams, "status") or (suspended and "Connecting" or "Not connected to the WLED controller"))
-  -- Suspended keeps the level; gone reads off once per outage, which the light keeps track of.
   wledLight:forget()
-  light:lost(suspended)
+  light:lost()
 end
 
 OBC[CONTROLLER_BINDING] = function(idBinding, strClass, isBound)
@@ -162,8 +161,7 @@ OBC[CONTROLLER_BINDING] = function(idBinding, strClass, isBound)
     light:reset()
   else
     setStatus("Bind this light to a WLED driver's segment connection")
-    -- Unbound on purpose, so the light keeps its level.
-    light:lost(true)
+    light:lost()
   end
 end
 

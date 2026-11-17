@@ -631,7 +631,7 @@ rename in WLED. It appears once the controller has a preset.
 ### Light (provider)
 
 The Control4 Light proxy connection. The light is online while the driver is
-connected and offline while it is not.
+connected and offline while it is not, keeping the level it last showed.
 
 ### `{segment name}` (provider, dynamic)
 

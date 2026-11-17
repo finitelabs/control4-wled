@@ -394,7 +394,7 @@ do
 end
 
 --------------------------------------------------------------------------------
-T.section("A suspended disconnect keeps the level")
+T.section("A disconnect keeps the level, suspended or not")
 --------------------------------------------------------------------------------
 do
   fresh("esp32-rgbw-pwm-16", 1)
@@ -410,11 +410,13 @@ do
   report()
   mark()
   RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", {})
-  T.eq("a controller that went away reads off", lastLevel(), 0)
+  T.eq("a controller that went away: offline too", (toldOf(PROXY, "ONLINE_CHANGED")[1] or {}).STATE, false)
+  T.eq("and no level", #toldOf(PROXY, "LIGHT_BRIGHTNESS_CHANGED"), 0)
+  T.eq("and says so", Properties["Driver Status"], "Not connected to the WLED controller")
 end
 
 --------------------------------------------------------------------------------
-T.section("A controller found gone reads off, even with no report since a load, a bind or a suspend")
+T.section("A controller found gone shows why and tells no level, even with no report since a load, a bind or a suspend")
 --------------------------------------------------------------------------------
 do
   local function levels()
@@ -450,7 +452,9 @@ do
       c[2]()
       mark()
       RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", gone)
-      T.eq(c[1] .. ", then " .. (gone.status or "the controller gone") .. ": it reads off", levels(), { 0 })
+      local why = gone.status or "Not connected to the WLED controller"
+      T.eq(c[1] .. ", then " .. (gone.status or "the controller gone") .. ": says so", Properties["Driver Status"], why)
+      T.eq("and tells no level", levels(), {})
     end
   end
 
@@ -461,7 +465,7 @@ do
     RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", { status = "Segment not found" })
   end
   RFP.UPDATE_DISCONNECT(CONTROLLER, "UPDATE_DISCONNECT", {})
-  T.eq("told again while gone: it reads off once", { levels(), #toldOf(PROXY, "ONLINE_CHANGED") }, { { 0 }, 1 })
+  T.eq("told again while gone: offline once, no level", { levels(), #toldOf(PROXY, "ONLINE_CHANGED") }, { {}, 1 })
 
   fresh("esp32-rgbw-pwm-16", 1)
   report()
