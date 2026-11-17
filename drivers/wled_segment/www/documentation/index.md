@@ -67,7 +67,8 @@ driver, which keeps the one connection to the controller.
   On level, Previous Level and Min and Max On Level
 - Color and white as the segment's LEDs allow, so two strip types on one
   controller each get the light they need
-- Fades of any length, Advanced Lighting Scenes, Color On Mode and Dim-To-Warm
+- Fades up to 16 minutes, Advanced Lighting Scenes, Color On Mode and
+  Dim-To-Warm
 - On, Off and Toggle button links, with keypad LEDs that show the light's state
 - A `Connected` variable for programming
 - A segment that WLED renumbers or resizes keeps its light
@@ -279,7 +280,8 @@ Monitoring is Enabled.
 ### Light (provider)
 
 The Control4 Light proxy connection. The light is online while its segment is
-there and the **WLED** driver is connected to the controller.
+there and the **WLED** driver is connected to the controller. While offline it
+keeps the level it last showed.
 
 ### WLED Controller (consumer)
 

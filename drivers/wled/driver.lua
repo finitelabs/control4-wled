@@ -187,10 +187,9 @@ local light = Light.new(wledLight, {
 })
 
 --- The controller is gone or set aside: the light ends its run, and the adapter its memos.
---- @param suspended boolean The driver dropped the connection itself, so the light keeps its level.
-local function lightLost(suspended)
+local function lightLost()
   wledLight:forget()
-  light:lost(suspended)
+  light:lost()
 end
 
 local lists = Lists:new({
@@ -310,16 +309,16 @@ end
 --- the controller's first report.
 --- @param connected boolean
 --- @param status string
---- @param suspend boolean|nil The driver dropped the connection itself, so the lights keep their level.
+--- @param suspend boolean|nil The driver dropped the connection itself, so segment lights say Connecting.
 local function setConnected(connected, status, suspend)
   setStatus(status)
   if connected then
     gSuspended = false
   else
-    -- Segment lights with no report since a load or a suspend read off too once the controller is found gone.
+    -- Segment lights still saying Connecting since a load or a suspend are told too once the controller is found gone.
     local gone = not suspend and gSuspended
     gSuspended = suspend == true and (gSuspended or gConnected)
-    lightLost(suspend == true)
+    lightLost()
     if gSegmentsTold or gone then
       gSegmentsTold = false
       gSegmentSent = {}
@@ -1205,7 +1204,7 @@ local function licenseChanged(licensed)
   client:stop()
   setStatus(drivercentral.UNLICENSED_STATUS)
   gSuspended = gSuspended or gConnected
-  lightLost(true)
+  lightLost()
   if gSegmentsTold then
     gSegmentsTold = false
     gSegmentSent = {}

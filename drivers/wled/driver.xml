@@ -25,6 +25,7 @@
       <description>NAME is STRING</description>
       <true_text>Connected</true_text>
       <false_text>Disconnected</false_text>
+      <sort_order>1</sort_order>
     </conditional>
     <conditional>
       <id>2</id>
@@ -34,6 +35,7 @@
       <description>NAME playlist is STRING</description>
       <true_text>Running</true_text>
       <false_text>Not Running</false_text>
+      <sort_order>2</sort_order>
     </conditional>
   </conditionals>
   <events>
@@ -423,12 +425,6 @@
       </command>
     </commands>
   </config>
-  <!--
-    A dynamic capability overrides these in both directions, so a later layer that reads the
-    controller's capabilities can correct a light that lacks one. The dimming tier is True
-    because Composer's test panel needs static and dynamic; the color tier stays off until the
-    controller reports color.
-  -->
   <!-- The light's capabilities are the build's, written from the profile the driver gives Light.new. -->
   <capabilities></capabilities>
   <proxies>

@@ -10,6 +10,9 @@ Caps.PROXY = 5001
 --- The longest rate one device command carries (ms), and a fade's maxMs by default.
 --- @type integer
 Caps.RATE_MAX = 65535
+--- The longest rate the proxy may be told: Director writes a rate bound with six significant digits, and Composer
+--- can't read one of a million or more.
+Caps.RATE_LIMIT = 999999
 
 --- The color temperature range shown before a device names its own (K).
 Caps.CCT_MIN, Caps.CCT_MAX = 2000, 6500
@@ -43,6 +46,7 @@ local PROFILE_BOOLEANS = {
   onModes = true,
   flash = true,
   extras = true,
+  loadGroups = true,
 }
 
 local PROFILE_FIELDS = { api = true, proxy = true, links = true, cct = true, maxMs = true }
@@ -146,10 +150,10 @@ function Caps.profile(p)
     end
   end
   if p.maxMs ~= nil then
-    if whole(p.maxMs) and p.maxMs > 0 then
+    if whole(p.maxMs) and p.maxMs > 0 and p.maxMs <= Caps.RATE_LIMIT then
       out.maxMs = p.maxMs
     else
-      errors[#errors + 1] = "profile.maxMs must be a whole number of ms above 0"
+      errors[#errors + 1] = "profile.maxMs must be a whole number of ms from 1 to 999999, the most Composer reads"
     end
   end
   if p.links ~= nil and p.links ~= false then
@@ -296,7 +300,10 @@ local function fade(errors, f, profile, dims)
   local out = { kind = kind, maxMs = Caps.RATE_MAX }
   if f.maxMs ~= nil then
     if whole(f.maxMs) and f.maxMs > 0 then
-      out.maxMs = f.maxMs
+      out.maxMs = math.min(f.maxMs, Caps.RATE_LIMIT)
+      if f.maxMs > Caps.RATE_LIMIT then
+        errors[#errors + 1] = "fade.maxMs is past the 999999 ms Composer reads; taken as 999999"
+      end
     else
       errors[#errors + 1] = "fade.maxMs must be a whole number of ms above 0; ignored"
     end
@@ -353,6 +360,11 @@ local function fade(errors, f, profile, dims)
       elseif own then
         errors[#errors + 1] = string.format("fade.own.%s must be a whole number of ms; taken as 0", name)
       end
+    end
+    -- changeMs is the proxy's fixed rate and both brightness bounds.
+    if out.own.changeMs > Caps.RATE_LIMIT then
+      out.own.changeMs = Caps.RATE_LIMIT
+      errors[#errors + 1] = "fade.own.changeMs is past the 999999 ms Composer reads; taken as 999999"
     end
   elseif f.own ~= nil then
     errors[#errors + 1] = 'fade.own is for an "own" fade; ignored'
@@ -504,6 +516,7 @@ function Caps.static(profile)
   local function row(key, value)
     return { key = key, value = value }
   end
+  -- Each key the proxy is told for a device at runtime (Caps.dynamic) corrects these either way.
   return {
     row("dimmer", bool(dims)),
     row("set_level", bool(dims)),
@@ -528,6 +541,7 @@ function Caps.static(profile)
     row("click_rate_max", tostring(Caps.RATE_MAX)),
     row("hold_rate_min", "1000"),
     row("hold_rate_max", "86400000"),
+    -- A profile that learns color from its device leaves it off until the device's capabilities turn it on.
     row("supports_color", bool(known and color)),
     row("supports_color_correlated_temperature", bool(known and cct)),
     row("color_correlated_temperature_min", tostring(known and cct and range.minK or Caps.CCT_MIN)),
@@ -555,7 +569,7 @@ function Caps.static(profile)
     row("multi_click", "False"),
     row("supports_broadcast_scenes", "False"),
     row("supports_multichannel_scenes", "False"),
-    row("load_group_support", "False"),
+    row("load_group_support", bool(profile.loadGroups)),
   }
 end
 

@@ -63,12 +63,16 @@ Types.API = 1
 --- @field cct LightCctRange|boolean|nil A range: every device has it. true: each device names its own.
 --- @field known boolean|nil Every device is as the profile says: its capabilities never change at runtime.
 --- @field fades boolean|nil Some device can fade: stops, click and hold rates, color_rate_behavior 1.
---- @field maxMs integer|nil The longest rate the static capabilities offer, for every device. Default 65535.
+--- @field maxMs integer|nil The longest rate the static capabilities offer, for every device: 1 to 999999, the most
+---   Composer reads. Default 65535.
 --- @field defaultOn boolean|nil supports_default_on. Without it an ON with no on mode resumes at the device's level.
 --- @field scenes boolean|nil Advanced Lighting Scenes.
 --- @field onModes boolean|nil The brightness and color on modes.
 --- @field flash boolean|nil Scene flash elements (disable_flash false).
 --- @field extras boolean|nil has_extras. The driver sends EXTRAS_* and handles EXTRA_SET itself.
+--- @field loadGroups boolean|nil load_group_support: the light joins Control4 load groups, takes their commands, and
+---   hands its own on, off, level and button commands to a group that keeps it in sync. It is also a member of
+---   group drivers built on lib.light.group: it takes their decided commands and tells them what it shows.
 
 -----------------------------------------------------------------------------------------------------
 -- The device: the facts of one connection
@@ -78,7 +82,7 @@ Types.API = 1
 --- @class LightOwnFade
 --- @field onMs integer Off to on.
 --- @field offMs integer On to off.
---- @field changeMs integer On to another level or color.
+--- @field changeMs integer On to another level or color; past 999999 it is taken as 999999.
 
 --- How the device moves. Read by Motion and Caps only. Caps.check rejects a field set for the wrong kind
 --- and fills the defaults, so no reader sees a contradictory combination.
@@ -90,7 +94,8 @@ Types.API = 1
 ---   kept, so the library opens it with a 0-time on at the bottom step.
 --- @field retimes boolean|nil "device" only, default false. A command restarts every channel over its own time,
 ---   named or not, so a command for one aspect re-times the other's running ramp. False: each aspect keeps its own.
---- @field maxMs integer|nil The longest rate the proxy may offer. Default 65535.
+--- @field maxMs integer|nil The longest rate the proxy may offer; past 999999, the most Composer reads, it is taken as
+---   999999. Default 65535.
 --- @field own LightOwnFade|nil Required for "own", nil otherwise.
 --- @field stepMs integer|nil "walk" only: the time between steps. Default 100.
 
@@ -210,8 +215,14 @@ Types.API = 1
 -- Light.new(adapter, profile): Light
 --   Once, at the driver chunk's top level, where the build finds it: the build loads the chunk and writes
 --   driver.xml's light capabilities from the profile, beside any capability the driver keeps. driver.xml
---   carries none of the light's capability keys itself. Raises on a profile.api other than Types.API, a
+--   carries none of the light's capability keys itself. Just above its capabilities element it carries
+--   "<!-- The light's capabilities are the build's, written from the profile the driver gives Light.new. -->",
+--   and the build stops without it. Raises on a profile.api other than Types.API, a
 --   profile field of the wrong type, or an adapter without send, refresh and show.
+--
+-- values:restoreValues()
+--   From OnDriverInit, as for any driver with variables: the library writes the Connected variable, and only
+--   one restored there keeps its id and the programming on it across a Director restart.
 --
 -- light:start()
 --   From OnDriverLateInit. Reads the proxy (GET_SETUP, 6661, 1001/1110, 1200/1210), tells offline until the
@@ -227,10 +238,10 @@ Types.API = 1
 --   made inside send or refresh waits until the library's follow-up ends. One with a non-finite or out-of-range
 --   value, or an unknown kind, is dropped whole with an error logged.
 --
--- light:lost(suspended)
---   The connection is gone, and the run ends: no send until the next report. true (stopped on purpose: an
---   account's suspend, an unbind) keeps the level the proxy shows. false (a loss) reads off once per outage,
---   also after an earlier lost(true) and when no report came since start. Idempotent.
+-- light:lost()
+--   The connection is gone, whether lost or stopped on purpose, and the run ends: no send until the next
+--   report. The proxy is told offline and keeps the level and the link LEDs it shows; the first report after
+--   it shows the device. Idempotent.
 --
 -- light:reset()
 --   Reset Driver. Ends the run (ramps, windows, picks, presses, scene steps), tells offline until the next
@@ -245,6 +256,10 @@ Types.API = 1
 -- library does not handle (EXTRA_SET) is the driver's, as a command-keyed RFP: the dispatcher tries that
 -- before the binding's function.
 --
+-- Group commands. On a light that offers load groups, the ExecuteCommand handlers EC.LIGHT_GROUP_JOIN,
+-- EC.LIGHT_GROUP_LEAVE and EC.LIGHT_GROUP_COMMAND; on a group driver's kit, EC.LIGHT_GROUP_STATE. A driver sets
+-- none of them.
+--
 -- Notifies. Every notify to the proxy and the links: LIGHT_*, DYNAMIC_CAPABILITIES_CHANGED, ONLINE_CHANGED,
 -- the link LEDs and button colors, and the answers to GET_CONNECTED_STATE and GET_LIGHT_LEVEL. EXTRAS_*
 -- stay the driver's.
@@ -257,6 +272,7 @@ Types.API = 1
 --     brightness_rate_default, color_rate_default, brightness_on_mode, button_colors, brightness_presets,
 --     color_presets, color_on_mode, previous_color, brightness_on_mode_preset, max_on_level, min_on_level
 --   Scenes: scenes
+--   Groups: load_groups, light_groups
 
 -----------------------------------------------------------------------------------------------------
 -- The library's own shapes
@@ -369,6 +385,7 @@ Types.API = 1
 --- @field extended boolean The deadline was extended once.
 --- @field deadline integer
 --- @field landed boolean|nil What is held is a position no command sent, reported once the newest change had landed.
+--- @field left boolean|nil An on report has shown the light away from where it stood when the window opened.
 
 --- What start read from the proxy, which Motion starts from and the first report is weighed against.
 --- @class LightSeed
@@ -381,6 +398,7 @@ Types.API = 1
 --- @field foreign LightAspect[] The aspects another hand moved.
 --- @field ask boolean Call adapter:refresh() once.
 --- @field form LightColor|nil The running color ramp's end in the form the light echoed it.
+--- @field kept LightColor|nil The color a "hold" device reports while a color is held: where its next on lights from.
 --- @field first LightAspect[] The aspects this was the first report of since a start or a loss, a match included:
 ---   each is told to the proxy, changed or not.
 

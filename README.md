@@ -26,22 +26,15 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
 <div style="font-size: small">
 
 - [System Requirements](#system-requirements)
-
 - [Features](#features)
-
 - [Compatibility](#compatibility)
-
   - [Updating WLED](#updating-wled)
-
 - [Using the light](#using-the-light)
-
   - [On, off, level and scenes](#on-off-level-and-scenes)
   - [Colors and WLED effects](#colors-and-wled-effects)
   - [The Extras menu](#the-extras-menu)
   - [Segment lights](#segment-lights)
-
 - [Installer Setup](#installer-setup)
-
   - [Driver Installation](#driver-installation)
   - [Driver Setup](#driver-setup)
     - [Driver Properties](#driver-properties)
@@ -54,9 +47,7 @@ the **WLED Segment** driver adds a light for each segment, through this driver.
     - [Driver Actions](#driver-actions)
   - [Programming Reference](#programming-reference)
   - [Connections](#connections)
-
 - [Support](#support)
-
 - [Changelog](#changelog)
 
 </div>
@@ -134,7 +125,7 @@ the frame rate.
 
 The light works as any Control4 light does: on, off, level and toggle, with the
 Default On level, Previous Level and Min and Max On Level set on the light in
-Composer. Fades of any length run on the WLED controller itself, with the
+Composer. Fades up to 16 minutes run on the WLED controller itself, with the
 light's click and hold rates. Advanced Lighting Scenes run level and color
 steps, ramps, stops and flash. The light offers color and white as the
 controller's LEDs allow (see [Compatibility](#compatibility)), with color
@@ -498,7 +489,7 @@ rename in WLED. It appears once the controller has a preset.
 ### Light (provider)
 
 The Control4 Light proxy connection. The light is online while the driver is
-connected and offline while it is not.
+connected and offline while it is not, keeping the level it last showed.
 
 ### `{segment name}` (provider, dynamic)
 
@@ -573,32 +564,18 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Removed
 -->
 
-## Unreleased
+## v20261117 - 2026-11-17
 
 ### Added
 
-- Added the WLED driver, which connects to a WLED controller on the local
-  network and shows its name, firmware, LED count and segments in Composer
-- Added finding WLED controllers on the network, and following a controller by
-  its MAC address when its address changes
-- Added a check that the controller at the address is the one the driver was set
-  up with, and Reset Driver to take a replacement
-- Added the controller's light with on, off, level, color and color temperature
-  as its LEDs allow, fades, Advanced Lighting Scenes, Color On Mode, Dim-To-Warm
-  and On, Off and Toggle button links
-- Added Warm White and Cool White properties that set the ends of the light's
-  color temperature range
-- Added the WLED Segment driver, a Control4 light for one segment that follows
-  it when WLED renumbers or resizes it
-- Added segment-aware power, so the WLED light reads on while a segment is lit
-  and turns every segment on when none is
-- Added WLED effects, palettes, presets and playlists to programming, with
-  commands, variables, events and a playlist conditional
-- Added the controller's effects with their sliders and options, palettes,
-  presets and playlists to the light's Extras menu
-- Added preset cycling with Next Preset and Previous Preset, a Cycle Presets
-  property, a button link for each cycled preset and a Preset Is conditional
-- Added a Connected variable, Connected and Disconnected events, and a
-  connection status conditional
-- Added a status line while another system sends the controller live data, and a
-  check every 15 seconds for preset and playlist changes WLED does not announce
+- Added the WLED and WLED Segment drivers
+- Added a Control4 light with color and white, fades, Color On Mode and
+  Dim-To-Warm
+- Added Advanced Lighting Scenes and keypad button links with LEDs
+- Added WLED's effects, palettes, presets and playlists to programming and the
+  Extras menu, with preset cycling from keypads
+- Added a light for each segment, with the WLED Segment driver
+- Added finding controllers on the network, and following a controller when its
+  address changes
+- Added live updates when the WLED app, a button or another system changes the
+  controller

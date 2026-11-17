@@ -11,7 +11,7 @@
 --- A connection's states, and what moves it:
 ---   made      --start-->                        offline (the proxy is told so, and the device asked)
 ---   offline   --a report, after declare-->      online (ONLINE_CHANGED, then the capabilities)
----   online    --lost(suspended), reset-->       offline (the run ends: ramps, windows, picks, presses, steps)
+---   online    --lost(), reset-->                offline (the run ends: ramps, windows, picks, presses, steps)
 ---   offline   --declare-->                      offline, with the facts stored for the next report
 --- Commands reach the adapter only while online. A report before start, or one made inside send or refresh,
 --- waits and is taken in order once the library is free.
@@ -27,11 +27,16 @@ local Buttons = require("lib.light.buttons")
 local Scenes = require("lib.light.scenes")
 local Motion = require("lib.light.motion")
 local Ledger = require("lib.light.ledger")
+local Groups = require("lib.light.groups")
 local LightProxy = require("lib.light.proxy")
 local Handlers = require("lib.light.handlers")
+local Range = require("lib.light.range")
 -- The pure modules adapters may use, required here so the build bundles them with every light.
 require("lib.light.color")
 require("lib.light.range")
+
+require("drivers-common-public.global.lib")
+require("lib.utils")
 
 local ADAPTER_METHODS = { "send", "refresh", "show" }
 
@@ -66,6 +71,7 @@ local MOVES = {
 --- @field scenes LightScenes
 --- @field motion LightMotion
 --- @field ledger LightLedger
+--- @field groups LightGroups
 --- @field proxy LightProxy
 local Light = {}
 Light.__index = Light
@@ -115,6 +121,7 @@ function Light.new(adapter, profile)
   self.scenes = Scenes.new(self, checked)
   self.motion = Motion.new(self)
   self.ledger = Ledger.new(self)
+  self.groups = Groups.new()
   self.proxy = LightProxy.new(checked, self.settings)
   Handlers.register(self)
   Light.made[#Light.made + 1] = self
@@ -240,12 +247,12 @@ function Light:report(report)
   self:_heard(self.ledger:heard(inForms(report, self.device), self.motion:now()))
 end
 
---- The connection is gone. true: stopped on purpose, the proxy keeps the level. false: a loss.
---- @param suspended boolean
-function Light:lost(suspended)
+--- The connection is gone. The proxy shows offline and keeps the level until the first report after it.
+function Light:lost()
   self:_endRun()
   self.online = false
-  self.proxy:lost(suspended == true)
+  self.proxy:lost()
+  self:_tellGroups()
 end
 
 --- Reset Driver: end the run, tell offline until the next report, ask the device.
@@ -291,6 +298,72 @@ end
 function Light:setting(strCommand, tParams)
   self.settings:apply(strCommand, tParams)
   self:_followUp({})
+end
+
+--- A load group's JOIN_GROUP, LEAVE_GROUP or SET_GROUP_SYNC.
+--- @param strCommand string
+--- @param tParams table<string, string>
+function Light:membership(strCommand, tParams)
+  local groupId = tointeger(Select(tParams, "GROUP_ID"))
+  if not groupId then
+    log:warn("%s names no group: %s", strCommand, tParams)
+    return
+  end
+  if strCommand == "LEAVE_GROUP" then
+    self.groups:leave(groupId)
+  else
+    self.groups:join(groupId, toboolean(Select(tParams, "KEEP_SYNC")))
+  end
+end
+
+--- Hand one of the light's own commands to every load group that keeps it in sync. Returns whether any took it,
+--- in which case the light does not act on it.
+--- @param strCommand string
+--- @param tParams table<string, string>
+--- @return boolean
+function Light:toGroups(strCommand, tParams)
+  if strCommand == "RAMP_TO_LEVEL" and Select(tParams, "TIME") == nil then
+    tParams = { LEVEL = Select(tParams, "LEVEL"), TIME = tostring(self.settings:forMotion().rate) }
+  end
+  return self.groups:forward(strCommand, tParams)
+end
+
+--- A group driver's LIGHT_GROUP_JOIN or LIGHT_GROUP_LEAVE. A group joined is told the light's state at once.
+--- @param strCommand string
+--- @param tParams table<string, string>
+function Light:groupDriver(strCommand, tParams)
+  local groupId = tointeger(Select(tParams, "GROUP_ID"))
+  if not groupId then
+    log:warn("%s names no group: %s", strCommand, tParams)
+    return
+  end
+  if strCommand == "LIGHT_GROUP_LEAVE" then
+    self.groups:withdraw(groupId)
+    return
+  end
+  self.groups:enroll(groupId, tostring(Select(tParams, "MEMBER_ID") or C4:GetDeviceID()))
+  self:_tellGroups()
+end
+
+--- A command a group driver decided: its on mode, Dim-To-Warm, rates and Min and Max On are already applied, so the
+--- light's own are not. Its level is a percent of the device's brightness, which the light goes to inside its own
+--- Min and Max On.
+--- @param intent LightIntent
+function Light:take(intent)
+  if intent.level and intent.level > 0 then
+    local lo, hi = self.settings:onRange()
+    intent.level = Range.toLevel(intent.level / 100, lo, hi)
+  end
+  self:_followUp(self:_move(intent, true))
+end
+
+--- A load group's GROUP_START_RAMP: a hold to full or off over the group's hold rate.
+--- @param up boolean
+--- @param rateMs integer|nil
+function Light:groupHold(up, rateMs)
+  local intent = self.buttons:groupHold(up, rateMs, self.motion:view())
+  self.proxy:taken(intent)
+  self:_followUp(self:_move(intent))
 end
 
 --- A read the proxy asks: GET_CONNECTED_STATE, GET_LIGHT_LEVEL, REQUEST_BUTTON_COLORS.
@@ -347,8 +420,9 @@ end
 --- An intent to Motion, after cancelling the parts it did not come from.
 --- @private
 --- @param intent LightIntent
+--- @param decided boolean|nil A group driver chose the on's level and color: the light's on modes stay out.
 --- @return LightCommand[]
-function Light:_move(intent)
+function Light:_move(intent, decided)
   if intent.source ~= "button" then
     self.buttons:cancel()
   end
@@ -359,7 +433,8 @@ function Light:_move(intent)
   self.buttons:noted(intent, self.motion:now())
   self.ledger:taken(intent)
   self.motion:assumeLit(self.ledger:lit())
-  return self.motion:command(intent, OnColor.choose(intent, self:_onInputs()), self.settings:forMotion())
+  local choice = not decided and OnColor.choose(intent, self:_onInputs()) or nil
+  return self.motion:command(intent, choice, self.settings:forMotion())
 end
 
 --- What OnColor.choose reads: plain values from the parts that hold them.
@@ -399,6 +474,9 @@ function Light:_heard(heard)
     self.motion:haltAll()
   end
   self.motion:settle(heard.settle)
+  if heard.kept then
+    self.motion:keep(heard.kept)
+  end
   if heard.form then
     self.motion:reform(heard.form)
   end
@@ -442,7 +520,12 @@ function Light:_followUp(cmds)
   -- takes the light as the wire left it.
   self.motion:assumeLit(self.ledger:lit())
   if self.online then
-    self.proxy:sync(self.motion:view(t), self.ledger.awaiting, t)
+    local awaiting = self.ledger.awaiting
+    local unlanded = self.motion:unlanded(t)
+    if unlanded then
+      awaiting = { level = awaiting.level or unlanded.level, color = awaiting.color or unlanded.color }
+    end
+    self.proxy:sync(self.motion:view(t), awaiting, t)
     local shown = self.proxy:shown()
     if shown then
       local ok, err = pcall(self.adapter.show, self.adapter, shown)
@@ -451,8 +534,30 @@ function Light:_followUp(cmds)
       end
     end
   end
+  self:_tellGroups()
   self.inside = false
   self:_takeWaiting()
+end
+
+--- Tell each group driver the light is a member of where the light is heading, if that changed.
+--- @private
+function Light:_tellGroups()
+  if not self.profile.loadGroups or next(self.groups:drivers()) == nil then
+    return
+  end
+  local device = self.device or { dims = false, color = false }
+  local view = self.motion:view()
+  local level = view.levelTarget or view.level
+  local on = view.on and level > 0
+  self.groups:tell({
+    online = self.online,
+    dims = device.dims == true,
+    hasColor = device.color == true,
+    cct = device.cct,
+    on = on,
+    level = on and Range.percent(level) or 0,
+    color = view.colorTarget or view.color,
+  })
 end
 
 --- Ask the device for its whole state. Reports it makes meanwhile wait until it returns.
