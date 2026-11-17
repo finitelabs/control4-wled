@@ -484,9 +484,9 @@ do
   T.eq("on/off", facts(0), { false, false, nil })
   local d = adapter(model(RGB)):lightDevice()
   T.eq(
-    "a device fade in a straight line, opened from off, re-timed by every call, up to a day",
+    "a device fade in a straight line, opened from off, re-timed by every call, up to 999999 ms",
     d.fade,
-    { kind = "device", curve = "linear", preOn = true, retimes = true, maxMs = 86400000 }
+    { kind = "device", curve = "linear", preOn = true, retimes = true, maxMs = 999999 }
   )
   T.eq("reports show the target and may predate a command by 2.5 s", d.feedback, {
     shows = "target",

@@ -93,8 +93,8 @@ local light = Light.new(wledLight, {
   scenes = true,
   onModes = true,
   flash = true,
-  -- Legs carry a fade past one command's 65.5 s.
-  maxMs = 86400000,
+  -- Legs carry a fade past one command's 65.5 s; Composer reads a bound under a million ms.
+  maxMs = 999999,
 })
 
 --- The Segment property: the segment's name, LED range and what its LEDs light.

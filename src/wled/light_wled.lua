@@ -40,8 +40,9 @@ local LEG_GAP_MS = 500
 local FREEZE_GAP_MS = 150
 --- How long after a landing a report may still predate it; WLED pushes at most once a second.
 local WAIT_MS = 2500
---- The longest fade the proxy may offer, in ms; legs carry a fade past 65.5 s.
-local RATE_MAX = 86400000
+--- The longest fade the proxy may offer, in ms; legs carry a fade past 65.5 s. Director writes a rate bound with six
+--- significant digits, and Composer can't read one of a million or more.
+local RATE_MAX = 999999
 local DEFAULT_CCT = 127
 --- The adapter's own persist key: the latest color it sent and that color's wire form, so the first
 --- report after a reload that still shows those bytes is that color, not their rounding.
