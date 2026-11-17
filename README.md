@@ -142,11 +142,12 @@ effect. A level change alone dims an effect and leaves it running.
 
 Picking an effect, in the Extras menu or with Set Effect in programming (see
 [Programming Reference](#programming-reference)), turns the light on, lights
-every segment and starts the effect in WLED's own colors, so the color the light
-showed before does not tint it. Solid shows the light's color. The palette and
-effect setting commands run on every segment and leave the light's power and
-level as they are. A preset or playlist sets whatever it was saved with in WLED,
-power and level included.
+every segment and starts the effect. WLED lays the light's white over an
+effect's colors, so on LEDs with color an effect starts with that white mixed
+into the light's color instead, and WLED's second and third colors clear. Solid
+shows the light's color as it is. The palette and effect setting commands run on
+every segment and leave the light's power and level as they are. A preset or
+playlist sets whatever it was saved with in WLED, power and level included.
 
 ## The Extras menu
 
@@ -166,7 +167,7 @@ Entries in a list that share a name show their WLED id after it.
 
 An effect, palette, slider or checkbox runs on every segment, as the programming
 commands do. An effect turns the light on and starts from its own speed,
-intensity and options, as in the WLED app, and from WLED's own colors. A
+intensity and options, as in the WLED app, with no white laid over it. A
 palette, slider or checkbox leaves the light's power and level as they are. A
 preset or playlist sets whatever it was saved with, power and level included.
 The menu follows the controller, so a change made in the WLED app, by a preset
@@ -413,19 +414,19 @@ Light On.
 
 ### Commands
 
-| Command                 | Parameters                                                  | Description                                                                                         |
-| ----------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Set Effect              | Effect                                                      | Turns the light on and runs a WLED effect on every segment, from its own defaults and WLED's colors |
-| Set Effect Speed        | Speed (0 - 255)                                             | Sets the effect speed on every segment                                                              |
-| Set Effect Intensity    | Intensity (0 - 255)                                         | Sets the effect intensity on every segment                                                          |
-| Set Effect Custom Value | Control (Custom 1, 2, 3), Value (0 - 255; Custom 3: 0 - 31) | Sets one of the effect's Custom values on every segment                                             |
-| Set Effect Option       | Option (Check 1, 2, 3), State (On, Off)                     | Turns one of the effect's options on or off on every segment                                        |
-| Set Palette             | Palette                                                     | Uses a WLED palette on every segment                                                                |
-| Apply Preset            | Preset                                                      | Applies a WLED preset                                                                               |
-| Start Playlist          | Playlist                                                    | Starts a WLED playlist                                                                              |
-| Stop Playlist           | (none)                                                      | Stops the running playlist; the light keeps the look the playlist last showed                       |
-| Next Preset             | (none)                                                      | Applies the next preset in the cycle                                                                |
-| Previous Preset         | (none)                                                      | Applies the previous preset in the cycle                                                            |
+| Command                 | Parameters                                                  | Description                                                                                                   |
+| ----------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Set Effect              | Effect                                                      | Turns the light on and runs a WLED effect on every segment, from its own defaults, with no white laid over it |
+| Set Effect Speed        | Speed (0 - 255)                                             | Sets the effect speed on every segment                                                                        |
+| Set Effect Intensity    | Intensity (0 - 255)                                         | Sets the effect intensity on every segment                                                                    |
+| Set Effect Custom Value | Control (Custom 1, 2, 3), Value (0 - 255; Custom 3: 0 - 31) | Sets one of the effect's Custom values on every segment                                                       |
+| Set Effect Option       | Option (Check 1, 2, 3), State (On, Off)                     | Turns one of the effect's options on or off on every segment                                                  |
+| Set Palette             | Palette                                                     | Uses a WLED palette on every segment                                                                          |
+| Apply Preset            | Preset                                                      | Applies a WLED preset                                                                                         |
+| Start Playlist          | Playlist                                                    | Starts a WLED playlist                                                                                        |
+| Stop Playlist           | (none)                                                      | Stops the running playlist; the light keeps the look the playlist last showed                                 |
+| Next Preset             | (none)                                                      | Applies the next preset in the cycle                                                                          |
+| Previous Preset         | (none)                                                      | Applies the previous preset in the cycle                                                                      |
 
 The choices are the controller's own, read when the driver connects and again
 when the controller reports a change: a preset or playlist saved or deleted, an

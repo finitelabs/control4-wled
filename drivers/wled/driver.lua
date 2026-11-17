@@ -926,8 +926,7 @@ end
 
 --- Send segment fields to every segment the controller has, as a Control4 color does.
 --- @param fields table Segment fields, e.g. { fx = 9 }.
---- @param top? table Fields for the whole controller, e.g. { on = true }.
-local function sendToSegments(fields, top)
+local function sendToSegments(fields)
   local segs = {}
   for _, s in ipairs(device.segments or {}) do
     local seg = { id = s.id }
@@ -936,25 +935,47 @@ local function sendToSegments(fields, top)
     end
     segs[#segs + 1] = seg
   end
-  local json = top or {}
-  json.seg = #segs > 0 and segs or fields
-  send(json)
+  send({ seg = #segs > 0 and segs or fields })
 end
 
---- The colors WLED gives a new segment. An effect starts from them, so a color or white the light
---- showed before doesn't tint it: WLED adds the main color's white to every palette color.
-local EFFECT_COLORS = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+--- The colors an effect starts from on a segment with color LEDs: the light's color with its white
+--- mixed into red, green and blue, since WLED adds a color's white to every palette color, and the
+--- other two cleared. A color with nothing lit gives way to WLED's own default.
+--- @param state table|nil The segment's state from WLED.
+--- @return table col The segment's three colors.
+local function effectColors(state)
+  local r, g, b, w = LightAdapter.primary(state)
+  r, g, b = math.min(255, r + w), math.min(255, g + w), math.min(255, b + w)
+  if r + g + b == 0 then
+    r, g, b = 255, 160, 0
+  end
+  return { { r, g, b, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+end
 
 --- Turn the light on and run an effect on every segment, each lit, from the effect's own defaults
---- as WLED's page starts it. Any effect but Solid also starts from WLED's own colors; Solid shows
---- the light's color.
+--- as WLED's page starts it. Any effect but Solid starts with the light's white mixed into its
+--- color, so the white doesn't tint the effect; a segment with no color LEDs keeps its colors.
 --- @param id integer The effect id.
 local function startEffect(id)
-  local fields = { fx = id, fxdef = true, on = true }
-  if id ~= 0 then
-    fields.col = EFFECT_COLORS
+  local states = {}
+  local stateSegs = device.state and device.state.seg
+  for _, s in ipairs(type(stateSegs) == "table" and stateSegs or {}) do
+    if type(s) == "table" and tonumber(s.id) then
+      states[tonumber(s.id)] = s
+    end
   end
-  sendToSegments(fields, { on = true })
+  local segs = {}
+  for _, s in ipairs(device.segments or {}) do
+    local seg = { id = s.id, fx = id, fxdef = true, on = true }
+    if id ~= 0 and Device.has(s.lc ~= 0 and s.lc or device.lc, Device.CAP_RGB) then
+      seg.col = effectColors(states[s.id])
+    end
+    segs[#segs + 1] = seg
+  end
+  if #segs == 0 then
+    segs = { fx = id, fxdef = true, on = true }
+  end
+  send({ on = true, seg = segs })
 end
 
 -- ─── Finding the controller ───────────────────────────────────────────────

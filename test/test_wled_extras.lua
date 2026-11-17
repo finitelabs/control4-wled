@@ -424,15 +424,15 @@ do
 
   mark()
   pick("fx", "Rainbow")
-  local wledColors = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  local colors = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
   T.eq(
-    "an effect picked by its name: on, both segments lit, from its own defaults and WLED's own colors",
+    "an effect picked by its name: on, both segments lit, from its own defaults and the light's color",
     lastCommand(fake),
     {
       on = true,
       seg = {
-        { id = 0, fx = 9, fxdef = true, on = true, col = wledColors },
-        { id = 1, fx = 9, fxdef = true, on = true, col = wledColors },
+        { id = 0, fx = 9, fxdef = true, on = true, col = colors },
+        { id = 1, fx = 9, fxdef = true, on = true, col = colors },
       },
     }
   )

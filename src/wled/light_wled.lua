@@ -201,6 +201,7 @@ local function primary(seg)
   end
   return at(1), at(2), at(3), at(4)
 end
+Adapter.primary = primary
 
 --- Whether any segment is on. A controller that lists no segments counts as one.
 --- @param device table

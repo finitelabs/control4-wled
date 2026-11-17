@@ -282,15 +282,15 @@ do
   W.run(500)
 
   ExecuteCommand("Set Effect", { Effect = "Rainbow" })
-  local wledColors = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  local colors = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
   T.eq(
-    "Set Effect: on, and on every segment, lit, the effect from its defaults and WLED's own colors",
+    "Set Effect: on, and on every segment, lit, the effect from its defaults and the light's color",
     lastCommand(fake),
     {
       on = true,
       seg = {
-        { id = 0, fx = 9, fxdef = true, on = true, col = wledColors },
-        { id = 1, fx = 9, fxdef = true, on = true, col = wledColors },
+        { id = 0, fx = 9, fxdef = true, on = true, col = colors },
+        { id = 1, fx = 9, fxdef = true, on = true, col = colors },
       },
     }
   )
@@ -336,10 +336,9 @@ do
   local fake = fresh("esp32-rgbw-pwm-16", function(f)
     f.si.state.on = false
     f.si.state.seg[2].on = false
-    -- The white the light last showed: WLED adds it to every palette color an effect draws.
-    for _, seg in ipairs(f.si.state.seg) do
-      seg.col = { { 0, 0, 0, 255 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
-    end
+    -- WLED adds a color's white to every palette color an effect draws.
+    f.si.state.seg[1].col = { { 200, 0, 120, 100 }, { 10, 20, 30, 40 }, { 5, 5, 5, 5 } }
+    f.si.state.seg[2].col = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
   end)
   W.run(500)
   ExecuteCommand("Set Effect", { Effect = "Rainbow" })
@@ -348,7 +347,12 @@ do
   T.eq("the controller is on", state.on, true)
   T.eq("both segments lit, the one that was off too", { state.seg[1].on, state.seg[2].on }, { true, true })
   T.eq("the effect runs", { state.seg[1].fx, state.seg[2].fx }, { 9, 9 })
-  T.eq("from WLED's own colors, so no white is left to tint it", state.seg[1].col, {
+  T.eq("the white moves into red, green and blue, so it tints nothing, and the other colors clear", state.seg[1].col, {
+    { 255, 100, 220, 0 },
+    { 0, 0, 0, 0 },
+    { 0, 0, 0, 0 },
+  })
+  T.eq("a color with nothing lit gives way to WLED's own, so a color effect still shows", state.seg[2].col, {
     { 255, 160, 0, 0 },
     { 0, 0, 0, 0 },
     { 0, 0, 0, 0 },
@@ -359,6 +363,23 @@ do
     "Solid turns it on and shows the light's color, so it sends none",
     lastCommand(fake),
     { on = true, seg = { { id = 0, fx = 0, fxdef = true, on = true }, { id = 1, fx = 0, fxdef = true, on = true } } }
+  )
+end
+
+--------------------------------------------------------------------------------
+T.section("Set Effect leaves a strip with no color LEDs its own colors")
+--------------------------------------------------------------------------------
+-- WLED draws an effect on such a strip from its colors alone, and Control4's white is all they hold.
+for _, profile in ipairs({ "esp32-white-16", "esp32-cct-16" }) do
+  local fake = fresh(profile, function(f)
+    f.si.state.seg[1].col = { { 0, 0, 0, 255 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  end)
+  W.run(500)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  T.eq(
+    "on and lit, no colors sent (" .. profile .. ")",
+    lastCommand(fake),
+    { on = true, seg = { { id = 0, fx = 9, fxdef = true, on = true } } }
   )
 end
 
