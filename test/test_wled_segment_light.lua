@@ -413,7 +413,7 @@ do
   fake:apply({ seg = { { id = 1, fx = 0 } } })
   report()
   W.run(3000)
-  T.eq("once Solid, the segment's color is the light's again", #toldOf(PROXY, "LIGHT_COLOR_CHANGED"), 1)
+  T.eq("once its segment is Solid, its colors are reported again", #toldOf(PROXY, "LIGHT_COLOR_CHANGED"), 1)
 end
 
 --------------------------------------------------------------------------------

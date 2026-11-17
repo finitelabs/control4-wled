@@ -121,6 +121,8 @@ local function fresh(profile, props)
   fake = W.Fake.new(profile, { ip = "192.0.2." .. nextHost })
   require("lib.persist"):delete("WledControllerMac")
   require("lib.persist"):delete("WledShown")
+  require("lib.persist"):delete("WledEffectFrom")
+  require("lib.persist"):delete("WledLightShownColor")
   for _, key in ipairs({ "color_on_mode", "previous_color", "white_point", "brightness_on_mode" }) do
     require("lib.persist"):delete(key)
   end
@@ -1161,6 +1163,16 @@ do
   )
   T.eq("Control4 keeps the 2700 K white", toldOther(), 0)
 
+  -- A dim and an outage while the effect runs leave what Solid brings back.
+  proxy("SET_LEVEL", { LEVEL = "50" })
+  W.run(3000)
+  T.eq(
+    "a dim pairs none of the effect's colors with the light's",
+    require("lib.persist"):get("WledLightShownColor").col,
+    { 0, 0, 0, 255 }
+  )
+  fake:drop()
+  W.run(30000)
   ExecuteCommand("Set Effect", { Effect = "Solid" })
   W.run(3000)
   main = fake.si.state.seg[1]
@@ -1180,6 +1192,18 @@ do
     col[1] == 255 and col[2] < 64 and col[3] < 64,
     T.show(col)
   )
+
+  -- Another client shows blue; an effect, then Solid, comes back to it.
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  W.run(3000)
+  fake.si.state.seg[1].col = { { 0, 0, 255, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  fake:change({})
+  W.run(3000)
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(3000)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  W.run(3000)
+  T.eq("Solid shows the blue another client set before the effect", fake.si.state.seg[1].col[1], { 0, 0, 255, 0 })
 end
 
 T.finish()

@@ -123,6 +123,34 @@ local client
 --- Installer white points, the ends of WLED's CCT range.
 local DEFAULT_WARM, DEFAULT_COOL = 2700, 6500
 
+--- Each segment's colors from when the driver started an effect on it, by WLED id, so Solid shows
+--- them again.
+local EFFECT_FROM_PERSIST_KEY = "WledEffectFrom"
+
+--- Drop the colors an effect started from once a command ends it: a color or Solid on a segment, or
+--- a preset or playlist.
+--- @param json table The JSON state command sent.
+local function endEffects(json)
+  local from = persist:get(EFFECT_FROM_PERSIST_KEY)
+  if type(from) ~= "table" then
+    return
+  end
+  if json.ps ~= nil then
+    persist:delete(EFFECT_FROM_PERSIST_KEY)
+    return
+  end
+  local changed = false
+  for _, entry in ipairs(type(json.seg) == "table" and json.seg or {}) do
+    local key = type(entry) == "table" and entry.fx == 0 and tostring(entry.id)
+    if key and from[key] then
+      from[key], changed = nil, true
+    end
+  end
+  if changed then
+    persist:set(EFFECT_FROM_PERSIST_KEY, next(from) and from or nil)
+  end
+end
+
 --- Send a state command; its result arrives in the controller's next report. Nothing goes to a
 --- controller that is not the one this driver was set up with.
 --- @param json table
@@ -147,6 +175,7 @@ local function send(json, opts)
   end)
   -- The next command before the controller reports, from this light or a segment light, sees it.
   Segment.note(json, device)
+  endEffects(json)
 end
 
 local wledLight = LightAdapter:new({
@@ -941,7 +970,7 @@ end
 --- The colors an effect starts from on a segment with color LEDs: the light's color with its white
 --- mixed into red, green and blue, since WLED adds a color's white to every palette color, and the
 --- other two cleared. A color with nothing lit gives way to WLED's own default.
---- @param seg table|nil The segment, with the colors last sent to it or reported.
+--- @param seg table|nil The segment, with its colors.
 --- @return table col The segment's three colors.
 local function effectColors(seg)
   local r, g, b, w = LightAdapter.primary(seg)
@@ -952,20 +981,31 @@ local function effectColors(seg)
   return { { r, g, b, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
 end
 
+--- A segment's three colors: those last sent to it, else those it reported.
+--- @param s WledSegment
+--- @param state table|nil The segment's state from WLED.
+--- @return table|nil col Nil when neither is known.
+local function colorsOf(s, state)
+  local sent = type(s.col) == "table" and s.col or {}
+  local reported = state and type(state.col) == "table" and state.col or {}
+  if sent[1] == nil and reported[1] == nil then
+    return nil
+  end
+  local col = {}
+  for i = 1, 3 do
+    col[i] = sent[i] or reported[i] or { 0, 0, 0, 0 }
+  end
+  return col
+end
+
 --- Turn the light on and run an effect on every segment, each lit, from the effect's own defaults
 --- as WLED's page starts it. Any effect but Solid starts with the light's white mixed into its
---- color, so the white doesn't tint the effect; a segment with no color LEDs keeps its colors.
---- Solid shows the light's color again, as Control4 last sent it.
+--- color, so the white doesn't tint the effect, and keeps the colors it started from; a segment
+--- with no color LEDs keeps its colors. Solid shows each segment's kept colors again.
 --- @param id integer The effect id.
 local function startEffect(id)
-  local shown = id == 0 and wledLight:shownSeg()
-  if shown then
-    for _, seg in ipairs(shown[1] and shown or { shown }) do
-      seg.on = true
-    end
-    send({ on = true, seg = shown })
-    return
-  end
+  local from = persist:get(EFFECT_FROM_PERSIST_KEY)
+  from = type(from) == "table" and from or {}
   local states = {}
   local stateSegs = device.state and device.state.seg
   for _, s in ipairs(type(stateSegs) == "table" and stateSegs or {}) do
@@ -976,8 +1016,13 @@ local function startEffect(id)
   local segs = {}
   for _, s in ipairs(device.segments or {}) do
     local seg = { id = s.id, fx = id, fxdef = true, on = true }
-    if id ~= 0 and Device.has(s.lc ~= 0 and s.lc or device.lc, Device.CAP_RGB) then
-      seg.col = effectColors(s.col and s or states[s.id])
+    local key = tostring(s.id)
+    if id == 0 then
+      seg.col = from[key]
+    elseif Device.has(s.lc ~= 0 and s.lc or device.lc, Device.CAP_RGB) then
+      local shown = colorsOf(s, states[s.id])
+      from[key] = from[key] or shown
+      seg.col = effectColors({ col = shown })
     end
     segs[#segs + 1] = seg
   end
@@ -986,6 +1031,9 @@ local function startEffect(id)
     if id ~= 0 and Device.has(device.lc, Device.CAP_RGB) then
       segs.col = effectColors(mainSegment(device.state or {}))
     end
+  end
+  if id ~= 0 then
+    persist:set(EFFECT_FROM_PERSIST_KEY, next(from) and from or nil)
   end
   send({ on = true, seg = segs })
 end
@@ -1859,6 +1907,7 @@ function EC.Reset_Driver(params)
   lists:clear()
   gShown = nil
   persist:delete(SHOWN_PERSIST_KEY)
+  persist:delete(EFFECT_FROM_PERSIST_KEY)
   gExtrasShape, gExtrasSent, gExtrasChoices, gExtrasPending = nil, {}, nil, {}
   -- A fresh install has no keypad wired to a button link; the light's own proxy stays bound.
   local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))

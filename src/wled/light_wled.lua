@@ -76,6 +76,8 @@ local SHOWN_PERSIST_KEY = "WledLightShownColor"
 --- @field legGen integer Bumped by every command, so legs of an older fade stop.
 --- @field legs WledLegs|nil The fade going out in legs.
 --- @field last WledLast|nil The latest command and its wire form.
+--- @field reported {on: boolean, bri: number, col: integer[], cct: integer|nil, effect: boolean}|nil The
+---   controller's last report; effect is true while its segment runs an effect.
 --- @field fade WledFade|nil The adapter's own wire fade: the last timed frame, legs included.
 --- @field cct integer|nil The CCT last sent or reported, which a full color keeps.
 --- @field whiteK number|nil The white last sent to an RGBW strip's white LEDs, in Kelvin.
@@ -348,7 +350,8 @@ function Adapter:wireOf(cmd, json)
       wire.col, wire.cct = self:render(cmd.color)
     elseif seg and seg.col then
       wire.col, wire.cct = seg.col[1], seg.cct
-    else
+    elseif not rep.effect then
+      -- A running effect's colors are not the light's, so a command that only carries the color has none.
       wire.col, wire.cct = rep.col, rep.cct
     end
   end
@@ -508,17 +511,6 @@ local function sameColor(col, cct, wire)
     end
   end
   return wire.cct == nil or near(cct, wire.cct)
-end
-
---- The seg value that shows the light's color again, as Control4 last sent it: every segment, its
---- effect stopped.
---- @return table|nil seg As colorSeg gives it, or nil when Control4 has sent no color.
-function Adapter:shownSeg()
-  local kept = persist:get(SHOWN_PERSIST_KEY)
-  if type(kept) ~= "table" or type(kept.col) ~= "table" then
-    return nil
-  end
-  return self:colorSeg(kept.col, kept.cct)
 end
 
 --- Keep the color a command leaves the controller showing, with its wire form, across a reload.
@@ -964,7 +956,7 @@ function Adapter:report()
   if (self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT)) and not effect then
     report.color = self:shownColor(col, cct)
   end
-  self.reported = { on = on, bri = bri, col = col, cct = cct }
+  self.reported = { on = on, bri = bri, col = col, cct = cct, effect = effect }
   local last = self.last
   if not last then
     local kept = persist:get(SHOWN_PERSIST_KEY)

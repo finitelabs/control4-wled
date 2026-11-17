@@ -156,6 +156,7 @@ local function fresh(profile, setup)
   end
   require("lib.persist"):delete("WledControllerMac")
   require("lib.persist"):delete("WledShown")
+  require("lib.persist"):delete("WledEffectFrom")
   for k, v in pairs(defaultProperties()) do
     Properties[k] = v
   end
@@ -358,9 +359,20 @@ do
     { 0, 0, 0, 0 },
   })
 
+  -- What the effect started from outlasts a driver update.
+  restart("update")
+  W.run(1500)
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  T.eq("Solid turns it on and shows each segment's colors from before the effect again", lastCommand(fake), {
+    on = true,
+    seg = {
+      { id = 0, fx = 0, fxdef = true, on = true, col = { { 200, 0, 120, 100 }, { 10, 20, 30, 40 }, { 5, 5, 5, 5 } } },
+      { id = 1, fx = 0, fxdef = true, on = true, col = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } } },
+    },
+  })
   ExecuteCommand("Set Effect", { Effect = "Solid" })
   T.eq(
-    "Solid turns it on and shows the light's color, so it sends none",
+    "once Solid, a second Solid has no colors to bring back",
     lastCommand(fake),
     { on = true, seg = { { id = 0, fx = 0, fxdef = true, on = true }, { id = 1, fx = 0, fxdef = true, on = true } } }
   )
