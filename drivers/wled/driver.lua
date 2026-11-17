@@ -232,6 +232,10 @@ local gShown = persist:get(SHOWN_PERSIST_KEY)
 local gExtrasShape = nil
 --- @type table<string, string>
 local gExtrasSent = {}
+--- What the driver set and the controller has not reported yet, by control id: the value as the
+--- menu shows it, the effect id for an effect, and when it went.
+--- @type table<string, {value: string, fx: integer|nil, at: integer}>
+local gExtrasPending = {}
 --- The entries the last setup offered, by list control: a pick comes back as one's text.
 --- @type table<string, WledExtrasChoices>|nil
 local gExtrasChoices = nil
@@ -463,7 +467,14 @@ local function updateExtras()
     return
   end
   local seg = mainSegment(state)
-  local fx = seg and tonumber(seg.fx) or 0
+  local now = C4:GetTime()
+  for id, pending in pairs(gExtrasPending) do
+    if now - pending.at > LightAdapter.WAIT_MS then
+      gExtrasPending[id] = nil
+    end
+  end
+  -- A report that predates a set still shows the old value; the menu keeps what was set.
+  local fx = Select(gExtrasPending, "fx", "fx") or (seg and tonumber(seg.fx)) or 0
   local view = {
     effects = lists.effects,
     palettes = lists.palettes or {},
@@ -473,6 +484,13 @@ local function updateExtras()
   }
   view.choices = Extras.choices(view)
   view.values = Extras.values(seg, tonumber(state.ps) or -1, tonumber(state.pl) or -1, view.choices)
+  for id, pending in pairs(gExtrasPending) do
+    if view.values[id] == pending.value then
+      gExtrasPending[id] = nil
+    else
+      view.values[id] = pending.value
+    end
+  end
   local shape = Extras.shape(view, lists.version)
   if shape ~= gExtrasShape then
     SendToProxy(PROXY_BINDING, "EXTRAS_SETUP_CHANGED", { XML = Extras.setup(view) }, "NOTIFY")
@@ -1662,7 +1680,7 @@ local function setExtra(id, picked, fromMenu)
   end
   local kind = Extras.KINDS[id or ""]
   -- What was sent, as the menu shows it.
-  local value
+  local value, sent
   if kind == "list" then
     -- A text the menu was not given, an id among them, picks nothing.
     local entry = Select(gExtrasChoices, id, "id", tostring(picked))
@@ -1670,7 +1688,7 @@ local function setExtra(id, picked, fromMenu)
       log:warn("Extras: the menu has no %s %s", tostring(id), tostring(picked))
       return
     end
-    local sent = EXTRA_LISTS[id](entry)
+    sent = EXTRA_LISTS[id](entry)
     value = sent and (Select(gExtrasChoices, id, "text", sent) or tostring(sent))
   elseif kind == "bool" then
     local on = toboolean(picked)
@@ -1684,8 +1702,9 @@ local function setExtra(id, picked, fromMenu)
     log:warn("Extras: the controller has no %s %s", tostring(id), tostring(picked))
     return
   end
+  value = tostring(value)
+  gExtrasPending[id] = { value = value, fx = id == "fx" and tonumber(sent) or nil, at = C4:GetTime() }
   if gExtrasShape then
-    value = tostring(value)
     gExtrasSent[id] = value
     -- The Control4 app unticks a checkbox when a state answers its own tap; the box already shows it.
     if not (fromMenu and kind == "bool") then
@@ -1790,7 +1809,7 @@ function EC.Reset_Driver(params)
   lists:clear()
   gShown = nil
   persist:delete(SHOWN_PERSIST_KEY)
-  gExtrasShape, gExtrasSent, gExtrasChoices = nil, {}, nil
+  gExtrasShape, gExtrasSent, gExtrasChoices, gExtrasPending = nil, {}, nil, {}
   -- A fresh install has no keypad wired to a button link; the light's own proxy stays bound.
   local wired = GetDeviceBindings(tointeger(C4:GetDeviceID()))
   for _, id in ipairs(BUTTON_LINKS) do
