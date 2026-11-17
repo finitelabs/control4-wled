@@ -62,6 +62,18 @@ async def test_white_mode_change_shows_in_capabilities(mock):
     assert info["leds"]["lc"] == 1
 
 
+async def test_cut_ends_the_next_answers_half_way(mock):
+    inst, client = await mock()
+    full = await (await client.get("/json/fxdata")).read()
+    await client.post("/_mock/cut", json={"path": "/json/fxdata", "count": 2})
+    for _ in range(2):
+        r = await client.get("/json/fxdata")
+        assert r.status == 200 and r.headers["Content-Type"].startswith("application/json")
+        assert r.headers["Transfer-Encoding"] == "chunked"
+        assert await r.read() == full[: len(full) // 2]
+    assert await (await client.get("/json/fxdata")).read() == full
+
+
 async def test_busy_control(mock):
     inst, client = await mock("esp32-rgbw-015")
     await client.post("/_mock/busy", json={"ms": 4000})
