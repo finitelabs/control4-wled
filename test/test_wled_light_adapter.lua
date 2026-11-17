@@ -13,6 +13,7 @@ local W = require("wled_fixtures")
 require("c4_local")
 
 local Adapter = require("wled.light_wled")
+local Caps = require("lib.light.caps")
 local Color = require("lib.light.color")
 local Device = require("wled.device")
 
@@ -494,6 +495,23 @@ do
     refresh = true,
   })
   T.eq("a color sent while off is sent; 255 steps", { d.colorWhileOff, d.levelSteps }, { "send", 255 })
+  T.eq(
+    "an on/off controller opens no fade from off, which needs a channel that dims",
+    adapter(model(0)):lightDevice().fade.preOn,
+    false
+  )
+  local profile = assert(Caps.profile({ dims = true, color = true, cct = true, fades = true, maxMs = 86400000 }))
+  for _, kind in ipairs({
+    { "on/off", 0 },
+    { "white only", WHITE },
+    { "tunable white", WHITE + CCT },
+    { "RGB", RGB },
+    { "RGBW", RGB + WHITE },
+    { "RGB with CCT", RGB + WHITE + CCT },
+  }) do
+    local _, errors = Caps.device(adapter(model(kind[2]), 2700, 6500):lightDevice(), profile)
+    T.eq(kind[1] .. ": the library takes the facts with no error", errors, {})
+  end
 end
 
 --------------------------------------------------------------------------------

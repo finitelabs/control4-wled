@@ -155,7 +155,7 @@ function Adapter:lightDevice()
     levelSteps = 255,
     -- 0.15.x with Crossfade off makes every change at once, whatever tt says.
     fade = self.device.crossfade == false and { kind = "own", own = { onMs = 0, offMs = 0, changeMs = 0 } }
-      or { kind = "device", curve = "linear", preOn = true, retimes = true, maxMs = RATE_MAX },
+      or { kind = "device", curve = "linear", preOn = self:dims(), retimes = true, maxMs = RATE_MAX },
     feedback = { shows = "target", waitMs = WAIT_MS, refresh = true },
   }
 end
