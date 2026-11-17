@@ -926,7 +926,8 @@ end
 
 --- Send segment fields to every segment the controller has, as a Control4 color does.
 --- @param fields table Segment fields, e.g. { fx = 9 }.
-local function sendToSegments(fields)
+--- @param top? table Fields for the whole controller, e.g. { on = true }.
+local function sendToSegments(fields, top)
   local segs = {}
   for _, s in ipairs(device.segments or {}) do
     local seg = { id = s.id }
@@ -935,7 +936,25 @@ local function sendToSegments(fields)
     end
     segs[#segs + 1] = seg
   end
-  send({ seg = #segs > 0 and segs or fields })
+  local json = top or {}
+  json.seg = #segs > 0 and segs or fields
+  send(json)
+end
+
+--- The colors WLED gives a new segment. An effect starts from them, so a color or white the light
+--- showed before doesn't tint it: WLED adds the main color's white to every palette color.
+local EFFECT_COLORS = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+
+--- Turn the light on and run an effect on every segment, each lit, from the effect's own defaults
+--- as WLED's page starts it. Any effect but Solid also starts from WLED's own colors; Solid shows
+--- the light's color.
+--- @param id integer The effect id.
+local function startEffect(id)
+  local fields = { fx = id, fxdef = true, on = true }
+  if id ~= 0 then
+    fields.col = EFFECT_COLORS
+  end
+  sendToSegments(fields, { on = true })
 end
 
 -- ─── Finding the controller ───────────────────────────────────────────────
@@ -1501,8 +1520,7 @@ function GCPL.Set_Effect(paramName)
   return lists:effectNames()
 end
 
---- Run an effect on every segment, by name or id, from the effect's own defaults as WLED's page
---- starts it; power and level stay as they are.
+--- Turn the light on and run an effect on every segment, by name or id, as the Extras menu does.
 --- @param params table
 function EC.Set_Effect(params)
   log:trace("EC.Set_Effect(%s)", params)
@@ -1511,7 +1529,7 @@ function EC.Set_Effect(params)
     log:warn("Set Effect: the controller has no effect %s", tostring(Select(params, "Effect")))
     return
   end
-  sendToSegments({ fx = id, fxdef = true })
+  startEffect(id)
 end
 
 --- A 0-255 slider value from a command parameter.
@@ -1635,7 +1653,7 @@ local EXTRA_LISTS = {
   fx = function(value)
     local id = Lists.byId(lists.effects, value)
     if id then
-      sendToSegments({ fx = id, fxdef = true })
+      startEffect(id)
     end
     return id
   end,

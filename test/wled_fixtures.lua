@@ -296,7 +296,9 @@ function Fake:applyFields(cmd, fromPreset)
         if s.id == nil or s.id == seg.id then
           if type(s.col) == "table" and type(s.col[1]) == "table" then
             seg.col = seg.col or {}
-            seg.col[1] = copy(s.col[1])
+            for i, c in ipairs(s.col) do
+              seg.col[i] = copy(c)
+            end
             changed = true
           end
           if s.fx ~= nil then
