@@ -941,10 +941,10 @@ end
 --- The colors an effect starts from on a segment with color LEDs: the light's color with its white
 --- mixed into red, green and blue, since WLED adds a color's white to every palette color, and the
 --- other two cleared. A color with nothing lit gives way to WLED's own default.
---- @param state table|nil The segment's state from WLED.
+--- @param seg table|nil The segment, with the colors last sent to it or reported.
 --- @return table col The segment's three colors.
-local function effectColors(state)
-  local r, g, b, w = LightAdapter.primary(state)
+local function effectColors(seg)
+  local r, g, b, w = LightAdapter.primary(seg)
   r, g, b = math.min(255, r + w), math.min(255, g + w), math.min(255, b + w)
   if r + g + b == 0 then
     r, g, b = 255, 160, 0
@@ -955,8 +955,17 @@ end
 --- Turn the light on and run an effect on every segment, each lit, from the effect's own defaults
 --- as WLED's page starts it. Any effect but Solid starts with the light's white mixed into its
 --- color, so the white doesn't tint the effect; a segment with no color LEDs keeps its colors.
+--- Solid shows the light's color again, as Control4 last sent it.
 --- @param id integer The effect id.
 local function startEffect(id)
+  local shown = id == 0 and wledLight:shownSeg()
+  if shown then
+    for _, seg in ipairs(shown[1] and shown or { shown }) do
+      seg.on = true
+    end
+    send({ on = true, seg = shown })
+    return
+  end
   local states = {}
   local stateSegs = device.state and device.state.seg
   for _, s in ipairs(type(stateSegs) == "table" and stateSegs or {}) do
@@ -968,12 +977,15 @@ local function startEffect(id)
   for _, s in ipairs(device.segments or {}) do
     local seg = { id = s.id, fx = id, fxdef = true, on = true }
     if id ~= 0 and Device.has(s.lc ~= 0 and s.lc or device.lc, Device.CAP_RGB) then
-      seg.col = effectColors(states[s.id])
+      seg.col = effectColors(s.col and s or states[s.id])
     end
     segs[#segs + 1] = seg
   end
   if #segs == 0 then
     segs = { fx = id, fxdef = true, on = true }
+    if id ~= 0 and Device.has(device.lc, Device.CAP_RGB) then
+      segs.col = effectColors(mainSegment(device.state or {}))
+    end
   end
   send({ on = true, seg = segs })
 end

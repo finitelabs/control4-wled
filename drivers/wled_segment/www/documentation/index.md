@@ -115,7 +115,8 @@ Color temperature runs between the light's `Warm White (K)` and
 - Segment lights in one scene, or in a room turned on or off at once, act
   together: each sees what the others just did.
 - A color or a scene step on a segment light changes its segment only, and ends
-  a WLED effect running on it.
+  a WLED effect running on it. While an effect runs on its segment, the light
+  keeps its own color.
 - The controller light's commands still cover every segment. Turning the
   controller light on turns every segment on; this light's On turns on its
   segment only.

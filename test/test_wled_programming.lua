@@ -284,7 +284,7 @@ do
   ExecuteCommand("Set Effect", { Effect = "Rainbow" })
   local colors = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
   T.eq(
-    "Set Effect: on, and on every segment, lit, the effect from its defaults and the light's color",
+    "Set Effect: on, and on every segment, lit, the effect from its defaults and colors with no white",
     lastCommand(fake),
     {
       on = true,

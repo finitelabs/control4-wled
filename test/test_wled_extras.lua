@@ -419,14 +419,18 @@ end
 T.section("Picks and sliders reach every segment")
 --------------------------------------------------------------------------------
 do
-  local fake = fresh("esp32-rgbw-pwm-16")
+  local fake = fresh("esp32-rgbw-pwm-16", function(f)
+    for _, seg in ipairs(f.si.state.seg) do
+      seg.col = { { 0, 0, 0, 255 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+    end
+  end)
   W.run(500)
 
   mark()
   pick("fx", "Rainbow")
-  local colors = { { 255, 160, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
+  local colors = { { 255, 255, 255, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }
   T.eq(
-    "an effect picked by its name: on, both segments lit, from its own defaults and the light's color",
+    "an effect picked by its name: on, both segments lit, from its own defaults and the light's white in its color",
     lastCommand(fake),
     {
       on = true,

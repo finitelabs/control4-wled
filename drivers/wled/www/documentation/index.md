@@ -174,10 +174,11 @@ Picking an effect, in the Extras menu or with Set Effect in programming (see
 [Programming Reference](#programming-reference)), turns the light on, lights
 every segment and starts the effect. WLED lays the light's white over an
 effect's colors, so on LEDs with color an effect starts with that white mixed
-into the light's color instead, and WLED's second and third colors clear. Solid
-shows the light's color as it is. The palette and effect setting commands run on
-every segment and leave the light's power and level as they are. A preset or
-playlist sets whatever it was saved with in WLED, power and level included.
+into the light's color instead, and WLED's second and third colors clear. While
+an effect runs, Control4 keeps the light's own color, and picking Solid shows it
+again. The palette and effect setting commands run on every segment and leave
+the light's power and level as they are. A preset or playlist sets whatever it
+was saved with in WLED, power and level included.
 
 ## The Extras menu
 

@@ -510,6 +510,17 @@ local function sameColor(col, cct, wire)
   return wire.cct == nil or near(cct, wire.cct)
 end
 
+--- The seg value that shows the light's color again, as Control4 last sent it: every segment, its
+--- effect stopped.
+--- @return table|nil seg As colorSeg gives it, or nil when Control4 has sent no color.
+function Adapter:shownSeg()
+  local kept = persist:get(SHOWN_PERSIST_KEY)
+  if type(kept) ~= "table" or type(kept.col) ~= "table" then
+    return nil
+  end
+  return self:colorSeg(kept.col, kept.cct)
+end
+
 --- Keep the color a command leaves the controller showing, with its wire form, across a reload.
 --- @param last WledLast
 function Adapter:keepShown(last)
@@ -948,7 +959,9 @@ function Adapter:report()
   if self:dims() then
     report.level = bri / 255
   end
-  if self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT) then
+  -- While an effect runs, its colors are the effect's and Control4 keeps the light's own.
+  local effect = seg ~= nil and (tonumber(seg.fx) or 0) ~= 0
+  if (self:has(Device.CAP_RGB) or self:has(Device.CAP_CCT)) and not effect then
     report.color = self:shownColor(col, cct)
   end
   self.reported = { on = on, bri = bri, col = col, cct = cct }

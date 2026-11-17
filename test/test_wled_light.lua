@@ -1119,4 +1119,67 @@ do
   end)
 end
 
+--------------------------------------------------------------------------------
+T.section("an effect leaves Control4's color as it was, starts from the newest color sent, and Solid shows it again")
+--------------------------------------------------------------------------------
+do
+  local x2700 = C4:ColorCCTtoXY(2700)
+  local function white()
+    local x, y = C4:ColorCCTtoXY(2700)
+    proxy("SET_COLOR_TARGET", {
+      LIGHT_COLOR_TARGET_X = tostring(x),
+      LIGHT_COLOR_TARGET_Y = tostring(y),
+      LIGHT_COLOR_TARGET_MODE = "1",
+      LIGHT_COLOR_TARGET_COLOR_CORRELATED_TEMPERATURE = "2700",
+      RATE = "0",
+    })
+  end
+  --- The colors told to the proxy since the mark that are not the 2700 K white.
+  local function toldOther()
+    local n = 0
+    for _, x in ipairs(toldOf("LIGHT_COLOR_CHANGED", "LIGHT_COLOR_CURRENT_X")) do
+      if math.abs(tonumber(x) - x2700) > 0.005 then
+        n = n + 1
+      end
+    end
+    return n
+  end
+  fresh("esp32-rgbw-pwm-16")
+  proxy("ON")
+  white()
+  W.run(3000)
+  T.eq("2700 K shows on the white LEDs", fake.si.state.seg[1].col[1], { 0, 0, 0, 255 })
+
+  mark()
+  ExecuteCommand("Set Effect", { Effect = "Rainbow" })
+  W.run(3000)
+  local main = fake.si.state.seg[1]
+  T.eq(
+    "the effect runs with the white in its color, not over it",
+    { main.fx, main.col[1] },
+    { 9, { 255, 255, 255, 0 } }
+  )
+  T.eq("Control4 keeps the 2700 K white", toldOther(), 0)
+
+  ExecuteCommand("Set Effect", { Effect = "Solid" })
+  W.run(3000)
+  main = fake.si.state.seg[1]
+  T.eq("Solid shows the white on the white LEDs again", { main.fx, main.col[1] }, { 0, { 0, 0, 0, 255 } })
+  T.eq("and Control4 still shows it", toldOther(), 0)
+
+  -- Programming's steps run back to back, before the controller reports the red.
+  proxy(
+    "SET_COLOR_TARGET",
+    { LIGHT_COLOR_TARGET_X = "0.70", LIGHT_COLOR_TARGET_Y = "0.30", LIGHT_COLOR_TARGET_MODE = "0", RATE = "0" }
+  )
+  ExecuteCommand("Set Effect", { Effect = "Breathe" })
+  W.run(3000)
+  local col = fake.si.state.seg[1].col[1]
+  T.truthy(
+    "the effect starts in the red sent just before it",
+    col[1] == 255 and col[2] < 64 and col[3] < 64,
+    T.show(col)
+  )
+end
+
 T.finish()
