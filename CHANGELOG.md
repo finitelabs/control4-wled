@@ -25,11 +25,6 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added Control4 load groups to the WLED and WLED Segment lights. Each joins a
   load group and follows the group's level, ramps and sync.
 
-### Fixed
-
-- A WLED or WLED Segment light fading on to its Default On level shows that
-  level as its brightness target on the way, where it showed 1% until it landed.
-
 ## v20261117 - 2026-11-17
 
 ### Added
