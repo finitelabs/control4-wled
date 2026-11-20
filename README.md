@@ -580,8 +580,8 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 
 ### Fixed
 
-- A WLED or WLED Segment light comes on at Default On once the brightness preset
-  its on mode named is removed, where it still came on at that preset's level.
+- A WLED or WLED Segment light no longer comes on at a removed brightness
+  preset's level when that preset was its on mode.
 - A color preset from the Color Agent no longer lights a WLED or WLED Segment
   light in the light's own color preset with the same number.
 
