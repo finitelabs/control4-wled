@@ -25,6 +25,13 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 - Added Control4 load groups to the WLED and WLED Segment lights. Each joins a
   load group and follows the group's level, ramps and sync.
 
+### Fixed
+
+- A WLED or WLED Segment light no longer comes on at a removed brightness
+  preset's level when that preset was its on mode.
+- A color preset from the Color Agent no longer lights a WLED or WLED Segment
+  light in the light's own color preset with the same number.
+
 ## v20261117 - 2026-11-17
 
 ### Added
