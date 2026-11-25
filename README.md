@@ -580,9 +580,9 @@ Template for a new release entry (copy below the heading, fill in, uncomment):
 
 ### Fixed
 
-- A WLED or WLED Segment light no longer comes on at a removed brightness
-  preset's level when that preset was its on mode.
-- A color preset from the Color Agent no longer lights a WLED or WLED Segment
+- Fixed a WLED or WLED Segment light coming on at a removed brightness preset's
+  level when that preset was its on mode.
+- Fixed a color preset from the Color Agent lighting a WLED or WLED Segment
   light in the light's own color preset with the same number.
 
 ## v20261117 - 2026-11-17
