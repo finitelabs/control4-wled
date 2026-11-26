@@ -100,6 +100,7 @@ do
   W.run(100)
   W.run(Client.PING_MS * 3)
   T.eq("three pings", fake.pings, 3)
+  T.eq("and no control-frame ping from the module", fake.controlPings, 0)
   T.eq("still on the socket", client.mode, "ws")
   T.eq("connected once", fake.connects, 1)
   T.eq("never offline", #log.offline, 0)

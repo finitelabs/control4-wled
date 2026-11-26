@@ -235,6 +235,7 @@ function Fake.new(profile, opts)
   self.wire = {}
   self.requests = {}
   self.pings = 0
+  self.controlPings = 0
   self.connects = 0
   self.binding = nil
   self.upgraded = false
@@ -831,7 +832,9 @@ function Fake:onSend(data)
     return
   end
   for _, frame in ipairs(clientFrames(data)) do
-    if frame.opcode == 1 then
+    if frame.opcode == 9 then
+      self.controlPings = self.controlPings + 1
+    elseif frame.opcode == 1 then
       if frame.payload == "p" then
         self.pings = self.pings + 1
         if not self.ignorePings then

@@ -301,7 +301,8 @@ end
 --- @param gen integer The start it belongs to.
 function Client:openSocket(gen)
   local url = self:socketUrl()
-  local ok, ws, err = pcall(self.WebSocket.new, self.WebSocket, url)
+  -- The module's own control-frame ping is replaced by WLED's text ping below.
+  local ok, ws, err = pcall(self.WebSocket.new, self.WebSocket, url, nil, nil, { sendPings = false })
   if not ok then
     -- A raise is a fault, unlike a socket the module declines with nil and an error.
     ws, err = nil, ws
@@ -314,8 +315,6 @@ function Client:openSocket(gen)
     return
   end
   self.ws = ws
-  -- The module's own control-frame ping is replaced by WLED's text ping below.
-  ws.ping_interval = 24 * 3600
   -- A controller that takes the connection but never finishes the upgrade is tried again.
   self:after(gen, CONNECT_TIMEOUT_MS, function()
     if self.ws == ws and not self.socketUp then
